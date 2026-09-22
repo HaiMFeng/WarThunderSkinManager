@@ -1,0 +1,19 @@
+<UserControl x:Class="WarThunderSkinManager.Views.VehicleManagementView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
+    <StackPanel>
+        <TextBlock Text="{loc:Loc vehicles.title}" Style="{StaticResource PageTitle}"/>
+        <TextBlock Text="{loc:Loc vehicles.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
+
+        <Border Style="{StaticResource Card}" MaxWidth="640" HorizontalAlignment="Left">
+            <StackPanel>
+                <TextBlock Text="&#xE8F1;" FontFamily="{StaticResource IconFont}" FontSize="30"
+                           Foreground="{StaticResource BrushTextMuted}" Margin="0,0,0,12"/>
+                <TextBlock Text="{loc:Loc vehicles.empty.title}" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock Text="{loc:Loc vehicles.empty.desc}"
+                           Style="{StaticResource PageSubtitle}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

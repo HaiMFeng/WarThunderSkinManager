@@ -1,0 +1,40 @@
+# ===================== .NET / Visual Studio =====================
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Ll]og/
+[Ll]ogs/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.rsuser
+*.suo
+*.cache
+*.pdb
+*.tlog
+*.idb
+*.trx
+TestResults/
+[Tt]est[Rr]esult*/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+.vsconfig
+
+# ===================== JetBrains Rider / IDE =====================
+.idea/
+*.sln.iml
+
+# ===================== 项目本地数据（体积大 / 仅本机） =====================
+# 游戏 UserSkins 目录：本地测试用的皮肤数据（blk + dds，可达数百 MB～GB），不入库
+UserSkins/
+
+# ===================== OS / 杂项 =====================
+Thumbs.db
+Desktop.ini
+*.tmp
+*~
