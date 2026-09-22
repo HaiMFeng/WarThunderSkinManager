@@ -11,6 +11,14 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // 开发自检：--selftest <源文件夹> <工作目录>（跑完即退出，不建窗口）
+        if (e.Args.Length >= 3 && e.Args[0] == "--selftest")
+        {
+            Dev.SelfTest.Run(e.Args[1], e.Args[2]);
+            Shutdown(0);
+            return;
+        }
+
         // 1) 读取配置目录与配置
         var cfgDir = ConfigService.DefaultConfigDirectory();
         AppConfig config = ConfigService.Load(cfgDir);

@@ -15,7 +15,11 @@ public static class ConfigService
         return Path.Combine(local, "WarThunderSkinManager");
     }
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     // ---- AppConfig：config.json ----
     public static AppConfig Load(string configDir)

@@ -98,10 +98,12 @@ dotnet run --project WarThunderSkinManager
 - 配置：三个目录 + 同步设置（自动同步、缓冲时间）的读写；选择目录后自动保存
 - 数据模型：`Vehicle` / `VehiclePart` / `SkinPackage` / `TexMapping` / `ActiveLoadout` / `Import` / `Country`
 - blk 解析：`replace_tex` / `set_tex` → `TexMapping`，并做基础校验（`*`、扩展名、`param`、贴图存在性）
+- 导入与解构服务层：递归识别 blk → 解构；贴图按 **SHA-256 内容寻址**入 `blobs/`（跨包去重、复制包零增量）；写 `packages/<Id>/source.blk` + `meta.json`；按 `from` 去 `*` 聚合成 `VehiclePart`；国家前缀自动归类；导入溯源清单
+- 激活输出服务层：按 `ActiveLoadout`（部件级选择）重写 `blk` + 把选中 blob 调度到 `UserSkins/WTSM/<载具Id>/`（同盘硬链接、跨卷复制）并清理旧贴图；**保持 blk 文件名与路径不变**以热重载；二次同步幂等
 
 **计划中**
-- 导入与解构管道：贴图算哈希入 `blobs/`、写 `packages/<Id>/meta.json`、由 `from` 聚合部件
+- 导入/解构的界面接入（导入按钮 / 拖入 / 压缩包 / UserSkins 一键导入）
 - 载具管理界面：国家分类、显示名映射、预览图
-- 部件级贴图适配与激活输出（重写 `blk` + 调度贴图到 `UserSkins/WTSM/`）
+- 部件级贴图适配界面（配合激活输出）
 - 导出 / 恢复原始模组
 - 压缩包导入（含加密包密码输入）

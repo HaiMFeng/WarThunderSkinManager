@@ -1,0 +1,44 @@
+using System;
+using System.Collections.Generic;
+
+namespace WarThunderSkinManager.Services;
+
+/// <summary>
+/// 国家自动归类（功能设计 §3.4）：以载具内部标识的**国家前缀**判定，无前缀 = 未分类。
+/// 前缀表为社区经验总结（非官方规范），后续可由配置文件覆盖。
+/// </summary>
+public static class CountryResolver
+{
+    public const string Unclassified = "unclassified";
+
+    /// <summary>默认国家前缀表：前缀 → 国家 Id。</summary>
+    public static readonly IReadOnlyDictionary<string, string> PrefixToCountry =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["cn"] = "cn",
+            ["us"] = "us",
+            ["ussr"] = "ussr",
+            ["ru"] = "ussr",
+            ["de"] = "de",
+            ["gb"] = "gb",
+            ["uk"] = "gb",
+            ["jp"] = "jp",
+            ["fr"] = "fr",
+            ["it"] = "it",
+            ["se"] = "se",
+            ["il"] = "il",
+            ["ch"] = "cn",
+        };
+
+    /// <summary>解析载具内部标识所属国家 Id；无法判定返回 <see cref="Unclassified"/>。</summary>
+    public static string Resolve(string vehicleId)
+    {
+        if (string.IsNullOrWhiteSpace(vehicleId)) return Unclassified;
+
+        var prefix = vehicleId;
+        var idx = vehicleId.IndexOf('_');
+        if (idx > 0) prefix = vehicleId[..idx];
+
+        return PrefixToCountry.TryGetValue(prefix, out var country) ? country : Unclassified;
+    }
+}
