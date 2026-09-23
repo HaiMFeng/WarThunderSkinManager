@@ -96,7 +96,7 @@ public partial class SkinsViewModel : ObservableObject
 
     public string PackagesTitle => Loc.Format("skins.packages.count", Packages.Count);
 
-    /// <summary>当前激活的涂装包说明（显示在载具标题右侧）。</summary>
+    /// <summary>当前激活的涂装包说明（显示在卡片网格上方）。</summary>
     public string ActivePackageText
     {
         get
@@ -105,6 +105,12 @@ public partial class SkinsViewModel : ObservableObject
             return active == null ? Loc["skins.notActive"] : Loc.Format("skins.activeIs", active.Name);
         }
     }
+
+    /// <summary>
+    /// 当前载具是否已激活某套涂装包：决定上面那行说明的**颜色**——
+    /// 已激活 = 绿色（与卡片激活态一致）；**未激活 = 主色蓝**（只是提示，不是激活状态）。
+    /// </summary>
+    public bool HasActivePackage => Packages.Any(p => p.IsActive);
 
     /// <summary>卡片高度 = 宽度 × 0.72（约 16:11 的缩略图比例）</summary>
     public double CardHeight => Math.Round(CardWidth * 0.72);
@@ -325,6 +331,7 @@ public partial class SkinsViewModel : ObservableObject
             package.IsActive = string.Equals(package.Id, Activation.ActivePackageId, StringComparison.Ordinal);
 
         OnPropertyChanged(nameof(ActivePackageText));
+        OnPropertyChanged(nameof(HasActivePackage));
     }
 
     // ---------- 涂装包操作（§3.4 / §3.6 / §3.11）----------

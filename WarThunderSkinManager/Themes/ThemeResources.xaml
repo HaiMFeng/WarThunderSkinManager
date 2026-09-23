@@ -118,6 +118,31 @@
         <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
     </Style>
 
+    <!-- ============ 状态提示（统一位点：窗口标题栏「应用名」右侧） ============ -->
+    <Style x:Key="TitleBarStatusText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="14,0,0,0"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="Opacity" Value="0"/>
+        <Style.Triggers>
+            <!-- 没有提示时隐藏；从空变为有内容时淡入 -->
+            <DataTrigger Binding="{Binding StatusMessage}" Value="">
+                <Setter Property="Visibility" Value="Collapsed"/>
+                <Setter Property="Opacity" Value="0"/>
+                <DataTrigger.ExitActions>
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0" To="1" Duration="0:0:0.2"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="FieldLabel" TargetType="TextBlock">
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>

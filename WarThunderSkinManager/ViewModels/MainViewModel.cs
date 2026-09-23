@@ -60,6 +60,10 @@ public partial class MainViewModel : ObservableObject
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
 
+        // 子页状态变化 → 刷新标题右侧的统一提示位点
+        Skins.PropertyChanged += OnChildChanged;
+        Vehicles.PropertyChanged += OnChildChanged;
+
         _lastBufferSeconds = config.SyncBufferSeconds;
         Config.PropertyChanged += OnConfigChanged;
 
@@ -69,6 +73,25 @@ public partial class MainViewModel : ObservableObject
             StatusMessage = "";
             _statusTimer.Stop();
         };
+    }
+
+    /// <summary>
+    /// 子页状态 → **镜像到全局状态**：状态提示统一显示在窗口标题栏（应用名右侧），
+    /// 因此不管当时在哪一页（例如切走后自动同步才落盘）都能看到反馈。
+    /// </summary>
+    private void OnChildChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SkinsViewModel.StatusMessage)) return;
+        if (sender is not { } source) return;
+
+        var message = source switch
+        {
+            SkinsViewModel skins => skins.StatusMessage,
+            VehiclesViewModel vehicles => vehicles.StatusMessage,
+            _ => ""
+        };
+
+        if (message.Length > 0) ShowStatus(message);
     }
 
     /// <summary>缓冲时间被改到 2 秒以下时提醒一次（§3.8「短缓冲提醒」）。</summary>

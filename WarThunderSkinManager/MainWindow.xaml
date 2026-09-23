@@ -49,6 +49,9 @@
                 <TextBlock Grid.Column="0" Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
                            VerticalAlignment="Center" Margin="14,0"
                            FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}"/>
+                <!-- 全局状态提示：统一放在应用名右侧（所有页面的操作反馈都来这里） -->
+                <TextBlock Grid.Column="1" Style="{StaticResource TitleBarStatusText}"
+                           Text="{Binding StatusMessage}"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Style="{StaticResource TitleBarButton}" Content="&#xE921;" Click="Minimize_Click"/>
                     <Button Style="{StaticResource TitleBarButton}" Content="&#xE922;" Click="Maximize_Click"/>

@@ -121,28 +121,6 @@
             <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
                 <Button Content="{loc:Loc settings.save}" Style="{StaticResource PrimaryButton}"
                         Command="{Binding SaveCommand}"/>
-                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0,0,0"
-                           FontSize="13" Foreground="{StaticResource BrushPrimary}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Opacity" Value="0"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding StatusMessage}" Value="">
-                                    <Setter Property="Opacity" Value="0"/>
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <DataTrigger.ExitActions>
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                 From="0" To="1" Duration="0:0:0.2"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </DataTrigger.ExitActions>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

@@ -21,30 +21,6 @@
                 <TextBlock Text="{loc:Loc vehicles.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
 
-            <TextBlock Grid.Column="1" Text="{Binding Vehicles.StatusMessage}" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom" Margin="16,0,16,4" FontSize="13"
-                       Foreground="{StaticResource BrushPrimary}">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Opacity" Value="0"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Vehicles.StatusMessage}" Value="">
-                                <Setter Property="Opacity" Value="0"/>
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <DataTrigger.ExitActions>
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                             From="0" To="1" Duration="0:0:0.2"/>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </DataTrigger.ExitActions>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
-
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
                 <Button Content="{loc:Loc vehicles.mappings.export}" Style="{StaticResource SecondaryButton}"
                         Command="{Binding Vehicles.ExportMappingsCommand}"/>

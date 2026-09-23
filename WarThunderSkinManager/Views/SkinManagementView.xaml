@@ -61,30 +61,6 @@
                 <TextBlock Text="{loc:Loc skins.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
 
-            <TextBlock Grid.Column="1" Text="{Binding Skins.StatusMessage}" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom" Margin="16,0,16,4" FontSize="13"
-                       Foreground="{StaticResource BrushPrimary}">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Opacity" Value="0"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Skins.StatusMessage}" Value="">
-                                <Setter Property="Opacity" Value="0"/>
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <DataTrigger.ExitActions>
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                             From="0" To="1" Duration="0:0:0.2"/>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </DataTrigger.ExitActions>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
-
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
                 <Button Content="{loc:Loc skins.importFolder}" Style="{StaticResource PrimaryButton}"
                         Command="{Binding Skins.ImportFolderCommand}"/>
@@ -215,9 +191,20 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- 当前激活的涂装包（绿，与选中态的主色蓝区分） -->
+                        <!-- 当前激活的涂装包：已激活 = 绿（与卡片激活态一致）；未激活 = 主色蓝（只是提示） -->
                         <TextBlock DockPanel.Dock="Top" Text="{Binding Skins.ActivePackageText}" FontSize="13"
-                                   Foreground="{StaticResource BrushActive}" Margin="0,0,0,10"/>
+                                   Margin="0,0,0,10">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Skins.HasActivePackage}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource BrushActive}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
                         <!-- 卡片网格（列数与尺寸随窗口自适应；可拖动排序；右键菜单可激活/编辑等） -->
                         <ListBox x:Name="PackageList"
