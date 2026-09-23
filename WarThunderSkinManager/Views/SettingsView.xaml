@@ -92,6 +92,17 @@
                 </StackPanel>
             </Border>
 
+            <!-- 存储维护（blob 回收，功能设计 §6.5） -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.gc.title}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.gc.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <Button Content="{loc:Loc settings.gc.action}" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Left" Command="{Binding GcBlobsCommand}"/>
+                </StackPanel>
+            </Border>
+
             <!-- 危险操作 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>

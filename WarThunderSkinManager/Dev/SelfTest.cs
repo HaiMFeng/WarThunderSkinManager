@@ -241,6 +241,22 @@ internal static class SelfTest
             log.AppendLine($"含国旗/零宽字符条目: {flagged} 条，查表后残留: {leftover} 条"
                          + (leftoverSample.Length > 0 ? $"（例：{leftoverSample}）" : ""));
 
+            // ---- 贴图回收（无引用 blob，§6.5）----
+            log.AppendLine();
+            log.AppendLine("---- 贴图回收（无引用 blob）----");
+
+            var blobsBefore = BlobStore.EnumerateBlobs(resourceDir).Length;
+            var blobsDir = BlobStore.BlobsDirectory(resourceDir);
+            Directory.CreateDirectory(blobsDir);
+            File.WriteAllText(Path.Combine(blobsDir, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.tga"), "orphan");
+            File.WriteAllText(Path.Combine(blobsDir, "cafebabe.tga.12345678.tmp"), "tmp");
+
+            var gcReport = BlobGc.Collect(resourceDir);
+            log.AppendLine($"blob {blobsBefore} 个（引用中 {gcReport.ReferencedBlobs}）+ 放入 1 个孤儿 + 1 个 .tmp"
+                         + $" → 删除 {gcReport.DeletedBlobs} 个、释放 {gcReport.FreedBytes} 字节（应为 2）");
+            log.AppendLine($"引用中的 blob 全部保留 = {BlobStore.EnumerateBlobs(resourceDir).Length == blobsBefore}"
+                         + $"，错误 {gcReport.Errors.Count} 条");
+
             // ---- 资源库索引快照（懒加载，§4）----
             log.AppendLine();
             log.AppendLine("---- 资源库索引快照（懒加载）----");

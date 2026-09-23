@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -203,6 +204,53 @@ public partial class MainViewModel : ObservableObject
         {
             ShowStatus(Loc.Format("settings.saveFailed", ex.Message));
         }
+    }
+
+    /// <summary>
+    /// 回收**无引用**的贴图（设置页「存储维护」，功能设计 §6.5）：
+    /// 删除涂装包后其贴图残留在 blobs/，这里一次性清掉并在状态栏给出释放量。
+    /// 在后台线程执行（枚举 / 删除可能涉及大量文件），完成后回 UI 线程提示。
+    /// </summary>
+    [RelayCommand]
+    private void GcBlobs()
+    {
+        var resourceDir = Config.ResourceDirectory;
+        if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
+        {
+            ShowStatus(Loc["settings.gc.needResource"]);
+            return;
+        }
+
+        ShowStatus(Loc["settings.gc.running"]);
+
+        Task.Run(() => BlobGc.Collect(resourceDir)).ContinueWith(t =>
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                if (t.IsFaulted)
+                {
+                    ShowStatus(Loc.Format("settings.gc.failed",
+                        t.Exception?.GetBaseException().Message ?? "?"));
+                    return;
+                }
+
+                var report = t.Result;
+                if (report.DeletedBlobs == 0)
+                {
+                    ShowStatus(report.Errors.Count > 0
+                        ? Loc.Format("settings.gc.doneWithErrors", 0,
+                            DataResetService.FormatSize(report.FreedBytes), report.Errors.Count)
+                        : Loc["settings.gc.nothing"]);
+                    return;
+                }
+
+                ShowStatus(report.Errors.Count > 0
+                    ? Loc.Format("settings.gc.doneWithErrors", report.DeletedBlobs,
+                        DataResetService.FormatSize(report.FreedBytes), report.Errors.Count)
+                    : Loc.Format("settings.gc.done", report.DeletedBlobs,
+                        DataResetService.FormatSize(report.FreedBytes)));
+            });
+        });
     }
 
     /// <summary>

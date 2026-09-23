@@ -416,6 +416,9 @@ public partial class SkinsViewModel : ObservableObject
             PreviewStore.Delete(_config.ConfigDirectory, id);
             PackageStore.Delete(_config.ResourceDirectory, id);
 
+            // §6.5：被删包独占的贴图成为无引用 blob → 后台静默回收（不阻塞界面）
+            BlobGc.CollectInBackground(_config.ResourceDirectory);
+
             PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
 
             var status = Loc["pkg.deleted"];
