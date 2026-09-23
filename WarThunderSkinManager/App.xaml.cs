@@ -25,8 +25,9 @@ public partial class App : Application
         if (string.IsNullOrEmpty(config.ConfigDirectory))
             config.ConfigDirectory = cfgDir;
 
-        // 2) 加载语言文件（不存在则写出默认 zh-CN.json）
-        LocalizationManager.Instance.EnsureDefaultFile(config.ConfigDirectory, config.Language);
+        // 2) 语言文件：内置语言（zh-CN / en-US）各写出一份默认文件，再加载配置所选语言（§3.9）
+        foreach (var culture in LocalizationManager.BuiltInCultures)
+            LocalizationManager.Instance.EnsureDefaultFile(config.ConfigDirectory, culture);
         LocalizationManager.Instance.Load(config.ConfigDirectory, config.Language);
 
         // 3) 数据表：首次启动写出默认表；已存在时按基线决定是否跟随程序更新（§3.6 / §3.7）

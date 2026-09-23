@@ -127,9 +127,6 @@ public partial class MainViewModel : ObservableObject
 
     // ---------- 界面语言（功能设计 §3.9）----------
 
-    /// <summary>内置支持的语言（首次启动会写出对应的默认语言文件）。</summary>
-    private static readonly string[] BuiltInLanguages = { "zh-CN" };
-
     /// <summary>可选语言 = 内置支持 + 用户放进 <c>lang/</c> 的语言文件（<c>_</c> 开头的基线文件不算）。</summary>
     public IReadOnlyList<LanguageOption> AvailableLanguages { get; }
 
@@ -181,7 +178,7 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private static List<LanguageOption> ScanLanguages(string configDir)
     {
-        var codes = new List<string>(BuiltInLanguages);
+        var codes = new List<string>(LocalizationManager.BuiltInCultures);
 
         try
         {

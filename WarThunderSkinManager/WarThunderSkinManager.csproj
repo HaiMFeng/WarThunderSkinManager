@@ -18,6 +18,9 @@
       <EmbeddedResource Include="Assets\units.csv" />
       <!-- 内置武器名表：判断部件位置是不是武器（见 docs/软件功能设计.md §3.6） -->
       <EmbeddedResource Include="Assets\units_weaponry.csv" />
+      <!-- 内置语言文件（zh-CN 默认 / en-US；界面语言切换见 docs/软件功能设计.md §3.9） -->
+      <EmbeddedResource Include="Assets\lang\zh-CN.json" />
+      <EmbeddedResource Include="Assets\lang\en-US.json" />
     </ItemGroup>
 
 </Project>

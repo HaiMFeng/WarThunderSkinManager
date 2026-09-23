@@ -94,9 +94,10 @@
                             <ColumnDefinition Width="150"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="200"/>
-                            <ColumnDefinition Width="52"/>
-                            <ColumnDefinition Width="64"/>
-                            <ColumnDefinition Width="52"/>
+                            <!-- 数字列 Auto：表头随文案自适应（英文 "Missing"/"Warnings" 比中文长） -->
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{loc:Loc import.col.vehicle}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                         <TextBlock Grid.Column="1" Text="{loc:Loc import.col.name}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Margin="8,0"/>
@@ -150,9 +151,9 @@
                                                         <ColumnDefinition Width="150"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="200"/>
-                                                        <ColumnDefinition Width="52"/>
-                                                        <ColumnDefinition Width="64"/>
-                                                        <ColumnDefinition Width="52"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="{Binding VehicleId}" VerticalAlignment="Center"
                                                                TextTrimming="CharacterEllipsis"/>

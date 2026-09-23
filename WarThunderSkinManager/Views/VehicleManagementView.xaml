@@ -152,7 +152,8 @@
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
+                                        <!-- Auto：表头列宽随文案（英文比中文长），避免固定宽度截断 -->
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="1" Text="{loc:Loc vehicles.col.candidates}"
                                                Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
@@ -164,7 +165,7 @@
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="90"/>
+                                                        <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="{Binding From}" TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center"/>

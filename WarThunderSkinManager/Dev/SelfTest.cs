@@ -641,6 +641,30 @@ internal static class SelfTest
             log.AppendLine($"app.title（曾与基线相同 = 没改过）→ 取新版内置：{loc["app.title"]}");
             log.AppendLine($"nav.skins（与基线不同 = 用户改过）→ 保留用户值：{loc["nav.skins"]}");
 
+            // ---- 内置多语言（en-US，§3.9）----
+            log.AppendLine();
+            log.AppendLine("---- 内置多语言（en-US）----");
+            var langEnRoot = Path.Combine(workDir, "cfg-lang-en");
+            foreach (var culture in LocalizationManager.BuiltInCultures)
+                LocalizationManager.Instance.EnsureDefaultFile(langEnRoot, culture);
+            log.AppendLine($"内置语言  : {string.Join(", ", LocalizationManager.BuiltInCultures)}");
+            log.AppendLine($"en-US 显示名（app.language.name）= {LocalizationManager.ReadLanguageName(langEnRoot, "en-US") ?? "(缺失)"}");
+
+            LocalizationManager.Instance.Load(langEnRoot, "en-US");
+            log.AppendLine($"en-US 文案: nav.skins = {LocalizationManager.Instance["nav.skins"]}"
+                         + $"，skins.col.candidates = {LocalizationManager.Instance["skins.col.candidates"]}");
+
+            // 键覆盖检查：en-US 内置文件应覆盖全部 zh-CN 默认键（缺失的会回落中文）
+            var zhLangKeys = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                File.ReadAllText(Path.Combine(workDir, "cfg-lang", "lang", "zh-CN.json"), Encoding.UTF8))!.Keys;
+            var enLangKeys = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                File.ReadAllText(Path.Combine(langEnRoot, "lang", "en-US.json"), Encoding.UTF8))!.Keys;
+            var missingKeys = zhLangKeys.Except(enLangKeys).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            log.AppendLine($"键覆盖    : en-US {enLangKeys.Count} / zh-CN {zhLangKeys.Count}，缺失 {missingKeys.Count} 个"
+                         + (missingKeys.Count > 0 ? "：" + string.Join(", ", missingKeys) : ""));
+
+            LocalizationManager.Instance.Load(Path.Combine(workDir, "cfg-lang"), "zh-CN"); // 恢复中文，避免影响后续输出
+
             // ---- 数据表可单独替换（§3.6 / §3.7）：用户表优先、内置表兜底、替换后立即生效 ----
             log.AppendLine();
             log.AppendLine("---- 数据表（可单独替换）----");
