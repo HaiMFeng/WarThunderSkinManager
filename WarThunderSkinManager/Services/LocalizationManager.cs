@@ -37,34 +37,72 @@ public sealed class LocalizationManager : INotifyPropertyChanged
     public static string LangFile(string configDir, string culture)
         => Path.Combine(LangDirectory(configDir), $"{culture}.json");
 
-    /// <summary>若语言文件不存在则写出内置默认文件，便于用户编辑。</summary>
+    /// <summary>
+    /// 内置文案基线文件（记录**上一次的内置默认值**）：
+    /// 用它区分「用户自己改过的条目」与「只是旧版本的内置文案」，从而让内置文案更新能自动生效（见 §3.9）。
+    /// 属于程序内部文件，用户无需关心。
+    /// </summary>
+    public static string BaselineFile(string configDir, string culture)
+        => Path.Combine(LangDirectory(configDir), $"_{culture}.defaults.json");
+
+    /// <summary>若语言文件不存在则写出内置默认文件，便于用户编辑（同时写入基线）。</summary>
     public void EnsureDefaultFile(string configDir, string culture)
     {
-        var path = LangFile(configDir, string.IsNullOrWhiteSpace(culture) ? "zh-CN" : culture);
-        if (File.Exists(path)) return;
-        TryWriteFile(path, ParseDefaults());
+        var cultureName = string.IsNullOrWhiteSpace(culture) ? "zh-CN" : culture;
+        var defaults = ParseDefaults();
+
+        var path = LangFile(configDir, cultureName);
+        if (!File.Exists(path)) TryWriteFile(path, defaults);
+
+        var baseline = BaselineFile(configDir, cultureName);
+        if (!File.Exists(baseline)) TryWriteFile(baseline, defaults);
     }
 
-    /// <summary>加载语言文件；以内置默认补齐缺失 key，并将补全结果回写文件。</summary>
+    /// <summary>
+    /// 加载语言文件：以内置默认补齐缺失 key，并让**内置文案的更新自动生效**。
+    /// 规则：文件里的值与「上次的内置文案（基线）」相同 → 用户没改过 → 采用新版内置文案；
+    /// 与基线不同 → 用户自己改过 → 保留用户值。
+    /// 注：没有基线时（本机制引入前生成的文件）**保守处理**——保留文件里的值，不覆盖用户的改动。
+    /// </summary>
     public void Load(string configDir, string culture)
     {
         Culture = string.IsNullOrWhiteSpace(culture) ? "zh-CN" : culture;
 
-        var defaults = ParseDefaults();
-        var fromFile = ReadFile(LangFile(configDir, Culture));
+        var langPath = LangFile(configDir, Culture);
+        var baselinePath = BaselineFile(configDir, Culture);
 
-        // 文件值优先；文件缺失的 key 用默认补齐
+        var defaults = ParseDefaults();
+        var fromFile = ReadFile(langPath);
+        var baseline = ReadFile(baselinePath);
+
+        // 以新版内置文案为底；仅保留「用户确实改过」的条目
         var merged = new Dictionary<string, string>(defaults, StringComparer.Ordinal);
         foreach (var pair in fromFile)
-            merged[pair.Key] = pair.Value;
+        {
+            var untouched = baseline.TryGetValue(pair.Key, out var previous)
+                            && string.Equals(previous, pair.Value, StringComparison.Ordinal);
+            if (!untouched) merged[pair.Key] = pair.Value;
+        }
 
         _strings = merged;
 
-        // 文件缺少部分 key（语言文件随版本演进）→ 回写补全，保留用户已有值
-        if (fromFile.Count != merged.Count)
-            TryWriteFile(LangFile(configDir, Culture), merged);
+        if (Differs(fromFile, merged)) TryWriteFile(langPath, merged);
+        TryWriteFile(baselinePath, defaults);
 
         RaiseChanged();
+    }
+
+    private static bool Differs(Dictionary<string, string> a, Dictionary<string, string> b)
+    {
+        if (a.Count != b.Count) return true;
+
+        foreach (var pair in b)
+        {
+            if (!a.TryGetValue(pair.Key, out var value) || !string.Equals(value, pair.Value, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     public void SetLanguage(string configDir, string culture) => Load(configDir, culture);
@@ -140,6 +178,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "common.browse": "浏览",
   "common.cancel": "取消",
   "common.ok": "确定",
+  "common.continue": "继续",
+  "common.tip": "提示",
 
   "settings.title": "设置",
   "settings.subtitle": "配置游戏目录与同步行为",
@@ -170,7 +210,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "settings.reset.warn": "以下内容将被删除，且无法恢复：",
   "settings.reset.confirmLabel": "输入 DELETE 以启用清除按钮",
   "settings.reset.hint": "清除「语言文件与程序配置」会丢失目录设置与自定义文案，建议清除后重启程序。",
-  "settings.reset.confirm3": "最后确认：以下范围将立即被删除，且无法恢复。\n\n{0}\n\n确定继续？",
+  "settings.reset.confirm3": "以下范围将立即被删除，且无法恢复：\n\n{0}\n\n点击「{1}」以继续。",
+  "settings.reset.action": "清除",
   "settings.reset.done": "数据已清除",
   "settings.reset.doneWithErrors": "数据已清除（{0} 处失败）",
   "settings.reset.check.library": "资源库数据（packages / blobs / imports）",
@@ -247,7 +288,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "pkg.exportFailed": "导出失败：{0}",
   "pkg.deleted": "已删除涂装包",
   "pkg.deleteTitle": "删除涂装包",
-  "pkg.deleteConfirm": "确定删除涂装包「{0}」？此操作不可撤销。",
+  "pkg.deleteConfirm": "删除涂装包「{0}」？此操作不可撤销。",
   "pkg.operationFailed": "操作失败：{0}",
 
   "pkg.editor.title": "涂装包属性",
@@ -263,7 +304,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "pkg.editor.mode.replace": "replace_tex",
   "pkg.editor.mode.set": "set_tex",
   "pkg.editor.mode.noticeTitle": "replace_tex / set_tex 说明",
-  "pkg.editor.mode.notice": "你正在修改部件的写入方式（决定 blk 里写成 replace_tex 还是 set_tex），请先确认了解：\n\n• replace_tex：用本贴图替换该部件原有的贴图——绝大多数部件都用它。\n• set_tex：设置涂装贴图，会同时写入 param:t=\"camo_skin_tex\"，一般只用于车体/机体的迷彩主贴图。\n\n写错不会让游戏报错，但涂装可能不生效或表现异常。\n\n选择「确定」= 本次生效，且以后不再提示；选择「取消」= 本次不做任何改动，下次尝试时仍会提示。",
+  "pkg.editor.mode.noticeOk": "我已了解",
+  "pkg.editor.mode.notice": "你正在修改部件的写入方式（决定 blk 里写成 replace_tex 还是 set_tex），请先确认了解：\n\n• replace_tex：用本贴图替换该部件原有的贴图——绝大多数部件都用它。\n• set_tex：设置涂装贴图，会同时写入 param:t=\"camo_skin_tex\"，一般只用于车体/机体的迷彩主贴图。\n\n写错不会让游戏报错，但涂装可能不生效或表现异常。\n\n选择「{0}」= 本次生效，且以后不再提示；选择「{1}」= 本次不做任何改动，下次尝试时仍会提示。",
   "pkg.editor.name": "显示名",
   "pkg.editor.preview": "预览图",
   "pkg.editor.chooseFile": "选择图片",

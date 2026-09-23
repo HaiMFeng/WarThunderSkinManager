@@ -72,11 +72,10 @@ public partial class MainViewModel : ObservableObject
         var current = Config.SyncBufferSeconds;
         if (current < MinBufferSeconds && _lastBufferSeconds >= MinBufferSeconds)
         {
-            MessageBox.Show(
+            MessageDialog.Warn(
                 Loc["settings.buffer.warn"],
                 Loc["settings.buffer.warnTitle"],
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                Application.Current?.MainWindow);
         }
 
         _lastBufferSeconds = current;
@@ -136,12 +135,12 @@ public partial class MainViewModel : ObservableObject
     private void ResetData()
     {
         // ① 第一次确认：说明后果
-        var first = MessageBox.Show(
+        var first = MessageDialog.Confirm(
             Loc["settings.reset.confirm1"],
             Loc["settings.reset.title"],
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning);
-        if (first != MessageBoxResult.OK) return;
+            Loc["common.continue"], Loc["common.cancel"],
+            danger: true, icon: DialogIcon.Danger);
+        if (!first) return;
 
         // ② 第二次确认：选择范围 + 输入确认词
         var reset = new ResetDataViewModel(Config);
@@ -149,12 +148,12 @@ public partial class MainViewModel : ObservableObject
         if (window.ShowDialog() != true) return;
 
         // ③ 第三次确认：列出将要删除的范围
-        var last = MessageBox.Show(
-            Loc.Format("settings.reset.confirm3", reset.SummaryText),
+        var last = MessageDialog.Confirm(
+            Loc.Format("settings.reset.confirm3", reset.SummaryText, Loc["settings.reset.action"]),
             Loc["settings.reset.title"],
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Stop);
-        if (last != MessageBoxResult.OK) return;
+            Loc["settings.reset.action"], Loc["common.cancel"],
+            danger: true, icon: DialogIcon.Danger);
+        if (!last) return;
 
         try
         {

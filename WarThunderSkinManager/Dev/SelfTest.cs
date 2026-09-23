@@ -202,6 +202,20 @@ internal static class SelfTest
             var langText = File.ReadAllText(Path.Combine(langRoot, "lang", "zh-CN.json"), Encoding.UTF8);
             log.AppendLine($"回写后包含 nav.skins : {langText.Contains("nav.skins")}");
 
+            // ---- 语言文件「内置文案更新」验证（基线机制：内置文案改版后能自动生效，用户的改动仍保留）----
+            var langRoot2 = Path.Combine(workDir, "langtest2");
+            Directory.CreateDirectory(Path.Combine(langRoot2, "lang"));
+            File.WriteAllText(Path.Combine(langRoot2, "lang", "zh-CN.json"),
+                "{\"app.title\":\"旧内置标题\",\"nav.skins\":\"用户自定义导航\"}", new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(langRoot2, "lang", "_zh-CN.defaults.json"),
+                "{\"app.title\":\"旧内置标题\",\"nav.skins\":\"导航\"}", new UTF8Encoding(false));
+
+            LocalizationManager.Instance.Load(langRoot2, "zh-CN");
+            log.AppendLine();
+            log.AppendLine("---- 语言文件内置文案更新（基线）----");
+            log.AppendLine($"app.title（曾与基线相同 = 没改过）→ 取新版内置：{loc["app.title"]}");
+            log.AppendLine($"nav.skins（与基线不同 = 用户改过）→ 保留用户值：{loc["nav.skins"]}");
+
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))

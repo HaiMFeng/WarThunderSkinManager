@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
+using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.ViewModels;
 
@@ -276,13 +277,13 @@ public partial class PackageEditorViewModel : ObservableObject
     {
         if (_modeNoticeSeen) return true;
 
-        var answer = MessageBox.Show(
-            Loc["pkg.editor.mode.notice"],
+        var accepted = MessageDialog.Confirm(
+            Loc.Format("pkg.editor.mode.notice", Loc["pkg.editor.mode.noticeOk"], Loc["common.cancel"]),
             Loc["pkg.editor.mode.noticeTitle"],
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning);
+            Loc["pkg.editor.mode.noticeOk"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
 
-        if (answer != MessageBoxResult.OK) return false;
+        if (!accepted) return false;
 
         _modeNoticeSeen = true;
         _config.ReplaceSetNoticeSeen = true;

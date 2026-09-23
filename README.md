@@ -61,6 +61,7 @@ WarThunderSkinManager/
 <配置目录>/
 ├── config.json                    # 三个目录路径、同步设置、语言
 ├── lang/zh-CN.json                # 语言文件（首次运行自动生成，可替换）
+├── lang/_zh-CN.defaults.json      # 内置文案基线（内部文件，用于内置文案更新）
 ├── mappings/vehicles.json         # 载具内部标识 ↔ 显示名
 ├── mappings/vehicle_countries.json# 载具 → 国家（用户手动归类，优先于前缀推断）
 ├── loadouts/<载具Id>.json         # 该载具激活的涂装包（{ activePackageId }）
@@ -97,7 +98,7 @@ dotnet run --project WarThunderSkinManager
 
 **已完成**
 - WPF 外壳：自定义窗口（`WindowChrome` + 自绘标题栏）、左侧图标导航、页面切换动效
-- 设计系统：设计令牌、按钮/输入框/卡片/复选框/滚动条等组件样式与过渡动画
+- 设计系统：设计令牌、按钮/输入框/卡片/复选框/开关/滚动条等组件样式与过渡动画；**统一消息对话框**（`MessageDialog`，全程序不使用系统 `MessageBox`，破坏性确认用实心红按钮）
 - 国际化：语言文件加载与 `{loc:Loc}` 绑定，切换语言刷新界面
 - 配置：三个目录 + 同步设置（自动同步、缓冲时间）的读写；选择目录后自动保存
 - 数据模型：`Vehicle` / `VehiclePart` / `SkinPackage` / `TexMapping` / `ActiveLoadout` / `Import` / `Country`

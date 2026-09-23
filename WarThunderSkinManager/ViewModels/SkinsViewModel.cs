@@ -385,13 +385,13 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        var confirm = MessageBox.Show(
+        var confirmed = MessageDialog.Confirm(
             Loc.Format("pkg.deleteConfirm", SelectedPackage.Name),
             Loc["pkg.deleteTitle"],
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning);
+            Loc["pkg.delete"], Loc["common.cancel"],
+            danger: true, icon: DialogIcon.Danger);
 
-        if (confirm != MessageBoxResult.OK) return;
+        if (!confirmed) return;
 
         try
         {
