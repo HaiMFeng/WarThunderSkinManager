@@ -23,7 +23,8 @@
                     <ControlTemplate TargetType="ListBoxItem">
                         <Grid>
                             <ContentPresenter/>
-                            <Border x:Name="ring" CornerRadius="12" BorderThickness="2" BorderBrush="Transparent"
+                            <!-- 圆角与卡片一致（10）：环画在卡片边缘内侧，避免悬停 / 选中时圆角缝隙露出页面底色 -->
+                            <Border x:Name="ring" CornerRadius="10" BorderThickness="2" BorderBrush="Transparent"
                                     IsHitTestVisible="False"/>
                         </Grid>
                         <ControlTemplate.Triggers>
@@ -248,7 +249,8 @@
                                     <Grid>
                                         <Border Background="{StaticResource BrushSurface}" CornerRadius="10"
                                                 BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                                                ClipToBounds="True" SnapsToDevicePixels="True">
+                                                ClipToBounds="True" SnapsToDevicePixels="True"
+                                                SizeChanged="ThumbBorder_SizeChanged">
                                             <Grid>
                                                 <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}"
                                                            FontSize="26" Foreground="{StaticResource BrushTextMuted}"

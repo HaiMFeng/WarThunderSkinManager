@@ -48,6 +48,20 @@ public partial class SkinManagementView : UserControl
     private void PackageList_Loaded(object sender, RoutedEventArgs e)
         => UpdateCardSize(PackageList.ActualWidth);
 
+    /// <summary>
+    /// 把缩略图容器裁剪成圆角：WPF 的 <c>ClipToBounds</c> 只按矩形裁剪、不理会 CornerRadius，
+    /// UniformToFill 的图片四个直角会盖在卡片圆角外。卡片尺寸随窗口自适应，因此在
+    /// SizeChanged 里按当前尺寸设置带圆角的 <see cref="RectangleGeometry"/> 裁剪。
+    /// </summary>
+    private void ThumbBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is not Border border || border.ActualWidth <= 0 || border.ActualHeight <= 0) return;
+
+        var radius = border.CornerRadius.TopLeft;
+        border.Clip = new RectangleGeometry(
+            new Rect(0, 0, border.ActualWidth, border.ActualHeight), radius, radius);
+    }
+
     /// <summary>按列表可用宽度计算卡片尺寸并做过渡动画。</summary>
     private void UpdateCardSize(double listWidth)
     {
