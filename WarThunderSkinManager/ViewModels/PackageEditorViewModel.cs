@@ -31,6 +31,9 @@ public partial class PackageEditorViewModel : ObservableObject
     /// <summary>载具结构可用（能取到同载具其他包）时才允许写回部件配置，避免误清空。</summary>
     private bool _canEditParts;
 
+    /// <summary>单个部件位置最多并入多少条跨载具候选（安全上限，正常远小于此值）。</summary>
+    private const int MaxCrossVehicleCandidates = 80;
+
     /// <summary>用户是否已知会过 replace/set 的含义（来自配置，确认一次后永久为 true）。</summary>
     private bool _modeNoticeSeen;
 
@@ -126,8 +129,9 @@ public partial class PackageEditorViewModel : ObservableObject
     // ---------- 部件贴图（§3.5 / §3.6）----------
 
     /// <summary>
-    /// 构建部件行：行为「该载具由各包 <c>from</c> 聚合出的部件位置」，
-    /// 候选为**同载具所有包中相同 <c>from</c>** 且贴图可用的条目（含本包自身），另加「无」项。
+    /// 构建部件行：行为「该载具由各包 <c>from</c> 聚合出的部件位置」；
+    /// 候选 = **本载具同 <c>from</c> 的可用贴图**（含本包自身）+ **其他载具同 <c>from</c> 的贴图**
+    /// （跨载具复用，界面标注来源载具，见 §3.6），另加「无」项。
     /// </summary>
     private void BuildParts()
     {
@@ -166,6 +170,8 @@ public partial class PackageEditorViewModel : ObservableObject
                     current[key] = candidate;
             }
 
+        AddCrossVehicleCandidates(pool);
+
         var noneLabel = Loc["pkg.editor.partNone"];
 
         foreach (var key in pool.Keys.OrderBy(k => k, StringComparer.Ordinal))
@@ -192,6 +198,70 @@ public partial class PackageEditorViewModel : ObservableObject
 
         _canEditParts = true;
         Parts = rows;
+    }
+
+    /// <summary>
+    /// 并入**跨载具**候选（功能设计 §3.6）：Gaijin 靠相同的 <c>from</c> 在不同载具间复用贴图，
+    /// 所以同名 <c>from</c> 的其他载具贴图也可以拿来用。
+    /// </summary>
+    /// <remarks>
+    /// 同一张贴图（同一内容 blob）常出现在多台载具上 → 合并成一条候选，标注「跨载具 · XX 等 N 台载具」；
+    /// 与本载具已有候选内容相同的（blob 相同）不再重复列出。候选来自库级部件表
+    /// <see cref="PartCatalog"/>（含库内全部载具，首次访问构建后缓存）。
+    /// </remarks>
+    private void AddCrossVehicleCandidates(Dictionary<string, List<PartCandidate>> pool)
+    {
+        if (string.IsNullOrWhiteSpace(_resourceDir)) return;
+
+        var userMappings = string.IsNullOrWhiteSpace(_configDir)
+            ? null
+            : ConfigService.LoadVehicleMappings(_configDir);
+
+        foreach (var key in pool.Keys.ToList())
+        {
+            var ownBlobs = new HashSet<string>(pool[key].Select(c => c.Blob), StringComparer.Ordinal);
+            var groups = new List<(PartCandidate Candidate, List<string> Vehicles)>();
+            var byBlob = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            foreach (var entry in PartCatalog.ForFrom(_resourceDir, key))
+            {
+                if (string.Equals(entry.VehicleId, _meta.VehicleId, StringComparison.OrdinalIgnoreCase)) continue;
+                if (ownBlobs.Contains(entry.Blob)) continue;
+
+                var vehicleName = VehicleNameTable.ResolveDisplayName(entry.VehicleId, userMappings);
+
+                if (byBlob.TryGetValue(entry.Blob, out var index))
+                {
+                    groups[index].Vehicles.Add(vehicleName);
+                    continue;
+                }
+
+                if (groups.Count >= MaxCrossVehicleCandidates) break; // 安全上限，避免候选爆炸
+
+                byBlob[entry.Blob] = groups.Count;
+                groups.Add((new PartCandidate
+                {
+                    PackageId = entry.PackageId,
+                    From = entry.From,
+                    To = entry.To,
+                    Mode = entry.Mode,
+                    Param = entry.Param,
+                    Blob = entry.Blob,
+                    IsCrossVehicle = true,
+                    Display = $"{entry.PackageName} · {entry.To}"
+                }, new List<string> { vehicleName }));
+            }
+
+            foreach (var (candidate, vehicles) in groups)
+            {
+                var names = vehicles.Distinct(StringComparer.Ordinal).ToList();
+                candidate.CrossVehicleText = names.Count <= 1
+                    ? Loc.Format("pkg.editor.crossVehicle", names[0])
+                    : Loc.Format("pkg.editor.crossVehicleMulti", names[0], names.Count);
+
+                pool[key].Add(candidate);
+            }
+        }
     }
 
     /// <summary>取来源包中某贴图的内容哈希（不含扩展名）。</summary>

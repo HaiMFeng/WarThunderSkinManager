@@ -237,6 +237,8 @@ public partial class MainViewModel : ObservableObject
         {
             var errors = reset.Execute();
 
+            PartCatalog.Invalidate(); // 库被清 → 部件表重建
+
             // 清掉的可能是当前展示的数据 → 让两个页面重新加载
             Skins.RefreshCommand.Execute(null);
             Vehicles.RefreshCommand.Execute(null);

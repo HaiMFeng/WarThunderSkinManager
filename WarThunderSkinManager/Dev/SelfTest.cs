@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Common;
 using SharpCompress.Writers;
@@ -272,6 +273,74 @@ internal static class SelfTest
                                  .Select(t => t.Text + ToneMark(t.Tone))) + "]");
             }
 
+            // ---- 库级部件表 / 跨载具复用（§3.5 / §3.6）----
+            log.AppendLine();
+            log.AppendLine("---- 部件表（跨载具复用）----");
+
+            // 造第二台载具：与第一台**共用同一个部件位置（from）** → 两台载具的贴图应能互相复用
+            var crossSource = Path.Combine(workDir, "cross-src", "ModB");
+            CopyDirectory(sourceFolder, crossSource);
+            foreach (var blk in Directory.GetFiles(crossSource, "*.blk"))
+            {
+                var renamed = Path.Combine(crossSource, "f_15c.blk");
+                if (!string.Equals(blk, renamed, StringComparison.OrdinalIgnoreCase)) File.Move(blk, renamed);
+            }
+
+            // 让第二台载具的同名部件用**不同内容**的贴图（否则内容寻址会去重成同一张，看不出跨载具候选）
+            foreach (var texture in Directory.GetFiles(crossSource, "*.dds"))
+                File.WriteAllBytes(texture, Enumerable.Range(101, 32).Select(i => (byte)i).ToArray());
+
+            ImportService.ImportFolder(crossSource, resourceDir, ImportSourceType.Folder);
+            PartCatalog.Invalidate();
+
+            var firstVehicleId = Path.GetFileNameWithoutExtension(
+                Directory.GetFiles(sourceFolder, "*.blk").First());
+            var sharedFrom = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId)
+                ?.Parts.FirstOrDefault()?.From ?? "";
+
+            var partEntries = PartCatalog.ForFrom(resourceDir, sharedFrom);
+            var partVehicles = partEntries.Select(e => e.VehicleId)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            log.AppendLine($"部件表规模: {PartCatalog.PartCount(resourceDir)} 个部件位置");
+            log.AppendLine($"部件「{sharedFrom}」: {partEntries.Count} 条可用贴图，"
+                         + $"涉及 {partVehicles.Count} 台载具（{string.Join("、", partVehicles)}）"
+                         + $"→ 跨载具复用可用 = {partVehicles.Count > 1}");
+
+            // 属性界面候选里应出现**跨载具**项（含来源载具标注）
+            try
+            {
+                var crossPackage = PackageStore.LoadAll(resourceDir).FirstOrDefault(
+                    m => string.Equals(m.VehicleId, firstVehicleId, StringComparison.OrdinalIgnoreCase));
+
+                if (crossPackage != null)
+                {
+                    var editorConfig = new AppConfig
+                    {
+                        ConfigDirectory = Path.Combine(workDir, "cross-cfg"),
+                        ResourceDirectory = resourceDir
+                    };
+
+                    var editorModel = new PackageEditorViewModel(editorConfig, crossPackage);
+                    var crossCandidates = editorModel.Parts
+                        .SelectMany(r => r.Candidates)
+                        .Where(c => c.IsCrossVehicle)
+                        .Select(c => $"{c.Display} [{c.CrossVehicleText}]")
+                        .Distinct(StringComparer.Ordinal)
+                        .ToList();
+
+                    log.AppendLine($"属性界面候选中的跨载具项: {crossCandidates.Count} 条"
+                                 + (crossCandidates.Count > 0 ? $" → {string.Join("；", crossCandidates)}" : ""));
+                }
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine($"属性界面候选验证失败: {ex.GetType().Name} {ex.Message}");
+            }
+
+            PartCatalog.Invalidate();
+            log.AppendLine($"Invalidate 后重建: {PartCatalog.ForFrom(resourceDir, sharedFrom).Count} 条");
+
             // ---- 压缩包导入（§3.1：拖入压缩包）----
             log.AppendLine();
             log.AppendLine("---- 压缩包导入 ----");
@@ -345,6 +414,53 @@ internal static class SelfTest
             var optionCfg = ConfigService.Load(optionCfgDir);
             log.AppendLine($"config.json 往返: UserSkins={optionCfg.ImportDeleteSourceUserSkins}"
                          + $"、文件夹={optionCfg.ImportDeleteSourceFolder}、压缩包={optionCfg.ImportDeleteArchive}");
+
+            // ---- 映射文件导出 / 导入 / 合并（§3.7）----
+            log.AppendLine();
+            log.AppendLine("---- 映射文件导出 / 合并 ----");
+
+            var mappingDir = Path.Combine(workDir, "mappings-out");
+            var mappingFile = Path.Combine(mappingDir, "vehicles.json");
+            var currentMappings = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["f_15e"] = "F-15E（我起的名字）",
+                ["cn_vt_5"] = "VT-5",
+                ["su_30mkk"] = "苏-30MKK"
+            };
+
+            MappingFiles.Export(mappingFile, currentMappings);
+            log.AppendLine($"导出: {Path.GetFileName(mappingFile)}（{new FileInfo(mappingFile).Length} 字节，{currentMappings.Count} 条）");
+
+            var readBack = MappingFiles.Read(mappingFile);
+            log.AppendLine($"读回: {readBack.Count} 条，f_15e = {readBack["f_15e"]}");
+
+            var incomingMappings = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["f_15e"] = "F-15E Strike Eagle",
+                ["cn_vt_5"] = "VT-5",
+                ["jp_type_90"] = "90 式战车"
+            };
+            var mergePlan = MappingFiles.Plan(currentMappings, incomingMappings);
+            log.AppendLine($"合并方案: 新增 {mergePlan.Added.Count} 条（{string.Join("、", mergePlan.Added.Keys)}）、"
+                         + $"冲突 {mergePlan.Conflicts.Count} 条、相同 {mergePlan.SameCount} 条");
+            foreach (var conflict in mergePlan.Conflicts)
+                log.AppendLine($"  冲突 {conflict.VehicleId}: 现有「{conflict.Current}」↔ 导入「{conflict.Incoming}」");
+
+            var badMappingFile = Path.Combine(mappingDir, "bad.json");
+            File.WriteAllText(badMappingFile, "[1,2,3]", new UTF8Encoding(false));
+            try
+            {
+                MappingFiles.Read(badMappingFile);
+                log.AppendLine("格式错误的文件: 未抛异常（异常）");
+            }
+            catch (JsonException ex)
+            {
+                log.AppendLine($"格式错误的文件: 已按格式问题捕获（{ex.GetType().Name}）");
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine($"格式错误的文件: 其他异常（{ex.GetType().Name}）");
+            }
 
             // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----
             var cleanupRoot = Path.Combine(workDir, "cleanup", "MyPack");

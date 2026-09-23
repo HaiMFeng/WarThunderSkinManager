@@ -222,7 +222,25 @@
                                                   SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}">
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate>
-                                                    <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"/>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"/>
+                                                        <!-- 跨载具复用标注：Gaijin 靠相同的 from 在不同载具间复用贴图（§3.6） -->
+                                                        <Border Margin="6,0,0,0" VerticalAlignment="Center">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border" BasedOn="{StaticResource Tag}">
+                                                                    <Setter Property="Background" Value="{StaticResource BrushTagCrossBg}"/>
+                                                                    <Setter Property="BorderBrush" Value="{StaticResource BrushTagCrossBorder}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsCrossVehicle}" Value="False">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <TextBlock Text="{Binding CrossVehicleText}" FontSize="11"
+                                                                       Foreground="{StaticResource BrushTagCrossText}"/>
+                                                        </Border>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>

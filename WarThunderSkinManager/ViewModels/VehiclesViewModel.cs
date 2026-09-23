@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
 
@@ -136,6 +138,117 @@ public partial class VehiclesViewModel : ObservableObject
 
     [RelayCommand]
     private void Refresh() => RefreshLibrary();
+
+    // ---------- 映射文件导出 / 导入 / 合并（§3.7）----------
+
+    /// <summary>把当前显示名映射导出到用户选择的 JSON 文件（便于备份 / 分享 / 换机）。</summary>
+    [RelayCommand]
+    private void ExportMappings()
+    {
+        if (_config.ConfigDirectory.Length == 0)
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = Loc["vehicles.mappings.exportTitle"],
+            FileName = "vehicles.json",
+            DefaultExt = ".json",
+            Filter = Loc[MappingFiles.FilterKey]
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            MappingFiles.Export(dialog.FileName, _displayNames);
+            ShowStatus(Loc.Format("vehicles.mappings.exported", _displayNames.Count, dialog.FileName));
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("vehicles.mappings.exportFailed", ex.Message));
+        }
+    }
+
+    /// <summary>导入映射文件：**替换**当前全部映射（确认后执行，§3.7）。</summary>
+    [RelayCommand]
+    private void ImportMappings()
+    {
+        var incoming = ReadMappingsFromFile("vehicles.mappings.importTitle");
+        if (incoming == null) return;
+
+        var confirmed = MessageDialog.Confirm(
+            Loc.Format("vehicles.mappings.importConfirm", incoming.Count, _displayNames.Count),
+            Loc["vehicles.mappings.importTitle"],
+            primaryText: Loc["vehicles.mappings.replace"],
+            danger: true);
+
+        if (!confirmed) return;
+
+        _displayNames = new Dictionary<string, string>(incoming, StringComparer.Ordinal);
+        SaveMappings();
+        RefreshLibrary();
+        ShowStatus(Loc.Format("vehicles.mappings.imported", _displayNames.Count));
+    }
+
+    /// <summary>合并映射文件：新增直接并入，冲突**逐个弹窗**让用户选择保留哪个（§3.7）。</summary>
+    [RelayCommand]
+    private void MergeMappings()
+    {
+        var incoming = ReadMappingsFromFile("vehicles.mappings.mergeTitle");
+        if (incoming == null) return;
+
+        var plan = MappingFiles.Plan(_displayNames, incoming);
+
+        foreach (var pair in plan.Added)
+            _displayNames[pair.Key] = pair.Value;
+
+        foreach (var conflict in plan.Conflicts)
+        {
+            var useIncoming = MessageDialog.Confirm(
+                Loc.Format("vehicles.mappings.conflict",
+                    conflict.VehicleId, conflict.Current, conflict.Incoming),
+                Loc["vehicles.mappings.mergeTitle"],
+                primaryText: Loc["vehicles.mappings.useIncoming"],
+                cancelText: Loc["vehicles.mappings.keepCurrent"]);
+
+            if (useIncoming) _displayNames[conflict.VehicleId] = conflict.Incoming;
+        }
+
+        SaveMappings();
+        RefreshLibrary();
+        ShowStatus(Loc.Format("vehicles.mappings.merged",
+            plan.Added.Count, plan.Conflicts.Count, plan.SameCount));
+    }
+
+    /// <summary>弹出文件选择并读取映射文件；取消或读取失败返回 <c>null</c>（失败已提示）。</summary>
+    private Dictionary<string, string>? ReadMappingsFromFile(string titleKey)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = Loc[titleKey],
+            Filter = Loc[MappingFiles.FilterKey]
+        };
+
+        if (dialog.ShowDialog() != true) return null;
+
+        try
+        {
+            return MappingFiles.Read(dialog.FileName);
+        }
+        catch (JsonException ex)
+        {
+            ShowStatus(Loc.Format("vehicles.mappings.badFormat", ex.Message));
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("vehicles.mappings.readFailed", ex.Message));
+            return null;
+        }
+    }
 
     // ---------- 内部 ----------
 

@@ -36,6 +36,15 @@ public sealed class PartCandidate
     /// <summary>下拉显示文案（**不含写入方式**——写入方式由独立滑块控制）</summary>
     public string Display { get; init; } = "";
 
+    /// <summary>
+    /// 是否来自**其他载具**（功能设计 §3.6「跨载具复用」）：
+    /// Gaijin 靠相同的 <c>from</c> 在不同载具间复用贴图，这类候选在界面上会**标注**来源载具。
+    /// </summary>
+    public bool IsCrossVehicle { get; init; }
+
+    /// <summary>跨载具候选的标注文案（非跨载具时为空）</summary>
+    public string CrossVehicleText { get; set; } = "";
+
     public override string ToString() => Display;
 }
 

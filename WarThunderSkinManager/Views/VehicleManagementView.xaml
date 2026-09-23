@@ -45,8 +45,16 @@
                 </TextBlock.Style>
             </TextBlock>
 
-            <Button Grid.Column="2" Content="{loc:Loc skins.refresh}" Style="{StaticResource SecondaryButton}"
-                    VerticalAlignment="Bottom" Command="{Binding Vehicles.RefreshCommand}"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button Content="{loc:Loc vehicles.mappings.export}" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding Vehicles.ExportMappingsCommand}"/>
+                <Button Content="{loc:Loc vehicles.mappings.import}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                        Command="{Binding Vehicles.ImportMappingsCommand}"/>
+                <Button Content="{loc:Loc vehicles.mappings.merge}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                        Command="{Binding Vehicles.MergeMappingsCommand}"/>
+                <Button Content="{loc:Loc skins.refresh}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                        Command="{Binding Vehicles.RefreshCommand}"/>
+            </StackPanel>
         </Grid>
 
         <!-- 主体：左侧载具列表 + 右侧详情 -->

@@ -344,6 +344,7 @@ public partial class SkinsViewModel : ObservableObject
 
         editor.Apply();
         PackageStore.SaveMeta(_config.ResourceDirectory, meta);
+        PartCatalog.Invalidate(); // 包内容变了 → 部件表下次访问重建
 
         var wasActive = SelectedPackage.IsActive;
         RefreshLibrary();
@@ -363,6 +364,7 @@ public partial class SkinsViewModel : ObservableObject
             var copy = PackageStore.Duplicate(_config.ResourceDirectory, SelectedPackage.Id, newName);
             if (copy == null) return;
 
+            PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
             RefreshLibrary();
             SelectPackage(copy.Id);
             ShowStatus(Loc.Format("pkg.duplicated", copy.Name));
@@ -411,6 +413,7 @@ public partial class SkinsViewModel : ObservableObject
             PreviewStore.Delete(_config.ConfigDirectory, id);
             PackageStore.Delete(_config.ResourceDirectory, id);
 
+            PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
             RefreshLibrary();
             ShowStatus(Loc["pkg.deleted"]);
         }
@@ -606,6 +609,7 @@ public partial class SkinsViewModel : ObservableObject
             RememberImportChoices(sourceType, preview);
             preview.ApplyNames();
             var result = ImportService.Commit(candidates, _config.ResourceDirectory, sourceType, sourcePath);
+            PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
 
             var message = Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
             if (preview.DeleteSource)

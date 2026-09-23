@@ -30,12 +30,10 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource BrushBorderStrong}"/>
                             </Trigger>
+                            <!-- 描边只表示「选中」（主色蓝）；「激活」用绿色徽标 + 绿色名字条，两种状态互不遮挡 -->
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource BrushPrimaryFill}"/>
                             </Trigger>
-                            <DataTrigger Binding="{Binding IsActive}" Value="True">
-                                <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource BrushPrimary}"/>
-                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -217,9 +215,9 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- 当前激活的涂装包 -->
+                        <!-- 当前激活的涂装包（绿，与选中态的主色蓝区分） -->
                         <TextBlock DockPanel.Dock="Top" Text="{Binding Skins.ActivePackageText}" FontSize="13"
-                                   Foreground="{StaticResource BrushPrimary}" Margin="0,0,0,10"/>
+                                   Foreground="{StaticResource BrushActive}" Margin="0,0,0,10"/>
 
                         <!-- 卡片网格（列数与尺寸随窗口自适应；可拖动排序；右键菜单可激活/编辑等） -->
                         <ListBox x:Name="PackageList"
@@ -276,16 +274,26 @@
                                                 <Image Stretch="UniformToFill" Source="{Binding PreviewImage}"/>
                                             </Grid>
                                         </Border>
-                                        <!-- 底部半透明名字条 -->
-                                        <Border VerticalAlignment="Bottom" Background="#B3101828"
+                                        <!-- 底部半透明名字条（激活的包用绿色条，与选中态的蓝色描边区分） -->
+                                        <Border VerticalAlignment="Bottom"
                                                 CornerRadius="0,0,10,10" Padding="9,6">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#B3101828"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="Background" Value="{StaticResource BrushActiveStrip}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
                                             <TextBlock Text="{Binding Name}" Foreground="White" FontSize="12"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </Border>
-                                        <!-- 已激活标记 -->
+                                        <!-- 已激活标记（绿） -->
                                         <Border VerticalAlignment="Top" HorizontalAlignment="Left"
                                                 Margin="8" Padding="8,3" CornerRadius="9"
-                                                Background="{StaticResource BrushPrimaryFill}">
+                                                Background="{StaticResource BrushActiveFill}">
                                             <Border.Style>
                                                 <Style TargetType="Border">
                                                     <Setter Property="Visibility" Value="Collapsed"/>

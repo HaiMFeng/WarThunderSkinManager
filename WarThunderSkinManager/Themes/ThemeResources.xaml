@@ -41,6 +41,14 @@
     <Color x:Key="ColorTagWeaponBg">#FEE2E2</Color>
     <Color x:Key="ColorTagWeaponBorder">#EF4444</Color>
     <Color x:Key="ColorTagWeaponText">#B91C1C</Color>
+    <!-- 跨载具复用标注（紫） -->
+    <Color x:Key="ColorTagCrossBg">#EDE9FE</Color>
+    <Color x:Key="ColorTagCrossBorder">#8B5CF6</Color>
+    <Color x:Key="ColorTagCrossText">#6D28D9</Color>
+    <!-- 激活状态（绿）：与「选中」的主色蓝区分开，两种状态不撞色 -->
+    <Color x:Key="ColorActive">#16A34A</Color>
+    <Color x:Key="ColorActiveFill">#22C55E</Color>
+    <Color x:Key="ColorActiveStrip">#CC15803D</Color>
 
     <SolidColorBrush x:Key="BrushPrimary" Color="{StaticResource ColorPrimary}"/>
     <SolidColorBrush x:Key="BrushPrimaryHover" Color="{StaticResource ColorPrimaryHover}"/>
@@ -76,6 +84,12 @@
     <SolidColorBrush x:Key="BrushTagWeaponBg" Color="{StaticResource ColorTagWeaponBg}"/>
     <SolidColorBrush x:Key="BrushTagWeaponBorder" Color="{StaticResource ColorTagWeaponBorder}"/>
     <SolidColorBrush x:Key="BrushTagWeaponText" Color="{StaticResource ColorTagWeaponText}"/>
+    <SolidColorBrush x:Key="BrushTagCrossBg" Color="{StaticResource ColorTagCrossBg}"/>
+    <SolidColorBrush x:Key="BrushTagCrossBorder" Color="{StaticResource ColorTagCrossBorder}"/>
+    <SolidColorBrush x:Key="BrushTagCrossText" Color="{StaticResource ColorTagCrossText}"/>
+    <SolidColorBrush x:Key="BrushActive" Color="{StaticResource ColorActive}"/>
+    <SolidColorBrush x:Key="BrushActiveFill" Color="{StaticResource ColorActiveFill}"/>
+    <SolidColorBrush x:Key="BrushActiveStrip" Color="{StaticResource ColorActiveStrip}"/>
 
     <!-- ============ 字体图标族 ============ -->
     <FontFamily x:Key="IconFont">Segoe MDL2 Assets</FontFamily>
