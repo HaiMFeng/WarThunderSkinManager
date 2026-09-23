@@ -306,6 +306,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "pkg.activate": "激活为当前涂装",
   "pkg.deactivate": "取消激活",
   "pkg.activated": "已激活「{0}」",
+  "pkg.activatedSynced": "已激活「{0}」；{1}",
   "pkg.deactivated": "已取消激活",
   "pkg.edit": "编辑",
   "pkg.duplicate": "复制",

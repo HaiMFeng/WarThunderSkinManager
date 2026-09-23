@@ -186,7 +186,10 @@ public partial class SkinsViewModel : ObservableObject
                   ImportSourceType.UserSkins, userSkins);
     }
 
-    /// <summary>激活该套涂装包（每载具同一时刻只激活一套；§3.8）。</summary>
+    /// <summary>
+    /// 激活该套涂装包（每载具同一时刻只激活一套；§3.8），并**立即同步该载具**
+    /// ——右键激活是明确要输出这套包，不该还要再点一次「同步此载具」。
+    /// </summary>
     [RelayCommand]
     private void ActivatePackage(SkinPackage? package)
     {
@@ -197,8 +200,11 @@ public partial class SkinsViewModel : ObservableObject
         LoadoutService.Activate(_config.ConfigDirectory, vehicleId, package.Id);
         LoadActivation();
 
-        ScheduleAutoSync();
-        ShowStatus(Loc.Format("pkg.activated", package.Name));
+        // 不受「自动同步 / 缓冲时间」影响：显式激活 = 立刻落盘（游戏热重载生效）
+        var activated = Loc.Format("pkg.activated", package.Name);
+        var sync = SyncCurrentVehicleMessage();
+
+        ShowStatus(sync.Length > 0 ? Loc.Format("pkg.activatedSynced", package.Name, sync) : activated);
     }
 
     /// <summary>取消该载具的激活（不再向 WTSM 输出该载具）。</summary>
@@ -226,7 +232,11 @@ public partial class SkinsViewModel : ObservableObject
     [RelayCommand]
     private void SyncAll()
     {
-        if (!EnsureOutputDirs(out var userSkins, out var resourceDir)) return;
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error))
+        {
+            ShowStatus(error);
+            return;
+        }
 
         try
         {
@@ -263,18 +273,20 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
-    private void SyncCurrentVehicle()
+    private void SyncCurrentVehicle() => ShowStatus(SyncCurrentVehicleMessage());
+
+    /// <summary>
+    /// 同步当前载具（§3.8）并返回结果文案；无法同步时返回原因文案
+    /// （供「同步此载具」按钮与「激活即同步」共用）。
+    /// </summary>
+    private string SyncCurrentVehicleMessage()
     {
-        if (SelectedVehicle == null) return;
+        if (SelectedVehicle == null) return "";
 
         var active = Packages.FirstOrDefault(p => p.IsActive);
-        if (active == null)
-        {
-            ShowStatus(Loc["skins.needActive"]);
-            return;
-        }
+        if (active == null) return Loc["skins.needActive"];
 
-        if (!EnsureOutputDirs(out var userSkins, out var resourceDir)) return;
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return error;
 
         try
         {
@@ -284,11 +296,11 @@ public partial class SkinsViewModel : ObservableObject
             var message = Loc.Format("skins.syncDone", report.BlkEntries, report.WrittenTextures);
             if (report.Warnings.Count > 0)
                 message += " " + Loc.Format("skins.syncWarnings", report.Warnings.Count);
-            ShowStatus(message);
+            return message;
         }
         catch (Exception ex)
         {
-            ShowStatus(Loc.Format("skins.syncFailed", ex.Message));
+            return Loc.Format("skins.syncFailed", ex.Message);
         }
     }
 
@@ -837,22 +849,31 @@ public partial class SkinsViewModel : ObservableObject
         return false;
     }
 
-    private bool EnsureOutputDirs(out string userSkins, out string resourceDir)
+    /// <summary>
+    /// 校验输出所需目录；失败时通过 <paramref name="error"/> 返回原因文案
+    /// （**不直接提示**，由调用方决定怎么显示——例如「激活即同步」要把它拼在激活提示后面）。
+    /// </summary>
+    private bool EnsureOutputDirs(out string userSkins, out string resourceDir, out string error)
     {
         userSkins = _config.UserSkinsDirectory;
         resourceDir = _config.ResourceDirectory;
+        error = "";
 
-        if (!EnsureConfigDir()) return false;
+        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
+        {
+            error = Loc["settings.configDirRequired"];
+            return false;
+        }
 
         if (string.IsNullOrWhiteSpace(userSkins) || !Directory.Exists(userSkins))
         {
-            ShowStatus(Loc["import.needUserSkins"]);
+            error = Loc["import.needUserSkins"];
             return false;
         }
 
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
         {
-            ShowStatus(Loc["import.needResource"]);
+            error = Loc["import.needResource"];
             return false;
         }
 
