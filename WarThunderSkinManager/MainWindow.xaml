@@ -31,16 +31,17 @@
         </EventTrigger>
     </Window.Triggers>
 
-    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
+    <Border x:Name="RootBorder" BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="36"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 自定义标题栏 -->
+            <!-- 自定义标题栏（拖动阈值后才进 DragMove，保证双击切换最大化可用） -->
             <Grid Grid.Row="0" Background="{StaticResource BrushBackground}"
-                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+                  MouseMove="TitleBar_MouseMove">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -54,7 +55,20 @@
                            Text="{Binding StatusMessage}"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Style="{StaticResource TitleBarButton}" Content="&#xE921;" Click="Minimize_Click"/>
-                    <Button Style="{StaticResource TitleBarButton}" Content="&#xE922;" Click="Maximize_Click"/>
+                    <!-- 最大化 ⇄ 还原：图标随窗口状态切换 -->
+                    <Button Click="Maximize_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
+                                <Setter Property="Content" Value="&#xE922;"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                 Value="Maximized">
+                                        <Setter Property="Content" Value="&#xE923;"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;" Click="Close_Click"/>
                 </StackPanel>
             </Grid>
