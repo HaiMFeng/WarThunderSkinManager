@@ -107,6 +107,13 @@ public partial class SkinManagementView : UserControl
         _dragPackageId = _dragContainer?.DataContext is SkinPackage package ? package.Id : null;
     }
 
+    /// <summary>右键先在卡片上选中它，使上下文菜单作用于该涂装包。</summary>
+    private void PackageCard_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem item)
+            item.IsSelected = true;
+    }
+
     private void PackageCard_MouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed || _dragPackageId == null) return;

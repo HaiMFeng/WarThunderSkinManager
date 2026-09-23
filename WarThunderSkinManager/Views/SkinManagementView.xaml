@@ -14,6 +14,7 @@
             <Setter Property="VerticalContentAlignment" Value="Stretch"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PackageCard_PreviewMouseLeftButtonDown"/>
+            <EventSetter Event="PreviewMouseRightButtonDown" Handler="PackageCard_PreviewMouseRightButtonDown"/>
             <EventSetter Event="MouseMove" Handler="PackageCard_MouseMove"/>
             <EventSetter Event="DragOver" Handler="PackageCard_DragOver"/>
             <EventSetter Event="Drop" Handler="PackageCard_Drop"/>
@@ -190,37 +191,22 @@
                             </Style>
                         </DockPanel.Style>
 
-                        <!-- 载具标题 -->
-                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
-                            <TextBlock Text="{Binding Skins.SelectedVehicleTitle}" FontSize="18" FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding Skins.SelectedVehicleSubtitle}" Style="{StaticResource PageSubtitle}"
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
-
-                        <!-- 涂装包标题 + 操作 -->
-                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                <Button Content="{loc:Loc pkg.edit}" Style="{StaticResource SecondaryButton}"
-                                        Height="28" Padding="10,0"
-                                        IsEnabled="{Binding Skins.HasSelectedPackage}"
-                                        Command="{Binding Skins.EditPackageCommand}"/>
-                                <Button Content="{loc:Loc pkg.duplicate}" Style="{StaticResource SecondaryButton}"
-                                        Height="28" Padding="10,0" Margin="6,0,0,0"
-                                        IsEnabled="{Binding Skins.HasSelectedPackage}"
-                                        Command="{Binding Skins.DuplicatePackageCommand}"/>
-                                <Button Content="{loc:Loc pkg.export}" Style="{StaticResource SecondaryButton}"
-                                        Height="28" Padding="10,0" Margin="6,0,0,0"
-                                        IsEnabled="{Binding Skins.HasSelectedPackage}"
-                                        Command="{Binding Skins.ExportPackageCommand}"/>
-                                <Button Content="{loc:Loc pkg.delete}" Style="{StaticResource DangerButton}"
-                                        Height="28" Padding="10,0" Margin="6,0,0,0"
-                                        IsEnabled="{Binding Skins.HasSelectedPackage}"
-                                        Command="{Binding Skins.DeletePackageCommand}"/>
+                        <!-- 载具标题 + 涂装包数量（右上角，省出纵向空间） -->
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding Skins.SelectedVehicleTitle}" FontSize="18" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Skins.SelectedVehicleSubtitle}" Style="{StaticResource PageSubtitle}"
+                                           Margin="0,4,0,0"/>
                             </StackPanel>
-                            <TextBlock Text="{Binding Skins.PackagesTitle}" Style="{StaticResource SectionTitle}"
-                                       VerticalAlignment="Center"/>
-                        </DockPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding Skins.PackagesTitle}" FontSize="13"
+                                       Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Top"
+                                       Margin="12,4,0,0"/>
+                        </Grid>
 
                         <!-- 卡片网格（列数与尺寸随窗口自适应；可拖动排序） -->
                         <ListBox x:Name="PackageList"
@@ -233,6 +219,23 @@
                                  MouseDoubleClick="PackageList_MouseDoubleClick"
                                  Loaded="PackageList_Loaded"
                                  SizeChanged="PackageList_SizeChanged">
+                            <!-- 右键菜单：作用于当前选中的涂装包 -->
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="{loc:Loc pkg.edit}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.EditPackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <MenuItem Header="{loc:Loc pkg.duplicate}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.DuplicatePackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <MenuItem Header="{loc:Loc pkg.export}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.ExportPackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <MenuItem Header="{loc:Loc pkg.delete}" Foreground="{StaticResource BrushDanger}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.DeletePackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <!-- 初值仅兜底；实际尺寸在 Loaded / SizeChanged 时按可用宽度计算（见 .xaml.cs） -->
