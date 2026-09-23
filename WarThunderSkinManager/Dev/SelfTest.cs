@@ -238,7 +238,9 @@ internal static class SelfTest
 
             // ---- 部件标签推测（§3.6，命名规律见格式文档 §6；仅供参考）----
             log.AppendLine();
-            log.AppendLine("---- 部件标签推测（部位 + 贴图类型）----");
+            log.AppendLine("---- 部件标签推测（武器 + 部位 + 贴图类型）----");
+            log.AppendLine($"武器表（units_weaponry.csv）登记键: {WeaponCatalog.KeyCount} 个");
+            log.AppendLine("标签后的 ·绿/·黄/·红 为胶囊色调（纹理 / 法线 / 武器）");
             foreach (var (from, vehicleId) in new[]
                      {
                          // 普通部件：靠部件词识别
@@ -252,13 +254,18 @@ internal static class SelfTest
                          // 主体贴图：前缀 = 载具标识，且其后只剩贴图类型后缀
                          ("f_15e_c", "f_15e"), ("cn_vt_5_n", "cn_vt_5"), ("f_15e_c_dmg", "f_15e"), ("f_15e", "f_15e"),
                          ("su_30mkk_c", "su_30mkk"),
+                         // 武器 / 导弹：查内置武器表（units_weaponry.csv）
+                         ("su_r_77_1_missile_c", "su_30mkk"), ("su_r_73_n", "su_30mkk"), ("pL12_missile_c", "j_10c"),
+                         ("88mm_flak41_c", "germ_flak41"), ("cn_ztz_99_c", "cn_ztz_99"),
+                         ("su_30mkk_pylon1_c", "su_30mkk"),
                          // 反例：同样以 _c / _n 结尾，但标识之后还有别的词 → 不给「载具主体」
                          ("su_30mkk_pylon1_n", "su_30mkk"), ("su_30mkk_gun1_c", "su_30mkk"),
                          ("f_15e_wing_l_c", "f_15e"), ("jp_type_90_c", "f_15e"), ("f_15e_cockpit_c", "f_15e")
                      })
             {
                 log.AppendLine($"{from,-28} (载具 {vehicleId}) → ["
-                             + string.Join("][", PartTagResolver.Resolve(from, vehicleId).Select(t => t.Text)) + "]");
+                             + string.Join("][", PartTagResolver.Resolve(from, vehicleId)
+                                 .Select(t => t.Text + ToneMark(t.Tone))) + "]");
             }
 
             // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----
@@ -339,6 +346,15 @@ internal static class SelfTest
             // 忽略
         }
     }
+
+    /// <summary>标签色调标记（自检输出里用文字代替颜色看结果）。</summary>
+    private static string ToneMark(TagTone tone) => tone switch
+    {
+        TagTone.Texture => "·绿",
+        TagTone.Normal => "·黄",
+        TagTone.Weapon => "·红",
+        _ => ""
+    };
 
     /// <summary>递归复制目录（自检用，避免动到真实数据）。</summary>
     private static void CopyDirectory(string source, string destination)

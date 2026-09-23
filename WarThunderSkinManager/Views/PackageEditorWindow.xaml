@@ -147,19 +147,26 @@
                                                                                 <Setter Property="Background" Value="{StaticResource BrushTagNormalBg}"/>
                                                                                 <Setter Property="BorderBrush" Value="{StaticResource BrushTagNormalBorder}"/>
                                                                             </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Tone}" Value="Weapon">
+                                                                                <Setter Property="Background" Value="{StaticResource BrushTagWeaponBg}"/>
+                                                                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagWeaponBorder}"/>
+                                                                            </DataTrigger>
                                                                         </Style.Triggers>
                                                                     </Style>
                                                                 </Border.Style>
                                                                 <TextBlock Text="{Binding Text}" FontSize="11">
                                                                     <TextBlock.Style>
                                                                         <Style TargetType="TextBlock">
-                                                                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                                                            <Setter Property="Foreground" Value="{StaticResource BrushTagDefaultText}"/>
                                                                             <Style.Triggers>
                                                                                 <DataTrigger Binding="{Binding Tone}" Value="Texture">
                                                                                     <Setter Property="Foreground" Value="{StaticResource BrushTagTextureText}"/>
                                                                                 </DataTrigger>
                                                                                 <DataTrigger Binding="{Binding Tone}" Value="Normal">
                                                                                     <Setter Property="Foreground" Value="{StaticResource BrushTagNormalText}"/>
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding Tone}" Value="Weapon">
+                                                                                    <Setter Property="Foreground" Value="{StaticResource BrushTagWeaponText}"/>
                                                                                 </DataTrigger>
                                                                             </Style.Triggers>
                                                                         </Style>

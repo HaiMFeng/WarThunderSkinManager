@@ -10,7 +10,10 @@ public enum TagTone
     Texture,
 
     /// <summary>法线（<c>_c</c>）：黄色</summary>
-    Normal
+    Normal,
+
+    /// <summary>武器 / 导弹（由内置武器表确认）：红色</summary>
+    Weapon
 }
 
 /// <summary>

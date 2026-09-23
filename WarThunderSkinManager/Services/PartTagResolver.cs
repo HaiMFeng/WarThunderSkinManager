@@ -87,7 +87,7 @@ public static class PartTagResolver
     /// </param>
     public static IReadOnlyList<PartTag> Resolve(string from, string? vehicleId = null)
     {
-        var tags = new List<PartTag>(2);
+        var tags = new List<PartTag>(3);
         if (string.IsNullOrWhiteSpace(from)) return tags;
 
         var lower = from.Replace("*", string.Empty).Trim().ToLowerInvariant();
@@ -95,16 +95,36 @@ public static class PartTagResolver
         var part = FindPart(lower);
         var type = FindType(lower);
 
+        // 去掉贴图类型后缀后的「部件核心」，用于查武器表
+        var core = type == null ? lower : lower[..^type.Value.Suffix.Length];
+
+        // 1) 武器 / 导弹：查内置武器表（§3.6，命中标红）
+        var isWeapon = WeaponCatalog.IsWeapon(core);
+        if (isWeapon)
+            tags.Add(new PartTag { Text = Loc["part.tag.weapon"], Tone = TagTone.Weapon });
+
         // 前缀就是载具标识、中间没有部件词（如 `f_15e_c` / `cn_vt_5_n`）→ 载具主体贴图
         if (IsVehicleBody(lower, vehicleId, part))
             part = "part.tag.vehicleBody";
 
-        // 第 1 个 = 部位 / 功能（默认色）；第 2 个 = 贴图类型（带色调，便于区分）
-        if (part != null) tags.Add(new PartTag { Text = Loc[part] });
-        if (type != null) tags.Add(new PartTag { Text = Loc[type], Tone = ToneOf(type) });
+        // 2) 部位 / 功能（默认色）；已由武器表确认是武器时，不再重复贴「导弹 / 炸弹」这类标签
+        if (part != null && !(isWeapon && RedundantWithWeapon.Contains(part)))
+            tags.Add(new PartTag { Text = Loc[part] });
+
+        // 3) 贴图类型（带色调，便于区分）
+        if (type != null)
+            tags.Add(new PartTag { Text = Loc[type.Value.Key], Tone = ToneOf(type.Value.Key) });
 
         return tags;
     }
+
+    /// <summary>
+    /// 已由武器表确认是武器时，这些按命名推测出来的标签就重复了（武器表更权威），不再显示。
+    /// </summary>
+    private static readonly HashSet<string> RedundantWithWeapon = new(StringComparer.Ordinal)
+    {
+        "part.tag.missile", "part.tag.bomb", "part.tag.rocket", "part.tag.launcher", "part.tag.tt"
+    };
 
     /// <summary>贴图类型 → 胶囊色调：<c>_n</c> 纹理 = 绿、<c>_c</c> 法线 = 黄，其余用默认蓝。</summary>
     private static TagTone ToneOf(string typeKey) => typeKey switch
@@ -151,11 +171,11 @@ public static class PartTagResolver
         return false;
     }
 
-    private static string? FindType(string lower)
+    private static (string Key, string Suffix)? FindType(string lower)
     {
         foreach (var (suffix, key) in TypeSuffixes)
             if (lower.EndsWith(suffix, StringComparison.Ordinal))
-                return key;
+                return (key, suffix);
 
         return null;
     }
