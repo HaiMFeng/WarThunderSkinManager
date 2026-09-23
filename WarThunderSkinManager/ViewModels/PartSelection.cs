@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WarThunderSkinManager.Models;
@@ -47,6 +48,12 @@ public partial class PartRow : ObservableObject
     public string From { get; init; } = "";
 
     public string CandidateCountText { get; init; } = "";
+
+    /// <summary>
+    /// 按命名规律**推测**的标签（部位 / 贴图类型），显示在部件名右侧；
+    /// 仅作识别参考——命名并不统一，识别不出时为空（见 §3.6 / 格式文档 §6）。
+    /// </summary>
+    public IReadOnlyList<PartTag> Tags { get; init; } = Array.Empty<PartTag>();
 
     public ObservableCollection<PartCandidate> Candidates { get; } = new();
 

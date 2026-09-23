@@ -26,6 +26,13 @@
     <Color x:Key="ColorDangerHover">#dc2626</Color>
     <Color x:Key="ColorDangerPressed">#b91c1c</Color>
     <Color x:Key="ColorWarning">#d97706</Color>
+    <!-- 贴图类型标签：纹理 = 绿、法线 = 黄（界面设计规范 §5.10） -->
+    <Color x:Key="ColorTagTextureBg">#DCFCE7</Color>
+    <Color x:Key="ColorTagTextureBorder">#22C55E</Color>
+    <Color x:Key="ColorTagTextureText">#15803D</Color>
+    <Color x:Key="ColorTagNormalBg">#FEF3C7</Color>
+    <Color x:Key="ColorTagNormalBorder">#F59E0B</Color>
+    <Color x:Key="ColorTagNormalText">#B45309</Color>
 
     <SolidColorBrush x:Key="BrushPrimary" Color="{StaticResource ColorPrimary}"/>
     <SolidColorBrush x:Key="BrushPrimaryHover" Color="{StaticResource ColorPrimaryHover}"/>
@@ -49,6 +56,12 @@
     <SolidColorBrush x:Key="BrushDangerHover" Color="{StaticResource ColorDangerHover}"/>
     <SolidColorBrush x:Key="BrushDangerPressed" Color="{StaticResource ColorDangerPressed}"/>
     <SolidColorBrush x:Key="BrushWarning" Color="{StaticResource ColorWarning}"/>
+    <SolidColorBrush x:Key="BrushTagTextureBg" Color="{StaticResource ColorTagTextureBg}"/>
+    <SolidColorBrush x:Key="BrushTagTextureBorder" Color="{StaticResource ColorTagTextureBorder}"/>
+    <SolidColorBrush x:Key="BrushTagTextureText" Color="{StaticResource ColorTagTextureText}"/>
+    <SolidColorBrush x:Key="BrushTagNormalBg" Color="{StaticResource ColorTagNormalBg}"/>
+    <SolidColorBrush x:Key="BrushTagNormalBorder" Color="{StaticResource ColorTagNormalBorder}"/>
+    <SolidColorBrush x:Key="BrushTagNormalText" Color="{StaticResource ColorTagNormalText}"/>
 
     <!-- ============ 字体图标族 ============ -->
     <FontFamily x:Key="IconFont">Segoe MDL2 Assets</FontFamily>
@@ -441,6 +454,16 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- ============ 只读标签 Tag（白底蓝边胶囊） ============ -->
+    <Style x:Key="Tag" TargetType="Border">
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BrushPrimary}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="9"/>
+        <Setter Property="Padding" Value="7,2"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
     </Style>
 
     <!-- ============ 胶囊 Chip（国家横条） ============ -->

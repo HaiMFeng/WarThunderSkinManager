@@ -24,6 +24,9 @@ internal static class SelfTest
             Directory.CreateDirectory(workDir);
             Directory.CreateDirectory(resourceDir);
 
+            // 部件标签等文案依赖语言表，先加载内置默认（写到 workDir/cfg-lang，不影响真实配置）
+            LocalizationManager.Instance.Load(Path.Combine(workDir, "cfg-lang"), "zh-CN");
+
             log.AppendLine($"source      : {sourceFolder}");
             log.AppendLine($"resourceDir : {resourceDir}");
 
@@ -232,6 +235,31 @@ internal static class SelfTest
 
             log.AppendLine($"含国旗/零宽字符条目: {flagged} 条，查表后残留: {leftover} 条"
                          + (leftoverSample.Length > 0 ? $"（例：{leftoverSample}）" : ""));
+
+            // ---- 部件标签推测（§3.6，命名规律见格式文档 §6；仅供参考）----
+            log.AppendLine();
+            log.AppendLine("---- 部件标签推测（部位 + 贴图类型）----");
+            foreach (var (from, vehicleId) in new[]
+                     {
+                         // 普通部件：靠部件词识别
+                         ("vt_5_body_c", "vt_5"), ("vt_5_body_n", "vt_5"), ("vt_5_gun_c", "vt_5"),
+                         ("mg_mount_ztz_99_mg_c", "cn_ztz_99"), ("mg_qjc88_c", "cn_ztz_99"),
+                         ("net_h_c", "cn_ztz_99"), ("side_glass_c", "cn_ztz_99"), ("f_15a_cockpit_c", "f_15a"),
+                         ("body_c_dmg", "cn_ztz_99"), ("us_aim_9l_sidewinder", "f_15a"),
+                         ("us_610gal_drop_tank", "f_15a"), ("lau_7", "f_15a"),
+                         ("jet_flame_diamonds", "f_15a"), ("n_blade_slow", "f_15a"),
+                         ("totally_unknown_part", "f_15a"),
+                         // 主体贴图：前缀 = 载具标识，且其后只剩贴图类型后缀
+                         ("f_15e_c", "f_15e"), ("cn_vt_5_n", "cn_vt_5"), ("f_15e_c_dmg", "f_15e"), ("f_15e", "f_15e"),
+                         ("su_30mkk_c", "su_30mkk"),
+                         // 反例：同样以 _c / _n 结尾，但标识之后还有别的词 → 不给「载具主体」
+                         ("su_30mkk_pylon1_n", "su_30mkk"), ("su_30mkk_gun1_c", "su_30mkk"),
+                         ("f_15e_wing_l_c", "f_15e"), ("jp_type_90_c", "f_15e"), ("f_15e_cockpit_c", "f_15e")
+                     })
+            {
+                log.AppendLine($"{from,-28} (载具 {vehicleId}) → ["
+                             + string.Join("][", PartTagResolver.Resolve(from, vehicleId).Select(t => t.Text)) + "]");
+            }
 
             // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----
             var cleanupRoot = Path.Combine(workDir, "cleanup", "MyPack");

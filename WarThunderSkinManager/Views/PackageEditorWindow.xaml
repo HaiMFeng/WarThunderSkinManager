@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
         Title="{loc:Loc pkg.editor.title}"
-        Width="760" Height="660"
-        MinWidth="640" MinHeight="480"
+        Width="920" Height="680"
+        MinWidth="780" MinHeight="500"
         WindowStyle="None" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         FontFamily="Segoe UI, Microsoft YaHei UI"
@@ -117,7 +117,59 @@
                                         </Grid.ColumnDefinitions>
 
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
-                                            <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"/>
+                                            <!-- 部件名 + 推测标签（部位 / 贴图类型，按命名规律推断，仅供参考） -->
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding From}" VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Tags}"
+                                                              VerticalAlignment="Center" Margin="10,0,0,0">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <!-- 胶囊：部位标签白底蓝边；贴图类型按色调区分（纹理 = 绿 / 法线 = 黄，§5.10） -->
+                                                            <Border Margin="0,0,4,0">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border" BasedOn="{StaticResource Tag}">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Tone}" Value="Texture">
+                                                                                <Setter Property="Background" Value="{StaticResource BrushTagTextureBg}"/>
+                                                                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagTextureBorder}"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Tone}" Value="Normal">
+                                                                                <Setter Property="Background" Value="{StaticResource BrushTagNormalBg}"/>
+                                                                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagNormalBorder}"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <TextBlock Text="{Binding Text}" FontSize="11">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Tone}" Value="Texture">
+                                                                                    <Setter Property="Foreground" Value="{StaticResource BrushTagTextureText}"/>
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding Tone}" Value="Normal">
+                                                                                    <Setter Property="Foreground" Value="{StaticResource BrushTagNormalText}"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
                                             <TextBlock Text="{Binding CandidateCountText}" FontSize="11"
                                                        Foreground="{StaticResource BrushTextMuted}" Margin="0,2,0,0"/>
                                         </StackPanel>

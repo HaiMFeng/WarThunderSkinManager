@@ -174,7 +174,8 @@ public partial class PackageEditorViewModel : ObservableObject
             var row = new PartRow
             {
                 From = key,
-                CandidateCountText = Loc.Format("pkg.editor.candidates.count", candidates.Count)
+                CandidateCountText = Loc.Format("pkg.editor.candidates.count", candidates.Count),
+                Tags = PartTagResolver.Resolve(key, _meta.VehicleId) // 按命名推测的部位 / 贴图类型（含主体判定）
             };
 
             row.Candidates.Add(new PartCandidate { IsNone = true, Display = noneLabel });
