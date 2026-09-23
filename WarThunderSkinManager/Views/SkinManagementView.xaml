@@ -261,7 +261,7 @@
                                                 CornerRadius="0,0,10,10" Padding="9,6">
                                             <Border.Style>
                                                 <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="#B3101828"/>
+                                                    <Setter Property="Background" Value="{StaticResource BrushCardOverlay}"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsActive}" Value="True">
                                                             <Setter Property="Background" Value="{StaticResource BrushActiveStrip}"/>
@@ -269,7 +269,7 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <TextBlock Text="{Binding Name}" Foreground="White" FontSize="12"
+                                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource BrushOnAccent}" FontSize="12"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </Border>
                                         <!-- 已激活标记（绿） -->
@@ -286,7 +286,7 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <TextBlock Text="{loc:Loc skins.active}" Foreground="White" FontSize="11"/>
+                                            <TextBlock Text="{loc:Loc skins.active}" Foreground="{StaticResource BrushOnAccent}" FontSize="11"/>
                                         </Border>
                                     </Grid>
                                 </DataTemplate>

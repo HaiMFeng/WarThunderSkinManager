@@ -35,14 +35,14 @@
                 <StackPanel>
 
                     <!-- 警告 -->
-                    <Border Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8"
+                    <Border Background="{StaticResource BrushDangerSoftBg}" BorderBrush="{StaticResource BrushDangerSoftBorder}" BorderThickness="1" CornerRadius="8"
                             Padding="14,12">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="18"
                                        Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
                                        Margin="0,1,10,0"/>
                             <TextBlock Text="{loc:Loc settings.reset.warn}" TextWrapping="Wrap" FontSize="13"
-                                       Foreground="#B91C1C"/>
+                                       Foreground="{StaticResource BrushDangerSoftText}"/>
                         </StackPanel>
                     </Border>
 
