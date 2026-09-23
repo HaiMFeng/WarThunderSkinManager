@@ -12,4 +12,9 @@
       <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     </ItemGroup>
 
+    <ItemGroup>
+      <!-- 内置载具名表：内部标识 → 各语言译名（见 docs/软件功能设计.md §3.7） -->
+      <EmbeddedResource Include="Assets\units.csv" />
+    </ItemGroup>
+
 </Project>

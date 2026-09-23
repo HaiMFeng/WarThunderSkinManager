@@ -48,8 +48,8 @@
                         </Style.Triggers>
                     </Style>
                 </StackPanel.Style>
-                <CheckBox Content="{loc:Loc import.deleteSource}" IsChecked="{Binding DeleteSource}"/>
-                <TextBlock Text="{loc:Loc import.deleteSourceHint}" Style="{StaticResource PageSubtitle}"
+                <CheckBox Content="{Binding CleanupLabel}" IsChecked="{Binding DeleteSource}"/>
+                <TextBlock Text="{Binding CleanupHint}" Style="{StaticResource PageSubtitle}"
                            TextWrapping="Wrap" Margin="26,4,0,0"/>
             </StackPanel>
 

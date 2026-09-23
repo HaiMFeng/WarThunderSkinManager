@@ -107,12 +107,16 @@ public partial class VehiclesViewModel : ObservableObject
         if (_syncing || SelectedVehicle == null) return;
 
         var name = value.Trim();
-        if (name.Length == 0 || string.Equals(name, SelectedVehicle.Id, StringComparison.Ordinal))
-            _displayNames.Remove(SelectedVehicle.Id); // 与标识相同 = 未映射
+
+        // 自动名（内置译名表给出的默认名）：与它相同就不需要写进用户映射
+        var autoName = VehicleNameTable.ResolveDisplayName(SelectedVehicle.Id, null);
+
+        if (name.Length == 0 || string.Equals(name, autoName, StringComparison.Ordinal))
+            _displayNames.Remove(SelectedVehicle.Id);
         else
             _displayNames[SelectedVehicle.Id] = name;
 
-        SelectedVehicle.DisplayName = name.Length > 0 ? name : SelectedVehicle.Id;
+        SelectedVehicle.DisplayName = name.Length > 0 ? name : autoName;
         SaveMappings();
         ShowStatus(Loc["vehicles.saved"]);
     }
@@ -161,10 +165,9 @@ public partial class VehiclesViewModel : ObservableObject
                 ? new List<Vehicle>()
                 : VehicleAggregator.BuildAll(resourceDir, _countryOverrides);
 
+            // 显示名：用户映射 → 内置译名表（units.csv，按界面语言）→ 内部标识（§3.7）
             foreach (var vehicle in list)
-                vehicle.DisplayName = _displayNames.TryGetValue(vehicle.Id, out var name) && !string.IsNullOrWhiteSpace(name)
-                    ? name
-                    : vehicle.Id;
+                vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, _displayNames);
 
             var previousId = SelectedVehicle?.Id;
             Vehicles = new ObservableCollection<Vehicle>(

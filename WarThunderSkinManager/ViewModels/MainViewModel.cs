@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
@@ -100,6 +101,26 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void BrowseUserSkins() => Browse(Config.UserSkinsDirectory, p => Config.UserSkinsDirectory = p);
+
+    /// <summary>在资源管理器中打开该目录（设置页各目录右侧的「打开」，便于直接查看/整理文件）。</summary>
+    [RelayCommand]
+    private void OpenFolder(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        {
+            ShowStatus(Loc["settings.open.missing"]);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("settings.open.failed", ex.Message));
+        }
+    }
 
     [RelayCommand]
     private void BrowseResource() => Browse(Config.ResourceDirectory, p => Config.ResourceDirectory = p);

@@ -481,25 +481,27 @@ public partial class SkinsViewModel : ObservableObject
         return VehicleAggregator.BuildAll(resourceDir, overrides);
     }
 
-    /// <summary>载具显示名来自映射文件（功能设计 §3.7）；未映射时回退内部标识。</summary>
+    /// <summary>
+    /// 载具显示名（功能设计 §3.7）：用户映射 → 内置译名表（units.csv，按界面语言）→ 内部标识。
+    /// 导入的新载具因此能自动带上译名。
+    /// </summary>
     private void ApplyVehicleMappings(IEnumerable<Vehicle> vehicles)
     {
-        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return;
-
-        Dictionary<string, string> map;
-        try
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory))
         {
-            map = ConfigService.LoadVehicleMappings(_config.ConfigDirectory);
-        }
-        catch
-        {
-            return;
+            try
+            {
+                map = ConfigService.LoadVehicleMappings(_config.ConfigDirectory);
+            }
+            catch
+            {
+                // 读不到用户映射不影响：仍走内置译名表
+            }
         }
 
         foreach (var vehicle in vehicles)
-            vehicle.DisplayName = map.TryGetValue(vehicle.Id, out var name) && !string.IsNullOrWhiteSpace(name)
-                ? name
-                : vehicle.Id;
+            vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, map);
     }
 
     /// <summary>加载各包预览图到内存（不占用文件句柄；缺失则留空 → 界面显示占位）。</summary>
@@ -559,12 +561,10 @@ public partial class SkinsViewModel : ObservableObject
                 return;
             }
 
-            // 从 UserSkins 导入时提供「导入后清理源文件夹」（§3.1）
-            var canCleanSource = sourceType == ImportSourceType.UserSkins
-                                 && !string.IsNullOrWhiteSpace(sourcePath)
-                                 && Directory.Exists(sourcePath);
+            // 从 UserSkins 或用户选中的文件夹导入时，提供「导入后清理源文件夹」（§3.1）
+            var sourceExists = !string.IsNullOrWhiteSpace(sourcePath) && Directory.Exists(sourcePath);
 
-            var preview = new ImportPreviewViewModel(candidates, canCleanSource);
+            var preview = new ImportPreviewViewModel(candidates, sourceType, sourceExists);
             var window = new ImportPreviewWindow
             {
                 DataContext = preview,
@@ -578,7 +578,7 @@ public partial class SkinsViewModel : ObservableObject
 
             var message = Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
             if (preview.DeleteSource)
-                message += CleanupImportedSource(sourcePath, result);
+                message += CleanupImportedSource(sourcePath, candidates, result, preview.DeleteWholeRoot);
 
             RefreshLibrary();
             ShowStatus(message);
@@ -590,16 +590,19 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 导入成功后清理 UserSkins 中未受管理的原始涂装文件夹（功能设计 §3.1）。
-    /// 只删除**本次成功导入**的 blk 所在顶层文件夹，`WTSM` 永不删除。
+    /// 导入成功后清理原始涂装（功能设计 §3.1）：
+    /// 「一键导入 UserSkins」只删贡献了导入的顶层子文件夹；「导入文件夹」删整个源文件夹。
+    /// 有导入失败的 blk 时自动跳过对应位置；`WTSM` 永不删除。
     /// </summary>
-    private static string CleanupImportedSource(string sourceRoot, ImportResult result)
+    private static string CleanupImportedSource(string sourceRoot, IReadOnlyList<ImportCandidate> candidates,
+        ImportResult result, bool deleteWholeRoot)
     {
-        var errors = new List<string>();
-        var removed = ImportService.CleanupSource(sourceRoot, result.ImportedBlkPaths, errors);
+        var cleanup = ImportService.CleanupSource(
+            sourceRoot, candidates, result.ImportedBlkPaths, deleteWholeRoot);
 
-        var text = Loc.Format("import.cleaned", removed);
-        if (errors.Count > 0) text += Loc.Format("import.cleanupFailed", errors.Count);
+        var text = Loc.Format("import.cleaned", cleanup.RemovedFolders + cleanup.RemovedFiles);
+        if (cleanup.Skipped.Count > 0) text += Loc.Format("import.cleanupSkipped", cleanup.Skipped.Count);
+        if (cleanup.Errors.Count > 0) text += Loc.Format("import.cleanupFailed", cleanup.Errors.Count);
         return text;
     }
 

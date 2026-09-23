@@ -22,8 +22,13 @@
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
                                      Text="{Binding Config.UserSkinsDirectory, UpdateSourceTrigger=PropertyChanged}"/>
-                            <Button Grid.Column="1" Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding BrowseUserSkinsCommand}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding BrowseUserSkinsCommand}"/>
+                                <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
+                                        Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
+                                        CommandParameter="{Binding Config.UserSkinsDirectory}"/>
+                            </StackPanel>
                         </Grid>
                         <TextBlock Text="{loc:Loc settings.userSkins.hint}" Style="{StaticResource PageSubtitle}" Margin="0,6,0,0"/>
                     </StackPanel>
@@ -37,8 +42,13 @@
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
                                      Text="{Binding Config.ResourceDirectory, UpdateSourceTrigger=PropertyChanged}"/>
-                            <Button Grid.Column="1" Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding BrowseResourceCommand}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding BrowseResourceCommand}"/>
+                                <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
+                                        Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
+                                        CommandParameter="{Binding Config.ResourceDirectory}"/>
+                            </StackPanel>
                         </Grid>
                         <TextBlock Text="{loc:Loc settings.resource.hint}" Style="{StaticResource PageSubtitle}" Margin="0,6,0,0"/>
                     </StackPanel>
@@ -52,8 +62,13 @@
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
                                      Text="{Binding Config.ConfigDirectory, UpdateSourceTrigger=PropertyChanged}"/>
-                            <Button Grid.Column="1" Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding BrowseConfigCommand}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding BrowseConfigCommand}"/>
+                                <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
+                                        Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
+                                        CommandParameter="{Binding Config.ConfigDirectory}"/>
+                            </StackPanel>
                         </Grid>
                         <TextBlock Text="{loc:Loc settings.config.hint}" Style="{StaticResource PageSubtitle}" Margin="0,6,0,0"/>
                     </StackPanel>

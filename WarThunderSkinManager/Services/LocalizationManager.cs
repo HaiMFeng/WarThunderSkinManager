@@ -176,6 +176,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "nav.settings": "设置",
 
   "common.browse": "浏览",
+  "common.open": "打开",
   "common.cancel": "取消",
   "common.ok": "确定",
   "common.continue": "继续",
@@ -199,6 +200,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "settings.saveFailed": "保存失败：{0}",
   "settings.configDirRequired": "请先指定程序配置目录",
   "settings.chooseFolder": "选择文件夹",
+  "settings.open.missing": "该目录不存在，请先指定有效路径",
+  "settings.open.failed": "打开失败：{0}",
   "settings.buffer.warnTitle": "缓冲时间过短",
   "settings.buffer.warn": "缓冲时间低于 2 秒会导致频繁读写，可能影响性能。建议设为 2 秒及以上。",
 
@@ -259,7 +262,10 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "import.col.warnings": "告警",
   "import.deleteSource": "导入后删除源文件夹（清理 UserSkins 中的原始涂装）",
   "import.deleteSourceHint": "涂装已存入资源库，随时可用「导出」恢复原始模组。勾选后只删除本次成功导入的源文件夹（WTSM 除外）。",
-  "import.cleaned": "；已清理 {0} 个源文件夹",
+  "import.deleteSourceFolder": "导入后删除选中的源文件夹",
+  "import.deleteSourceFolderHint": "仅在文件夹内的涂装全部导入成功时才会删除该文件夹；涂装已存入资源库，可用「导出」恢复原始模组。",
+  "import.cleaned": "；已清理 {0} 项源",
+  "import.cleanupSkipped": "；{0} 项因导入失败已跳过清理",
   "import.cleanupFailed": "（{0} 处清理失败）",
   "import.group.hint": "同一来源文件夹（同名）的条目已归为一组，改组名会同步到组内所有条目；单个条目也可之后在涂装包属性里单独改名。",
   "import.group.count": "{0} 个包",

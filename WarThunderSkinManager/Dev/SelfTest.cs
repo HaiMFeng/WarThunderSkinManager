@@ -186,6 +186,80 @@ internal static class SelfTest
                 }
             }
 
+            // ---- 内置载具名表（§3.7，嵌入资源 units.csv）----
+            log.AppendLine();
+            log.AppendLine("---- 内置载具名表 ----");
+            log.AppendLine("取词条顺序：短名 _1 → 全名 _0 → 标识 → 商店名 _shop");
+            log.AppendLine($"f_15e（简体 _1 短名）: {VehicleNameTable.Lookup("f_15e", "zh-CN") ?? "(未命中)"}");
+            log.AppendLine($"f_15e（英文 _1 短名）: {VehicleNameTable.Lookup("f_15e", "en-US") ?? "(未命中)"}");
+            log.AppendLine($"f_15e（繁体 _1 短名）: {VehicleNameTable.Lookup("f_15e", "zh-TW") ?? "(未命中)"}");
+            log.AppendLine($"f_15a（简体 _1 短名）: {VehicleNameTable.Lookup("f_15a", "zh-CN") ?? "(未命中)"}");
+            log.AppendLine($"不存在的标识        : {VehicleNameTable.Lookup("no_such_vehicle", "zh-CN") ?? "(未命中 → 回落内部标识)"}");
+            log.AppendLine($"用户名优先          : {VehicleNameTable.ResolveDisplayName("f_15e", new Dictionary<string, string> { ["f_15e"] = "我的座机" })}");
+            log.AppendLine($"无用户映射          : {VehicleNameTable.ResolveDisplayName("f_15e", null)}");
+            log.AppendLine($"带国旗·简体         : {VehicleNameTable.Lookup("germ_t_34_747", "zh-CN") ?? "(未命中)"}");
+            log.AppendLine($"带国旗·英文         : {VehicleNameTable.Lookup("germ_t_34_747", "en-US") ?? "(未命中)"}");
+            log.AppendLine($"带国旗·简体         : {VehicleNameTable.Lookup("jp_halftrack_m16", "zh-CN") ?? "(未命中)"}");
+
+            // 全表校验：含国旗 / 零宽字符的译名，查表结果里不应再残留这类字符
+            var flagged = 0;
+            var leftover = 0;
+            var leftoverSample = "";
+            using (var rawCsv = typeof(VehicleNameTable).Assembly
+                       .GetManifestResourceStream("WarThunderSkinManager.Assets.units.csv"))
+            {
+                if (rawCsv != null)
+                {
+                    using var reader = new StreamReader(rawCsv, Encoding.UTF8);
+                    reader.ReadLine(); // 表头
+                    string? row;
+                    while ((row = reader.ReadLine()) != null)
+                    {
+                        var fields = row.Split(';');
+                        if (fields.Length < 11) continue;
+                        if (!VehicleNameTable.HasUnrenderableGlyph(fields[10])) continue;
+
+                        flagged++;
+                        var id = fields[0].Trim('"');
+                        var name = VehicleNameTable.Lookup(id, "zh-CN");
+                        if (!VehicleNameTable.HasUnrenderableGlyph(name)) continue;
+
+                        leftover++;
+                        if (leftoverSample.Length == 0) leftoverSample = $"{id} → {name}";
+                    }
+                }
+            }
+
+            log.AppendLine($"含国旗/零宽字符条目: {flagged} 条，查表后残留: {leftover} 条"
+                         + (leftoverSample.Length > 0 ? $"（例：{leftoverSample}）" : ""));
+
+            // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----
+            var cleanupRoot = Path.Combine(workDir, "cleanup", "MyPack");
+            CopyDirectory(sourceFolder, cleanupRoot);
+            var cleanupCandidates = ImportService.Scan(cleanupRoot, ImportSourceType.UserSkins).ToList();
+            var cleanupAll = cleanupCandidates.Select(c => c.BlkPath).ToList();
+            var r1 = ImportService.CleanupSource(cleanupRoot, cleanupCandidates, cleanupAll, deleteRootItself: false);
+
+            var r2Root = Path.Combine(workDir, "cleanup2", "MyPack");
+            CopyDirectory(sourceFolder, r2Root);
+            var r2Candidates = ImportService.Scan(r2Root, ImportSourceType.UserSkins).ToList();
+            var r2Imported = r2Candidates.Select(c => c.BlkPath)
+                .Take(Math.Max(1, r2Candidates.Count - 1)).ToList(); // 故意少导入 1 个
+            var r2 = ImportService.CleanupSource(r2Root, r2Candidates, r2Imported, deleteRootItself: false);
+
+            var r3Root = Path.Combine(workDir, "cleanup3", "MyPack");
+            CopyDirectory(sourceFolder, r3Root);
+            var r3Candidates = ImportService.Scan(r3Root, ImportSourceType.UserSkins).ToList();
+            var r3 = ImportService.CleanupSource(r3Root, r3Candidates,
+                r3Candidates.Select(c => c.BlkPath).ToList(), deleteRootItself: true);
+
+            log.AppendLine();
+            log.AppendLine("---- 导入后清理源 ----");
+            log.AppendLine($"候选         : {cleanupAll.Count} 个（来源目录 {cleanupAll.Select(p => Path.GetDirectoryName(p)).Distinct().Count()} 个）");
+            log.AppendLine($"① 全部成功   : 删除 {r1.RemovedFolders} 个文件夹 / {r1.RemovedFiles} 个文件，根保留={Directory.Exists(cleanupRoot)}");
+            log.AppendLine($"② 有失败项   : 删除 {r2.RemovedFolders} 个，跳过 {r2.Skipped.Count} 个");
+            log.AppendLine($"③ 整个根模式 : 删除 {r3.RemovedFolders} 个，根已删除={!Directory.Exists(r3Root)}");
+
             // ---- 语言文件补齐验证（旧语言文件缺 key 时应以内置默认补齐并回写）----
             var langRoot = Path.Combine(workDir, "langtest");
             Directory.CreateDirectory(Path.Combine(langRoot, "lang"));
@@ -235,6 +309,20 @@ internal static class SelfTest
         catch
         {
             // 忽略
+        }
+    }
+
+    /// <summary>递归复制目录（自检用，避免动到真实数据）。</summary>
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(destination, Path.GetRelativePath(source, file));
+            var dir = Path.GetDirectoryName(target);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.Copy(file, target, overwrite: true);
         }
     }
 }

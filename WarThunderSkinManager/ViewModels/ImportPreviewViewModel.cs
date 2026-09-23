@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
 
 namespace WarThunderSkinManager.ViewModels;
@@ -17,19 +18,33 @@ public partial class ImportPreviewViewModel : ObservableObject
 {
     public ObservableCollection<ImportGroupViewModel> Groups { get; }
 
-    /// <summary>是否提供「导入后清理源文件夹」选项（仅「从 UserSkins 一键导入」时）。</summary>
+    /// <summary>是否提供「导入后清理源文件夹」选项（从 UserSkins 或用户选中的文件夹导入时）。</summary>
     public bool CanDeleteSource { get; }
 
-    /// <summary>导入完成后删除源文件夹（清理 UserSkins 中未受管理的原始涂装，见 §3.1）。</summary>
+    /// <summary>
+    /// <c>true</c> = 清理整个源文件夹（「导入文件夹」：整个根都是本次导入的来源）；
+    /// <c>false</c> = 只清理贡献了导入的顶层子文件夹（「一键导入 UserSkins」，见 §3.1）。
+    /// </summary>
+    public bool DeleteWholeRoot { get; }
+
+    /// <summary>导入完成后删除源文件夹（清理未受管理的原始涂装，见 §3.1）。</summary>
     [ObservableProperty] private bool _deleteSource;
 
     /// <summary>是否有任何分组包含多于一个条目（有则显示「一同改名」提示）。</summary>
     public bool HasMultiEntryGroup => Groups.Any(g => g.Rows.Count > 1);
 
-    public ImportPreviewViewModel(IEnumerable<ImportCandidate> candidates, bool canDeleteSource = false)
+    /// <summary>清理选项的标题（按清理模式给出不同说明）。</summary>
+    public string CleanupLabel => Loc[DeleteWholeRoot ? "import.deleteSourceFolder" : "import.deleteSource"];
+
+    /// <summary>清理选项的补充说明。</summary>
+    public string CleanupHint => Loc[DeleteWholeRoot ? "import.deleteSourceFolderHint" : "import.deleteSourceHint"];
+
+    public ImportPreviewViewModel(IEnumerable<ImportCandidate> candidates, ImportSourceType sourceType,
+        bool sourceExists)
     {
-        CanDeleteSource = canDeleteSource;
-        _deleteSource = canDeleteSource; // 默认勾选：涂装已入资源库，可用「导出」恢复原始模组
+        CanDeleteSource = sourceExists && sourceType is ImportSourceType.UserSkins or ImportSourceType.Folder;
+        DeleteWholeRoot = sourceType == ImportSourceType.Folder;
+        _deleteSource = CanDeleteSource; // 默认勾选：涂装已入资源库，可用「导出」恢复原始模组
 
         // 建议名相同 = 来自同名文件夹 = 同一套模组 → 归为一组（保持扫描顺序）
         Groups = new ObservableCollection<ImportGroupViewModel>(
@@ -45,6 +60,8 @@ public partial class ImportPreviewViewModel : ObservableObject
             foreach (var row in group.Rows)
                 row.Apply();
     }
+
+    private static LocalizationManager Loc => LocalizationManager.Instance;
 }
 
 /// <summary>同名来源分组：改组名会同步到组内所有条目。</summary>

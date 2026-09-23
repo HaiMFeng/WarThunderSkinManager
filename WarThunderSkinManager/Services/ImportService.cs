@@ -19,6 +19,22 @@ public sealed class ImportResult
     public List<string> ImportedBlkPaths { get; init; } = new();
 }
 
+/// <summary>源清理结果（功能设计 §3.1）。</summary>
+public sealed class CleanupResult
+{
+    /// <summary>已删除的文件夹数</summary>
+    public int RemovedFolders { get; set; }
+
+    /// <summary>已删除的散落 blk 文件数</summary>
+    public int RemovedFiles { get; set; }
+
+    /// <summary>因「其中有导入失败的 blk」而未清理的路径</summary>
+    public List<string> Skipped { get; } = new();
+
+    /// <summary>删除失败的原因</summary>
+    public List<string> Errors { get; } = new();
+}
+
 /// <summary>导入预览候选项（扫描阶段产出，用户可在确认前改名）。</summary>
 public sealed class ImportCandidate
 {
@@ -138,63 +154,130 @@ public static class ImportService
     }
 
     /// <summary>
-    /// 导入后清理源涂装（用于「从 UserSkins 一键导入」，功能设计 §3.1）。
-    /// 删除本次**成功导入**的 blk 所在的**顶层源文件夹**；直接放在根目录下的 blk 只删该文件。
+    /// 导入后清理源涂装（功能设计 §3.1）。两种模式：
+    /// <list type="bullet">
+    /// <item>「一键导入 UserSkins」：只删除其中**贡献了导入**的顶层子文件夹；直接躺在根下的 blk 只删该文件。</item>
+    /// <item>「导入文件夹」：整个根就是本次导入的来源，直接删除该文件夹。</item>
+    /// </list>
+    /// **安全规则**：只要某个位置还有**导入失败**的 blk，就跳过清理该处（避免丢数据）；
     /// <c>WTSM</c>（程序自己的输出）永远不会被删除。
     /// </summary>
-    /// <param name="errors">删除失败的原因（每项一条）。</param>
-    /// <returns>删除的顶层文件夹数量。</returns>
-    public static int CleanupSource(string root, IEnumerable<string> importedBlkPaths, List<string> errors)
+    /// <param name="root">导入根（UserSkins 目录 / 用户选中的涂装文件夹）。</param>
+    /// <param name="candidates">本次扫描到的全部候选。</param>
+    /// <param name="importedBlkPaths">**成功导入**的 blk 路径。</param>
+    /// <param name="deleteRootItself"><c>true</c> = 删除 <paramref name="root"/> 本身（「导入文件夹」模式）。</param>
+    public static CleanupResult CleanupSource(string root, IReadOnlyList<ImportCandidate> candidates,
+        IReadOnlyCollection<string> importedBlkPaths, bool deleteRootItself)
     {
+        var result = new CleanupResult();
         var fullRoot = Path.GetFullPath(root);
-        var topDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 别把程序自己的输出删了
+        if (string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(fullRoot)), "WTSM",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            result.Skipped.Add(fullRoot);
+            return result;
+        }
+
+        var imported = new HashSet<string>(
+            importedBlkPaths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+
+        // 导入失败的 blk 所在位置 → 不清理（否则会连同失败的数据一起删掉）
+        var failedTops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in candidates)
+        {
+            var path = Path.GetFullPath(candidate.BlkPath);
+            if (!imported.Contains(path)) failedTops.Add(TopLevelOf(fullRoot, path));
+        }
+
+        if (deleteRootItself)
+        {
+            if (failedTops.Count > 0)
+            {
+                result.Skipped.Add(fullRoot);
+                return result;
+            }
+
+            try
+            {
+                if (Directory.Exists(fullRoot))
+                {
+                    Directory.Delete(fullRoot, recursive: true);
+                    result.RemovedFolders++;
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add($"{fullRoot}：{ex.Message}");
+            }
+
+            return result;
+        }
+
+        var tops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var looseFiles = new List<string>();
 
         foreach (var blkPath in importedBlkPaths)
         {
-            var relative = Path.GetRelativePath(fullRoot, Path.GetFullPath(blkPath));
-            var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var top = TopLevelOf(fullRoot, Path.GetFullPath(blkPath));
+            if (top.Length == 0)
+                looseFiles.Add(blkPath); // 直接躺在根下的 blk → 只删这个文件
+            else if (!string.Equals(top, "WTSM", StringComparison.OrdinalIgnoreCase))
+                tops.Add(top);
+        }
 
-            // 源就在根目录下（没有子文件夹）→ 只删这个 blk 文件本身
-            if (segments.Length <= 1)
+        foreach (var top in tops)
+        {
+            var dir = Path.Combine(fullRoot, top);
+            if (failedTops.Contains(top))
             {
-                looseFiles.Add(blkPath);
+                result.Skipped.Add(dir);
                 continue;
             }
 
-            if (string.Equals(segments[0], "WTSM", StringComparison.OrdinalIgnoreCase)) continue;
-            topDirs.Add(Path.Combine(fullRoot, segments[0]));
-        }
-
-        var removed = 0;
-
-        foreach (var dir in topDirs)
-        {
             try
             {
                 if (!Directory.Exists(dir)) continue;
                 Directory.Delete(dir, recursive: true);
-                removed++;
+                result.RemovedFolders++;
             }
             catch (Exception ex)
             {
-                errors.Add($"{dir}：{ex.Message}");
+                result.Errors.Add($"{dir}：{ex.Message}");
             }
+        }
+
+        if (failedTops.Contains(string.Empty))
+        {
+            // 根下还有导入失败的 blk → 不删散落的文件
+            result.Skipped.Add(fullRoot);
+            return result;
         }
 
         foreach (var file in looseFiles)
         {
             try
             {
-                if (File.Exists(file)) File.Delete(file);
+                if (!File.Exists(file)) continue;
+                File.Delete(file);
+                result.RemovedFiles++;
             }
             catch (Exception ex)
             {
-                errors.Add($"{file}：{ex.Message}");
+                result.Errors.Add($"{file}：{ex.Message}");
             }
         }
 
-        return removed;
+        return result;
+    }
+
+    /// <summary>blk 相对 <paramref name="fullRoot"/> 的顶层段；直接位于根下时返回空串。</summary>
+    private static string TopLevelOf(string fullRoot, string fullBlkPath)
+    {
+        var relative = Path.GetRelativePath(fullRoot, fullBlkPath);
+        var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return segments.Length <= 1 ? string.Empty : segments[0];
     }
 
     /// <summary>新导入的包追加到同载具既有顺序之后（功能设计 §3.4 卡片排序）。</summary>
