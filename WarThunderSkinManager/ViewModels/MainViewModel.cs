@@ -30,8 +30,11 @@ public partial class MainViewModel : ObservableObject
 
     private readonly DispatcherTimer _statusTimer;
 
-    /// <summary>涂装管理页视图模型（导入入口 + 涂装包列表）</summary>
+    /// <summary>涂装管理页视图模型（导入入口 + 涂装包卡片）</summary>
     public SkinsViewModel Skins { get; }
+
+    /// <summary>载具管理页视图模型（显示名 / 国家 / 部件）</summary>
+    public VehiclesViewModel Vehicles { get; }
 
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
@@ -39,6 +42,7 @@ public partial class MainViewModel : ObservableObject
     {
         Config = config;
         Skins = new SkinsViewModel(config);
+        Vehicles = new VehiclesViewModel(config);
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         _statusTimer.Tick += (_, _) =>
@@ -49,7 +53,21 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Navigate(TabKey tab) => SelectedTab = tab;
+    private void Navigate(TabKey tab)
+    {
+        SelectedTab = tab;
+
+        // 切页时刷新对应子页，保证在另一页做的改动（如国家归类）能立即反映
+        switch (tab)
+        {
+            case TabKey.Skins:
+                Skins.RefreshCommand.Execute(null);
+                break;
+            case TabKey.Vehicles:
+                Vehicles.RefreshCommand.Execute(null);
+                break;
+        }
+    }
 
     [RelayCommand]
     private void BrowseUserSkins() => Browse(Config.UserSkinsDirectory, p => Config.UserSkinsDirectory = p);

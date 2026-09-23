@@ -62,6 +62,29 @@ public static class ConfigService
             JsonSerializer.Serialize(map, JsonOpts));
     }
 
+    // ---- 载具所属国家覆盖：mappings/vehicle_countries.json { vehicleId: countryId } ----
+    public static string VehicleCountriesFile(string configDir)
+        => Path.Combine(configDir, "mappings", "vehicle_countries.json");
+
+    public static Dictionary<string, string> LoadVehicleCountries(string configDir)
+    {
+        var path = VehicleCountriesFile(configDir);
+        if (File.Exists(path))
+        {
+            var d = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
+            if (d != null) return d;
+        }
+        return new Dictionary<string, string>();
+    }
+
+    public static void SaveVehicleCountries(string configDir, Dictionary<string, string> map)
+    {
+        var dir = Path.Combine(configDir, "mappings");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(VehicleCountriesFile(configDir),
+            JsonSerializer.Serialize(map, JsonOpts));
+    }
+
     // ---- 激活输出：loadouts/<vehicleId>.json ----
     public static string LoadoutFile(string configDir, string vehicleId)
         => Path.Combine(configDir, "loadouts", $"{vehicleId}.json");

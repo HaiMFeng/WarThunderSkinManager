@@ -19,13 +19,15 @@ public static class VehicleAggregator
         => (from ?? string.Empty).Replace("*", string.Empty).Trim();
 
     /// <summary>由同一载具下的全部涂装包构建载具（含部件聚合）。</summary>
-    public static Vehicle Build(string vehicleId, IEnumerable<SkinPackage> packages)
+    /// <param name="countryOverrides">用户手动指定的 载具→国家（优先于前缀推断，见 §3.4 / §3.10）。</param>
+    public static Vehicle Build(string vehicleId, IEnumerable<SkinPackage> packages,
+        IReadOnlyDictionary<string, string>? countryOverrides = null)
     {
         var vehicle = new Vehicle
         {
             Id = vehicleId,
             DisplayName = vehicleId,
-            CountryId = CountryResolver.Resolve(vehicleId)
+            CountryId = ResolveCountry(vehicleId, countryOverrides)
         };
 
         var parts = new Dictionary<string, VehiclePart>(StringComparer.OrdinalIgnoreCase);
@@ -60,7 +62,8 @@ public static class VehicleAggregator
     /// 从资源目录重建载具视图：读 packages/*/meta.json 分组，
     /// 因 meta.json 不含映射，需回读各包 <c>source.blk</c> 才能聚合部件。
     /// </summary>
-    public static List<Vehicle> BuildAll(string resourceDir)
+    public static List<Vehicle> BuildAll(string resourceDir,
+        IReadOnlyDictionary<string, string>? countryOverrides = null)
     {
         var vehicles = new List<Vehicle>();
 
@@ -102,9 +105,22 @@ public static class VehicleAggregator
                 packages.Add(package);
             }
 
-            vehicles.Add(Build(group.Key, packages));
+            vehicles.Add(Build(group.Key, packages, countryOverrides));
         }
 
         return vehicles.OrderBy(v => v.Id, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>国家判定：用户覆盖优先，否则按前缀自动归类。</summary>
+    private static string ResolveCountry(string vehicleId, IReadOnlyDictionary<string, string>? countryOverrides)
+    {
+        if (countryOverrides != null
+            && countryOverrides.TryGetValue(vehicleId, out var country)
+            && !string.IsNullOrWhiteSpace(country))
+        {
+            return country;
+        }
+
+        return CountryResolver.Resolve(vehicleId);
     }
 }

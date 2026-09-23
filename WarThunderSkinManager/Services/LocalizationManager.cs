@@ -233,9 +233,17 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "country.unclassified": "未分类",
 
   "vehicles.title": "载具管理",
-  "vehicles.subtitle": "载具列表 / 国家分类 / 预览图",
-  "vehicles.empty.title": "尚未添加任何载具",
-  "vehicles.empty.desc": "按国家分类载具、编辑显示名与预览图、管理部件与涂装包。"
+  "vehicles.subtitle": "载具列表 / 国家分类 / 部件",
+  "vehicles.count": "共 {0} 个载具",
+  "vehicles.displayName": "显示名",
+  "vehicles.country": "国家",
+  "vehicles.packageCount": "涂装包 {0}",
+  "vehicles.parts": "部件",
+  "vehicles.col.candidates": "候选贴图",
+  "vehicles.noSelect": "请在左侧选择载具",
+  "vehicles.saved": "已保存",
+  "vehicles.empty.title": "尚未导入任何载具",
+  "vehicles.empty.desc": "请先在「涂装管理」导入涂装包；载具会按 blk 文件名自动生成。"
 }
 """;
 }

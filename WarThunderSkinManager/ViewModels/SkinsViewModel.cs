@@ -312,7 +312,12 @@ public partial class SkinsViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
             return new List<Vehicle>();
 
-        return VehicleAggregator.BuildAll(resourceDir);
+        // 国家以用户在“载具管理”里的手动归类为准（§3.4 / §3.10）
+        var overrides = string.IsNullOrWhiteSpace(_config.ConfigDirectory)
+            ? null
+            : ConfigService.LoadVehicleCountries(_config.ConfigDirectory);
+
+        return VehicleAggregator.BuildAll(resourceDir, overrides);
     }
 
     /// <summary>载具显示名来自映射文件（功能设计 §3.7）；未映射时回退内部标识。</summary>
