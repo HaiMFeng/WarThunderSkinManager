@@ -90,6 +90,23 @@
                 </StackPanel>
             </Border>
 
+            <!-- 数据表（可单独替换更新） -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.datatables}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.datatables.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding DataTablesDirectory}" Style="{StaticResource FieldLabel}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="{loc:Loc settings.datatables.export}" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding ExportDataTablesCommand}"/>
+                        <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                                Command="{Binding OpenDataTablesFolderCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- 危险操作 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>

@@ -14,10 +14,10 @@
     </ItemGroup>
 
     <ItemGroup>
-      <!-- 内置载具名表：内部标识 → 各语言译名（见 docs/软件功能设计.md §3.7） -->
+      <!-- 内置载具译名表：内部标识 → 各语言译名（见 docs/软件功能设计.md §3.7） -->
       <EmbeddedResource Include="Assets\units.csv" />
       <!-- 内置武器名表：判断部件位置是不是武器（见 docs/软件功能设计.md §3.6） -->
-      <EmbeddedResource Include="..\docs\ref\units_weaponry.csv" LogicalName="WarThunderSkinManager.Assets.units_weaponry.csv" />
+      <EmbeddedResource Include="Assets\units_weaponry.csv" />
     </ItemGroup>
 
 </Project>

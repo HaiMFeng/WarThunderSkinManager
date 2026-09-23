@@ -68,6 +68,9 @@ public sealed class LocalizationManager : INotifyPropertyChanged
     {
         Culture = string.IsNullOrWhiteSpace(culture) ? "zh-CN" : culture;
 
+        // 数据表目录跟随配置目录（<配置目录>/ref，可单独替换，见 §3.6 / §3.7）
+        DataTables.Configure(configDir);
+
         var langPath = LangFile(configDir, Culture);
         var baselinePath = BaselineFile(configDir, Culture);
 
@@ -202,6 +205,14 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "settings.chooseFolder": "选择文件夹",
   "settings.open.missing": "该目录不存在，请先指定有效路径",
   "settings.open.failed": "打开失败：{0}",
+  "settings.datatables": "数据表（可单独替换更新）",
+  "settings.datatables.hint": "首次启动已把内置表写到下面这个目录，可直接修改：改过的表优先于内置表，替换后立即生效、无需重启；没改过的表会随程序版本自动更新。",
+  "settings.datatables.export": "导出内置表",
+  "datatables.exported": "已导出 {0} 张内置表到 {1}",
+  "datatables.exportFailed": "导出数据表失败：{0}",
+  "datatables.opened": "已打开数据表目录：{0}",
+  "datatables.defaultWritten": "已生成 {0} 份默认数据表，并打开目录：{1}",
+  "datatables.defaultUpdated": "已按新版内置表更新 {0} 份数据表，并打开目录：{1}",
   "settings.buffer.warnTitle": "缓冲时间过短",
   "settings.buffer.warn": "缓冲时间低于 2 秒会导致频繁读写，可能影响性能。建议设为 2 秒及以上。",
 
@@ -261,9 +272,9 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "import.col.missing": "缺失贴图",
   "import.col.warnings": "告警",
   "import.deleteSource": "导入后删除源文件夹（清理 UserSkins 中的原始涂装）",
-  "import.deleteSourceHint": "涂装已存入资源库，随时可用「导出」恢复原始模组。勾选后只删除本次成功导入的源文件夹（WTSM 除外）。",
+  "import.deleteSourceHint": "涂装已存入资源库，随时可用「导出」恢复原始模组。勾选后只删除本次成功导入的源文件夹（WTSM 除外）。会记住本次选择。",
   "import.deleteSourceFolder": "导入后删除选中的源文件夹",
-  "import.deleteSourceFolderHint": "仅在文件夹内的涂装全部导入成功时才会删除该文件夹；涂装已存入资源库，可用「导出」恢复原始模组。",
+  "import.deleteSourceFolderHint": "仅在文件夹内的涂装全部导入成功时才会删除该文件夹；涂装已存入资源库，可用「导出」恢复原始模组。会记住本次选择。",
   "import.cleaned": "；已清理 {0} 项源",
   "import.cleanupSkipped": "；{0} 项因导入失败已跳过清理",
   "import.cleanupFailed": "（{0} 处清理失败）",
@@ -288,7 +299,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "import.archive.empty": "压缩包里没有找到涂装（*.blk）：{0}",
   "import.archive.skipped": "；跳过 {0} 个压缩包",
   "import.deleteArchive": "导入成功后删除压缩包",
-  "import.deleteArchiveHint": "只删除压缩包本身；解压出的临时文件在导入完成后会自动清理。",
+  "import.deleteArchiveHint": "只删除压缩包本身；解压出的临时文件在导入完成后会自动清理。会记住本次选择。",
   "import.deletedArchives": "；已删除 {0} 个压缩包",
   "import.deleteArchiveFailed": "（{0} 个压缩包删除失败）",
 

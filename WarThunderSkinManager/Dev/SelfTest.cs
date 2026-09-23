@@ -7,6 +7,7 @@ using SharpCompress.Common;
 using SharpCompress.Writers;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
+using WarThunderSkinManager.ViewModels;
 
 namespace WarThunderSkinManager.Dev;
 
@@ -319,6 +320,32 @@ internal static class SelfTest
                 log.AppendLine($"损坏压缩包: 已按普通错误处理 → {ex.GetType().Name}");
             }
 
+            // ---- 导入选项记忆（§3.1）：勾选状态按导入方式记住，下次默认沿用 ----
+            log.AppendLine();
+            log.AppendLine("---- 导入选项记忆 ----");
+            var optionRows = new List<ImportCandidate>
+            {
+                new() { BlkPath = "x/f_15e.blk", VehicleId = "f_15e", SuggestedName = "P" }
+            };
+
+            log.AppendLine("UserSkins（记住=勾）→ 预览默认勾选: "
+                         + new ImportPreviewViewModel(optionRows, ImportSourceType.UserSkins, true, false, true, false).DeleteSource);
+            log.AppendLine("导入文件夹（记住=未勾）→ 预览默认勾选: "
+                         + new ImportPreviewViewModel(optionRows, ImportSourceType.Folder, true, false, false, false).DeleteSource);
+            log.AppendLine("压缩包（记住=勾）→ 预览默认勾选: "
+                         + new ImportPreviewViewModel(optionRows, ImportSourceType.Archive, true, true, true, true).DeleteArchive);
+
+            var optionCfgDir = Path.Combine(workDir, "cfg-import-options");
+            ConfigService.Save(optionCfgDir, new AppConfig
+            {
+                ImportDeleteSourceUserSkins = false,
+                ImportDeleteSourceFolder = true,
+                ImportDeleteArchive = true
+            });
+            var optionCfg = ConfigService.Load(optionCfgDir);
+            log.AppendLine($"config.json 往返: UserSkins={optionCfg.ImportDeleteSourceUserSkins}"
+                         + $"、文件夹={optionCfg.ImportDeleteSourceFolder}、压缩包={optionCfg.ImportDeleteArchive}");
+
             // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----
             var cleanupRoot = Path.Combine(workDir, "cleanup", "MyPack");
             CopyDirectory(sourceFolder, cleanupRoot);
@@ -375,6 +402,73 @@ internal static class SelfTest
             log.AppendLine("---- 语言文件内置文案更新（基线）----");
             log.AppendLine($"app.title（曾与基线相同 = 没改过）→ 取新版内置：{loc["app.title"]}");
             log.AppendLine($"nav.skins（与基线不同 = 用户改过）→ 保留用户值：{loc["nav.skins"]}");
+
+            // ---- 数据表可单独替换（§3.6 / §3.7）：用户表优先、内置表兜底、替换后立即生效 ----
+            log.AppendLine();
+            log.AppendLine("---- 数据表（可单独替换）----");
+            log.AppendLine($"目录跟随配置目录: {DataTables.UserDirectory()}   ← 由语言加载同步");
+            log.AppendLine($"默认来源: 载具译名 = {DataTables.SourceText(DataTables.Vehicles)}；"
+                         + $"武器名表 = {DataTables.SourceText(DataTables.Weaponry)}");
+
+            var tableDir = Path.Combine(workDir, "datatables");
+            DataTables.Configure(tableDir);
+
+            var exportedTables = new List<string>();
+            foreach (var file in new[] { DataTables.Vehicles, DataTables.Weaponry })
+            {
+                var exportedPath = DataTables.ExportBuiltIn(file, tableDir);
+                if (exportedPath != null)
+                    exportedTables.Add($"{file}（{new FileInfo(exportedPath).Length / 1024} KB）");
+            }
+
+            log.AppendLine($"导出内置表到用户表目录: {string.Join("、", exportedTables)}");
+            log.AppendLine($"覆盖前: f_15e 译名 = {VehicleNameTable.Lookup("f_15e", "zh-CN")}；"
+                         + $"su_r_77_1 是武器 = {WeaponCatalog.IsWeapon("su_r_77_1")}（表内键 {WeaponCatalog.KeyCount}）");
+
+            // 换成"用户表"：只留一条自定义译名 + 一个自定义武器（内置表里没有的）
+            File.WriteAllText(DataTables.UserFile(DataTables.Vehicles, tableDir),
+                "\"<ID|readonly|noverify>\";\"<English>\";\"<Chinese>\"\n\"f_15e\";\"Custom Eagle\";\"自定义鹰\"\n",
+                new UTF8Encoding(false));
+            File.WriteAllText(DataTables.UserFile(DataTables.Weaponry, tableDir),
+                "\"<ID|readonly|noverify>\";\"<English>\";\"<Chinese>\"\n"
+                + "\"weapons/zz_test_cannon\";\"ZZ test cannon\";\"ZZ 测试炮\"\n",
+                new UTF8Encoding(false));
+
+            log.AppendLine($"覆盖后: f_15e 译名（简中）= {VehicleNameTable.Lookup("f_15e", "zh-CN")}；"
+                         + $"（英文列）= {VehicleNameTable.Lookup("f_15e", "en-US")}");
+            log.AppendLine($"覆盖后: zz_test_cannon 是武器 = {WeaponCatalog.IsWeapon("zz_test_cannon")}；"
+                         + $"su_r_77_1（仅内置表有）= {WeaponCatalog.IsWeapon("su_r_77_1")}；"
+                         + $"表内键 = {WeaponCatalog.KeyCount}");
+            log.AppendLine($"来源已切换: 载具译名 = {DataTables.SourceText(DataTables.Vehicles, tableDir)}；"
+                         + $"武器名表 = {DataTables.SourceText(DataTables.Weaponry, tableDir)}");
+
+            // 首次启动写出默认表 + 基线机制（与语言文件同思路：没改过就跟随程序更新，改过就保留）
+            var freshTableDir = Path.Combine(workDir, "datatables-fresh");
+            var firstRun = DataTables.EnsureUserTables(freshTableDir);
+            log.AppendLine($"首次启动（空目录）→ 新建 {firstRun.Created} 份、更新 {firstRun.Updated} 份；"
+                         + $"目录已创建 = {Directory.Exists(DataTables.UserDirectory(freshTableDir))}，"
+                         + $"基线已写 = {File.Exists(DataTables.BaselineFile(DataTables.Vehicles, freshTableDir))}");
+
+            var steady = DataTables.EnsureUserTables(freshTableDir);
+            log.AppendLine($"再次启动（表未改）→ 新建 {steady.Created} 份、更新 {steady.Updated} 份（不重复写）");
+
+            // ① 用户改过表 → 保留用户表，不被新版内置表覆盖
+            File.WriteAllText(DataTables.UserFile(DataTables.Vehicles, freshTableDir),
+                "\"<ID|readonly|noverify>\";\"<Chinese>\"\n\"f_15e\";\"我改过的名字\"\n", new UTF8Encoding(false));
+            var kept = DataTables.EnsureUserTables(freshTableDir);
+            log.AppendLine($"用户改过 → 新建 {kept.Created} 份、更新 {kept.Updated} 份；"
+                         + $"用户表未被覆盖 = {File.ReadAllText(DataTables.UserFile(DataTables.Vehicles, freshTableDir)).Contains("我改过的名字")}");
+
+            // ② 用户没改过（表与基线一致，只是旧版内置表）→ 跟随程序更新为新版内置表
+            var oldTableDir = Path.Combine(workDir, "datatables-old");
+            Directory.CreateDirectory(DataTables.UserDirectory(oldTableDir));
+            File.WriteAllText(DataTables.UserFile(DataTables.Vehicles, oldTableDir),
+                "\"<ID|readonly|noverify>\";\"<Chinese>\"\n\"f_15e\";\"旧版内置名\"\n", new UTF8Encoding(false));
+            File.Copy(DataTables.UserFile(DataTables.Vehicles, oldTableDir),
+                DataTables.BaselineFile(DataTables.Vehicles, oldTableDir)); // 基线 = 老内置版
+            var adopt = DataTables.EnsureUserTables(oldTableDir);
+            log.AppendLine($"用户没改过（表 = 基线）→ 新建 {adopt.Created} 份、更新 {adopt.Updated} 份（跟随内置新版）；"
+                         + $"用户表已变为 {new FileInfo(DataTables.UserFile(DataTables.Vehicles, oldTableDir)).Length / 1024} KB");
 
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");

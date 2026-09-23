@@ -580,7 +580,9 @@ public partial class SkinsViewModel : ObservableObject
             // 从 UserSkins / 用户选中的文件夹导入时，提供「导入后清理源文件夹」（§3.1）
             var sourceExists = !string.IsNullOrWhiteSpace(sourcePath) && Directory.Exists(sourcePath);
 
-            var preview = new ImportPreviewViewModel(candidates, sourceType, sourceExists, canDeleteArchive);
+            var preview = new ImportPreviewViewModel(candidates, sourceType, sourceExists, canDeleteArchive,
+                deleteSourceDefault: RememberedDeleteSource(sourceType),
+                deleteArchiveDefault: _config.ImportDeleteArchive);
             var window = new ImportPreviewWindow
             {
                 DataContext = preview,
@@ -589,6 +591,7 @@ public partial class SkinsViewModel : ObservableObject
 
             if (window.ShowDialog() != true) return;
 
+            RememberImportChoices(sourceType, preview);
             preview.ApplyNames();
             var result = ImportService.Commit(candidates, _config.ResourceDirectory, sourceType, sourcePath);
 
@@ -606,6 +609,58 @@ public partial class SkinsViewModel : ObservableObject
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// 上次选择的「导入后删除源」默认值（功能设计 §3.1）：
+    /// 「一键导入 UserSkins」与「导入文件夹」的清理语义不同（前者只删贡献了导入的顶层子文件夹），故分别记忆。
+    /// </summary>
+    private bool RememberedDeleteSource(ImportSourceType sourceType)
+        => sourceType == ImportSourceType.UserSkins
+            ? _config.ImportDeleteSourceUserSkins
+            : _config.ImportDeleteSourceFolder;
+
+    /// <summary>记住本次的「删除源 / 删除压缩包」勾选，下次以同样方式导入时默认沿用。</summary>
+    private void RememberImportChoices(ImportSourceType sourceType, ImportPreviewViewModel preview)
+    {
+        var changed = false;
+
+        // 只在选项**本次确实提供过**时记录，避免把未显示的勾选状态误写成默认值
+        if (preview.CanDeleteSource)
+        {
+            if (sourceType == ImportSourceType.UserSkins)
+            {
+                changed |= _config.ImportDeleteSourceUserSkins != preview.DeleteSource;
+                _config.ImportDeleteSourceUserSkins = preview.DeleteSource;
+            }
+            else
+            {
+                changed |= _config.ImportDeleteSourceFolder != preview.DeleteSource;
+                _config.ImportDeleteSourceFolder = preview.DeleteSource;
+            }
+        }
+
+        if (preview.CanDeleteArchive)
+        {
+            changed |= _config.ImportDeleteArchive != preview.DeleteArchive;
+            _config.ImportDeleteArchive = preview.DeleteArchive;
+        }
+
+        if (changed) PersistConfig();
+    }
+
+    /// <summary>把配置改动写入 config.json（失败不影响导入流程）。</summary>
+    private void PersistConfig()
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory))
+                ConfigService.Save(_config.ConfigDirectory, _config);
+        }
+        catch
+        {
+            // 记忆失败只是下次默认值不生效，不影响本次导入
         }
     }
 

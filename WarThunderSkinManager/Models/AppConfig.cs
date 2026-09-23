@@ -28,4 +28,15 @@ public partial class AppConfig : ObservableObject
     /// 未确认前每次尝试改动都会再次提示；确认后不再提示。
     /// </summary>
     [ObservableProperty] private bool _replaceSetNoticeSeen;
+
+    // ---- 导入选项记忆（功能设计 §3.1）：按导入方式记住上次的勾选，下次导入默认沿用 ----
+
+    /// <summary>「一键导入 UserSkins」→ 导入后删除源文件夹（默认勾选）</summary>
+    [ObservableProperty] private bool _importDeleteSourceUserSkins = true;
+
+    /// <summary>「导入文件夹 / 拖入文件夹」→ 导入后删除源文件夹（默认勾选）</summary>
+    [ObservableProperty] private bool _importDeleteSourceFolder = true;
+
+    /// <summary>「压缩包」→ 导入成功后删除压缩包（默认不勾：压缩包是用户下载的原件）</summary>
+    [ObservableProperty] private bool _importDeleteArchive;
 }

@@ -27,9 +27,6 @@ namespace WarThunderSkinManager.Services;
 /// </remarks>
 public static class WeaponCatalog
 {
-    /// <summary>嵌入资源名（与 .csproj 里的 <c>LogicalName</c> 一致）。</summary>
-    private const string ResourceName = "WarThunderSkinManager.Assets.units_weaponry.csv";
-
     /// <summary>真正的武器类别；其余类别不是武器。</summary>
     private const string WeaponCategory = "weapons";
 
@@ -48,17 +45,37 @@ public static class WeaponCatalog
     /// <summary>最短可匹配的键长度（太短容易误判）。</summary>
     private const int MinKeyLength = 3;
 
-    private static readonly Lazy<HashSet<string>> Index = new(BuildIndex);
+    private static readonly object Gate = new();
+    private static string _stamp = "\0";
+    private static HashSet<string> _index = new(StringComparer.Ordinal);
 
     /// <summary>表内登记的键数量（自检用）。</summary>
-    public static int KeyCount => Index.Value.Count;
+    public static int KeyCount => Index().Count;
+
+    /// <summary>
+    /// 取索引：数据表可由用户替换（<c>&lt;配置目录&gt;/ref/units_weaponry.csv</c>，见 §3.6），
+    /// 因此按来源标记缓存 —— 表文件被替换后**立即重建**，无需重启。
+    /// </summary>
+    private static HashSet<string> Index()
+    {
+        var stamp = DataTables.Stamp(DataTables.Weaponry);
+
+        lock (Gate)
+        {
+            if (string.Equals(stamp, _stamp, StringComparison.Ordinal)) return _index;
+
+            _index = BuildIndex();
+            _stamp = stamp;
+            return _index;
+        }
+    }
 
     /// <summary>
     /// 判断**已去掉贴图类型后缀**的部件位置是否指向武器。
     /// </summary>
     public static bool IsWeapon(string fromWithoutTypeSuffix)
     {
-        var index = Index.Value;
+        var index = Index();
         if (index.Count == 0 || string.IsNullOrWhiteSpace(fromWithoutTypeSuffix)) return false;
 
         var segments = fromWithoutTypeSuffix
@@ -81,7 +98,7 @@ public static class WeaponCatalog
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
 
-        using var stream = typeof(WeaponCatalog).Assembly.GetManifestResourceStream(ResourceName);
+        using var stream = DataTables.Open(DataTables.Weaponry);
         if (stream == null) return keys;
 
         using var reader = new StreamReader(stream, Encoding.UTF8);

@@ -49,12 +49,16 @@ public partial class ImportPreviewViewModel : ObservableObject
     public string CleanupHint => Loc[DeleteWholeRoot ? "import.deleteSourceFolderHint" : "import.deleteSourceHint"];
 
     public ImportPreviewViewModel(IEnumerable<ImportCandidate> candidates, ImportSourceType sourceType,
-        bool sourceExists, bool canDeleteArchive = false)
+        bool sourceExists, bool canDeleteArchive = false,
+        bool deleteSourceDefault = true, bool deleteArchiveDefault = false)
     {
         CanDeleteSource = sourceExists && sourceType is ImportSourceType.UserSkins or ImportSourceType.Folder;
         DeleteWholeRoot = sourceType == ImportSourceType.Folder;
         CanDeleteArchive = canDeleteArchive;
-        _deleteSource = CanDeleteSource; // 默认勾选：涂装已入资源库，可用「导出」恢复原始模组
+
+        // 默认取**上次的选择**（按导入方式记忆，见 §3.1）；首次使用为配置里的出厂默认
+        _deleteSource = CanDeleteSource && deleteSourceDefault;
+        _deleteArchive = CanDeleteArchive && deleteArchiveDefault;
 
         // 建议名相同 = 来自同名文件夹 = 同一套模组 → 归为一组（保持扫描顺序）
         Groups = new ObservableCollection<ImportGroupViewModel>(

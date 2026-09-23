@@ -7,11 +7,12 @@ using System.Text;
 namespace WarThunderSkinManager.Services;
 
 /// <summary>
-/// 内置载具名表（功能设计 §3.7）：嵌入资源 <c>Assets/units.csv</c>，
-/// 内容为「内部标识 → 各语言译名」。导入的新载具会按**当前界面语言**自动查表，
-/// 作为载具显示名的默认值；用户在载具管理界面自定义的名字（<c>mappings/vehicles.json</c>）优先。
+/// 载具译名表（功能设计 §3.7）：内容为「内部标识 → 各语言译名」。
+/// 导入的新载具会按**当前界面语言**自动查表，作为载具显示名的默认值；
+/// 用户在载具管理界面自定义的名字（<c>mappings/vehicles.json</c>）优先。
 /// </summary>
 /// <remarks>
+/// 表来源：**用户表优先**（<c>&lt;配置目录&gt;/ref/units.csv</c>，可单独替换更新），否则用**内置表**（嵌入资源）。
 /// CSV 格式：无 BOM 的 UTF-8、字段分隔符 <c>;</c>、字段用双引号包裹。
 /// 表头第一列为 <c>&lt;ID|readonly|noverify&gt;</c>，其余为各语言列（<c>&lt;English&gt;</c> … <c>&lt;Chinese&gt;</c> …）。
 /// 同一载具有多条词条：<c>_1</c> = **短名**（如 <c>f_15e_1</c> → "F-15E"，本程序采用）、
@@ -19,9 +20,6 @@ namespace WarThunderSkinManager.Services;
 /// </remarks>
 public static class VehicleNameTable
 {
-    /// <summary>嵌入资源默认名（取不到时按后缀兜底匹配）。</summary>
-    private const string ResourceName = "WarThunderSkinManager.Assets.units.csv";
-
     /// <summary>主词条后缀 = **短名**（长度合适，如 <c>f_15e</c> → <c>f_15e_1</c> → "F-15E"）。</summary>
     private const string ShortSuffix = "_1";
 
@@ -55,6 +53,9 @@ public static class VehicleNameTable
 
     private static readonly object Gate = new();
     private static readonly Dictionary<string, Dictionary<string, string>?> Cache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>上次建缓存时的表来源标记（用户替换表文件后据此重建缓存，无需重启）。</summary>
+    private static string _cacheStamp = "\0";
 
     /// <summary>按当前界面语言查译名；查不到返回 <c>null</c>。</summary>
     public static string? Lookup(string vehicleId) => Lookup(vehicleId, LocalizationManager.Instance.Culture);
@@ -105,6 +106,14 @@ public static class VehicleNameTable
 
         lock (Gate)
         {
+            // 表来源变了（用户替换了 units.csv）→ 全部重建
+            var stamp = DataTables.Stamp(DataTables.Vehicles);
+            if (!string.Equals(stamp, _cacheStamp, StringComparison.Ordinal))
+            {
+                Cache.Clear();
+                _cacheStamp = stamp;
+            }
+
             if (Cache.TryGetValue(code, out var cached)) return cached;
 
             var table = Load(ColumnFor(code));
@@ -130,12 +139,12 @@ public static class VehicleNameTable
         return CultureColumns.TryGetValue(primary, out var column) ? column : FallbackColumn;
     }
 
-    /// <summary>解析嵌入的 units.csv；只保留需要的语言列（省内存）。</summary>
+    /// <summary>解析 units.csv（用户表优先，内置表兜底）；只保留需要的语言列（省内存）。</summary>
     private static Dictionary<string, string>? Load(string column)
     {
         try
         {
-            using var stream = OpenResource();
+            using var stream = DataTables.Open(DataTables.Vehicles);
             if (stream == null) return null;
 
             using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -175,20 +184,6 @@ public static class VehicleNameTable
         {
             return null; // 表不可用时静默降级为「用内部标识」
         }
-    }
-
-    private static Stream? OpenResource()
-    {
-        var assembly = typeof(VehicleNameTable).Assembly;
-
-        var stream = assembly.GetManifestResourceStream(ResourceName);
-        if (stream != null) return stream;
-
-        // 资源名可能因构建方式不同而变化 → 按后缀兜底
-        var name = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith("units.csv", StringComparison.OrdinalIgnoreCase));
-
-        return name == null ? null : assembly.GetManifestResourceStream(name);
     }
 
     /// <summary>按 CSV 规则拆行：分隔符 <c>;</c>，字段可用双引号包裹，引号内 <c>""</c> 表示一个引号。</summary>

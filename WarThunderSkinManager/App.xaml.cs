@@ -29,7 +29,10 @@ public partial class App : Application
         LocalizationManager.Instance.EnsureDefaultFile(config.ConfigDirectory, config.Language);
         LocalizationManager.Instance.Load(config.ConfigDirectory, config.Language);
 
-        // 3) 建主窗口（XAML 中的 {loc:Loc} 此时已能取到文案）
+        // 3) 数据表：首次启动写出默认表；已存在时按基线决定是否跟随程序更新（§3.6 / §3.7）
+        DataTables.EnsureUserTables(config.ConfigDirectory);
+
+        // 4) 建主窗口（XAML 中的 {loc:Loc} 此时已能取到文案）
         new MainWindow(config).Show();
     }
 }

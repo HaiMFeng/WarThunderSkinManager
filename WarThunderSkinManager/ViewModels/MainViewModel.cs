@@ -48,6 +48,12 @@ public partial class MainViewModel : ObservableObject
 
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
+    /// <summary>
+    /// 可替换数据表目录（<c>&lt;配置目录&gt;/ref</c>，功能设计 §3.6 / §3.7）：
+    /// 把 <c>units.csv</c> / <c>units_weaponry.csv</c> 放进去即覆盖程序内置的表。
+    /// </summary>
+    public string DataTablesDirectory => DataTables.UserDirectory(Config.ConfigDirectory);
+
     public MainViewModel(AppConfig config)
     {
         Config = config;
@@ -68,6 +74,13 @@ public partial class MainViewModel : ObservableObject
     /// <summary>缓冲时间被改到 2 秒以下时提醒一次（§3.8「短缓冲提醒」）。</summary>
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // 数据表目录跟随配置目录
+        if (e.PropertyName == nameof(AppConfig.ConfigDirectory))
+        {
+            OnPropertyChanged(nameof(DataTablesDirectory));
+            return;
+        }
+
         if (e.PropertyName != nameof(AppConfig.SyncBufferSeconds)) return;
 
         var current = Config.SyncBufferSeconds;
@@ -112,13 +125,57 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        var error = TryOpenInExplorer(path);
+        if (error != null) ShowStatus(Loc.Format("settings.open.failed", error));
+    }
+
+    /// <summary>
+    /// 打开**可替换数据表目录**（设置页）：目录不存在则创建；两张表若还没有，
+    /// **先写一份内置默认表**（好让用户直接在此基础上改），再打开资源管理器。
+    /// </summary>
+    [RelayCommand]
+    private void OpenDataTablesFolder()
+    {
+        var configDir = Config.ConfigDirectory;
+        if (string.IsNullOrWhiteSpace(configDir))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+            var (created, updated) = DataTables.EnsureUserTables(configDir);
+            var directory = DataTables.UserDirectory(configDir);
+
+            var error = TryOpenInExplorer(directory);
+            if (error != null)
+            {
+                ShowStatus(Loc.Format("settings.open.failed", error));
+                return;
+            }
+
+            if (created > 0) ShowStatus(Loc.Format("datatables.defaultWritten", created, directory));
+            else if (updated > 0) ShowStatus(Loc.Format("datatables.defaultUpdated", updated, directory));
+            else ShowStatus(Loc.Format("datatables.opened", directory));
         }
         catch (Exception ex)
         {
-            ShowStatus(Loc.Format("settings.open.failed", ex.Message));
+            ShowStatus(Loc.Format("datatables.exportFailed", ex.Message));
+        }
+    }
+
+    /// <summary>在资源管理器中打开目录；成功返回 <c>null</c>，失败返回错误信息。</summary>
+    private static string? TryOpenInExplorer(string path)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
         }
     }
 
@@ -191,6 +248,34 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("settings.saveFailed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// 把**内置数据表**导出到 <c>&lt;配置目录&gt;/ref/</c>（功能设计 §3.6 / §3.7），
+    /// 便于用户在此基础上更新；导出后程序会立刻改用该用户表。
+    /// </summary>
+    [RelayCommand]
+    private void ExportDataTables()
+    {
+        var configDir = Config.ConfigDirectory;
+        if (string.IsNullOrWhiteSpace(configDir))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        try
+        {
+            var exported = 0;
+            foreach (var file in new[] { DataTables.Vehicles, DataTables.Weaponry })
+                if (DataTables.ExportBuiltIn(file, configDir) != null) exported++;
+
+            ShowStatus(Loc.Format("datatables.exported", exported, DataTablesDirectory));
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("datatables.exportFailed", ex.Message));
         }
     }
 
