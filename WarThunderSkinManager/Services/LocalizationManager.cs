@@ -250,6 +250,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "skins.syncWarnings": "（{0} 条告警）",
   "skins.syncFailed": "输出失败：{0}",
   "skins.firstOutput.title": "首次输出该载具涂装",
+  "skins.firstOutput.noMore": "下次不再提醒",
   "skins.firstOutput": "已完成「{0}」的涂装输出。\n\n这是该载具第一次生成用户涂装，游戏里需要手动选中一次才会生效：请打开该载具的「外观 → 用户涂装」，选中这套涂装（{1}）。\n\n之后在程序里切换涂装会自动生效，不用再选；取消激活时程序会保留一个空 blk，正是为了不影响这个选择。",
   "skins.col.candidates": "候选贴图",
   "skins.noSelection": "请在上方选择国家，并在左侧选择载具",

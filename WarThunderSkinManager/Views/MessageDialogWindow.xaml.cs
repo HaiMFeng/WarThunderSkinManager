@@ -28,9 +28,13 @@ public partial class MessageDialogWindow : Window
 {
     public MessageDialogWindow() => InitializeComponent();
 
+    /// <summary>用户是否勾选了「下次不再提醒」（无该勾选项时为 <c>false</c>）。</summary>
+    public bool NoticeChecked => NoticeCheck.IsChecked == true;
+
     /// <summary>由 <see cref="Services.MessageDialog"/> 填充内容。</summary>
+    /// <param name="checkText">可选的「下次不再提醒」勾选项文案；留空则不显示该勾选项。</param>
     public void Configure(string title, string message, DialogIcon icon,
-        string primaryText, string? cancelText, bool danger)
+        string primaryText, string? cancelText, bool danger, string? checkText = null)
     {
         Title = title;
         HeaderText.Text = title;
@@ -59,6 +63,16 @@ public partial class MessageDialogWindow : Window
         {
             CancelButton.Content = cancelText;
             CancelButton.Visibility = Visibility.Visible;
+        }
+
+        if (string.IsNullOrWhiteSpace(checkText))
+        {
+            NoticeCheck.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            NoticeCheck.Content = checkText;
+            NoticeCheck.Visibility = Visibility.Visible;
         }
     }
 

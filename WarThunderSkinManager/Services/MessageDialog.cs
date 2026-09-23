@@ -36,6 +36,27 @@ public static class MessageDialog
             danger, owner);
     }
 
+    /// <summary>
+    /// 信息提示，附带可选的「下次不再提醒」勾选项；返回用户**是否勾选**该选项
+    /// （无勾选项或未勾选时为 <c>false</c>）。勾选状态由调用方自行持久化
+    /// （例如写入 <c>config.json</c>，见 §3.8「首次输出」提示）。
+    /// </summary>
+    public static bool InfoWithCheck(string message, string checkText,
+        string? title = null, Window? owner = null)
+    {
+        var loc = LocalizationManager.Instance;
+        var dialog = new MessageDialogWindow();
+        dialog.Configure(
+            string.IsNullOrWhiteSpace(title) ? loc["common.tip"] : title,
+            message, DialogIcon.Info, loc["common.ok"], null, danger: false, checkText);
+
+        var host = ResolveOwner(owner);
+        if (host != null) dialog.Owner = host;
+
+        dialog.ShowDialog();
+        return dialog.NoticeChecked;
+    }
+
     private static bool Show(string message, string? title, DialogIcon icon,
         string primaryText, string? cancelText, bool danger, Window? owner)
     {

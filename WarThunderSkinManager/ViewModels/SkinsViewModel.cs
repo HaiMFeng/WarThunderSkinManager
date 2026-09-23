@@ -272,10 +272,27 @@ public partial class SkinsViewModel : ObservableObject
     /// </summary>
     private void PromptFirstOutput(string vehicleId)
     {
-        MessageDialog.Info(
+        if (_config.FirstOutputNoticeSeen) return; // 用户已勾过「下次不再提醒」
+
+        var noMore = MessageDialog.InfoWithCheck(
             Loc.Format("skins.firstOutput", SelectedVehicle?.DisplayName ?? vehicleId, vehicleId + ".blk"),
+            Loc["skins.firstOutput.noMore"],
             Loc["skins.firstOutput.title"],
             Application.Current?.MainWindow);
+
+        if (!noMore) return;
+
+        _config.FirstOutputNoticeSeen = true;
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory))
+                ConfigService.Save(_config.ConfigDirectory, _config);
+        }
+        catch
+        {
+            // 写不进去也不影响本次使用，只是下次会再提示一次
+        }
     }
 
     /// <summary>读取该载具的激活设置并刷新各包的激活标记。</summary>

@@ -23,6 +23,12 @@ public partial class AppConfig : ObservableObject
     /// </summary>
     [ObservableProperty] private bool _replaceSetNoticeSeen;
 
+    /// <summary>
+    /// 用户是否已勾选「下次不再提醒」于「首次输出该载具涂装」提示（§3.8）。
+    /// 该提示本来每台载具首次生成 blk 时各弹一次，勾选后不再提示。
+    /// </summary>
+    [ObservableProperty] private bool _firstOutputNoticeSeen;
+
     // ---- 导入选项记忆（功能设计 §3.1）：按导入方式记住上次的勾选，下次导入默认沿用 ----
 
     /// <summary>「一键导入 UserSkins」→ 导入后删除源文件夹（默认勾选）</summary>
