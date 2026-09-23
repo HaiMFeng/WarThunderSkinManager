@@ -621,6 +621,7 @@ internal static class SelfTest
             log.AppendLine();
             log.AppendLine("---- 语言文件补齐 ----");
             log.AppendLine($"app.title   (用户值)   = {loc["app.title"]}");
+            log.AppendLine($"app.language.name（下拉显示名来源）= {loc[LocalizationManager.LanguageNameKey]}");
             log.AppendLine($"nav.skins   (默认补齐) = {loc["nav.skins"]}");
             log.AppendLine($"import.title(默认补齐) = {loc["import.title"]}");
             var langText = File.ReadAllText(Path.Combine(langRoot, "lang", "zh-CN.json"), Encoding.UTF8);

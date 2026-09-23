@@ -32,6 +32,10 @@ public sealed class LocalizationManager : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>语言显示名的 key：写在**各语言文件自己里面**（语言自己写自己，如 en-US.json 里是 "English"），
+    /// 设置页语言下拉据此显示；缺失时由调用方回退语言代码。</summary>
+    public const string LanguageNameKey = "app.language.name";
+
     public static string LangDirectory(string configDir) => Path.Combine(configDir, "lang");
 
     public static string LangFile(string configDir, string culture)
@@ -110,6 +114,33 @@ public sealed class LocalizationManager : INotifyPropertyChanged
 
     public void SetLanguage(string configDir, string culture) => Load(configDir, culture);
 
+    /// <summary>
+    /// 读某个语言文件里的**语言显示名**（<see cref="LanguageNameKey"/>）。
+    /// 设置页语言下拉用：不需要真正加载该语言，只取它自己声明的名字；
+    /// 文件缺失 / 没写这个 key / 解析失败返回 <c>null</c>（调用方回退显示语言代码）。
+    /// </summary>
+    public static string? ReadLanguageName(string configDir, string culture)
+    {
+        try
+        {
+            var path = LangFile(configDir, culture);
+            if (!File.Exists(path)) return null;
+
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                File.ReadAllText(path, Encoding.UTF8));
+
+            return parsed != null
+                && parsed.TryGetValue(LanguageNameKey, out var name)
+                && !string.IsNullOrWhiteSpace(name)
+                    ? name.Trim()
+                    : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void RaiseChanged()
     {
         // "Item[]" 通知 WPF 刷新所有索引器绑定
@@ -172,6 +203,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
     private const string DefaultJson = """
 {
   "app.title": "WarThunder Skin Manager",
+  "app.language.name": "简体中文",
 
   "nav.header": "导航",
   "nav.skins": "涂装管理",
@@ -190,6 +222,9 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "settings.directories": "目录配置",
   "settings.userSkins.label": "游戏 UserSkins 目录",
   "settings.userSkins.hint": "程序将在其下建立 WTSM/ 输出目录",
+  "settings.language": "界面语言",
+  "settings.language.hint": "切换立即生效。载具的自动译名会按所选语言重新解析（用户自定义名不受影响）。下拉里的语言来自配置目录 lang/ 下的 <语言代码>.json；语言显示名写在各语言文件内的 app.language.name，没有就显示语言代码。",
+  "settings.language.changed": "界面语言已切换：{0}",
   "settings.resource.label": "程序资源存储目录",
   "settings.resource.hint": "皮肤库，可能几百 GB",
   "settings.config.label": "程序配置目录",

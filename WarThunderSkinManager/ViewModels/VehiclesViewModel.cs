@@ -261,6 +261,26 @@ public partial class VehiclesViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 界面语言切换后重算（由设置页触发）：国家下拉文案重建；**自动译名按新语言重新检索**
+    /// （译名表按界面语言取列，用户映射仍最优先，§3.7）；并按新显示名重排列表。
+    /// </summary>
+    public void ApplyLanguageChange()
+    {
+        BuildCountryOptions();
+        SelectedCountryOption = CountryOptions.FirstOrDefault(
+            o => string.Equals(o.Id, SelectedVehicle?.CountryId, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var vehicle in Vehicles)
+            vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, _displayNames);
+
+        var previousId = SelectedVehicle?.Id;
+        Vehicles = new ObservableCollection<Vehicle>(
+            Vehicles.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(v => v.DisplayName, StringComparer.Ordinal));
+        SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousId) ?? SelectedVehicle;
+    }
+
+    /// <summary>
     /// 启动加载：与涂装管理页共用同一份索引快照（§4）——快就先出界面，
     /// 没有快照时交给后台构建，不在 UI 线程扫库。
     /// </summary>

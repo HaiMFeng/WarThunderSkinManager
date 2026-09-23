@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -13,6 +15,26 @@ using WarThunderSkinManager.Services;
 using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.ViewModels;
+
+/// <summary>
+/// 语言下拉项：显示名 = **语言文件内自己声明的名字**（<c>app.language.name</c>，如 en-US.json 里写
+/// "English"），缺失时回退显示语言代码；后缀始终带上代码便于辨认。
+/// </summary>
+public sealed class LanguageOption
+{
+    public string Code { get; }
+    public string DisplayName { get; }
+
+    public LanguageOption(string code, string? declaredName)
+    {
+        Code = code;
+        DisplayName = string.IsNullOrWhiteSpace(declaredName)
+            ? code
+            : $"{declaredName.Trim()}（{code}）";
+    }
+
+    public override string ToString() => DisplayName;
+}
 
 /// <summary>主窗体导航页。</summary>
 public enum TabKey
@@ -52,6 +74,13 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(AppConfig config)
     {
         Config = config;
+
+        // 语言下拉：内置支持 + 用户放进 lang/ 的语言文件；当前语言直接写字段，避免 ctor 里触发切换
+        AvailableLanguages = ScanLanguages(config.ConfigDirectory);
+        _selectedLanguageOption = AvailableLanguages.FirstOrDefault(
+            l => string.Equals(l.Code, config.Language, StringComparison.OrdinalIgnoreCase))
+            ?? AvailableLanguages.FirstOrDefault();
+
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
 
@@ -94,6 +123,88 @@ public partial class MainViewModel : ObservableObject
         if (e.PropertyName != nameof(AppConfig.ConfigDirectory)) return;
 
         OnPropertyChanged(nameof(DataTablesDirectory));
+    }
+
+    // ---------- 界面语言（功能设计 §3.9）----------
+
+    /// <summary>内置支持的语言（首次启动会写出对应的默认语言文件）。</summary>
+    private static readonly string[] BuiltInLanguages = { "zh-CN" };
+
+    /// <summary>可选语言 = 内置支持 + 用户放进 <c>lang/</c> 的语言文件（<c>_</c> 开头的基线文件不算）。</summary>
+    public IReadOnlyList<LanguageOption> AvailableLanguages { get; }
+
+    [ObservableProperty] private LanguageOption? _selectedLanguageOption;
+
+    /// <summary>切语言时置位，避免回滚选择时再次触发切换。</summary>
+    private bool _applyingLanguage;
+
+    partial void OnSelectedLanguageOptionChanged(LanguageOption? value)
+    {
+        if (_applyingLanguage || value == null) return;
+        if (string.Equals(value.Code, Config.Language, StringComparison.OrdinalIgnoreCase)) return;
+
+        // 没有配置目录就写不了语言文件 → 回滚选择
+        if (string.IsNullOrWhiteSpace(Config.ConfigDirectory))
+        {
+            _applyingLanguage = true;
+            SelectedLanguageOption = AvailableLanguages.FirstOrDefault(
+                l => string.Equals(l.Code, Config.Language, StringComparison.OrdinalIgnoreCase));
+            _applyingLanguage = false;
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        ApplyLanguage(value);
+    }
+
+    /// <summary>
+    /// 切换界面语言：重载语言文件（内置默认补齐、用户改动保留）→ <c>{loc:Loc}</c> 绑定整体刷新；
+    /// 并让**派生自语言的数据**重算——载具自动译名（§3.7，译名表按界面语言取列）与国家横条文案。
+    /// </summary>
+    private void ApplyLanguage(LanguageOption option)
+    {
+        Config.Language = option.Code;
+        PersistConfig();
+
+        LocalizationManager.Instance.Load(Config.ConfigDirectory, option.Code);
+
+        // 载具名自动检索跟随语言：用户映射仍然最优先，自动译名按新语言重取（§3.7）
+        Skins.ApplyLanguageChange();
+        Vehicles.ApplyLanguageChange();
+
+        ShowStatus(Loc.Format("settings.language.changed", option.DisplayName));
+    }
+
+    /// <summary>
+    /// 扫描可选语言：内置支持 + <c>lang/&lt;culture&gt;.json</c>（基线文件除外）；
+    /// 显示名取各自语言文件内声明的 <c>app.language.name</c>（语言自己写自己，缺失回退语言代码）。
+    /// </summary>
+    private static List<LanguageOption> ScanLanguages(string configDir)
+    {
+        var codes = new List<string>(BuiltInLanguages);
+
+        try
+        {
+            var dir = LocalizationManager.LangDirectory(configDir);
+            if (Directory.Exists(dir))
+            {
+                foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
+                {
+                    var name = Path.GetFileName(file);
+                    if (name.StartsWith("_", StringComparison.Ordinal)) continue; // 基线文件
+
+                    var culture = Path.GetFileNameWithoutExtension(name);
+                    if (culture.Length > 0 && !codes.Contains(culture)) codes.Add(culture);
+                }
+            }
+        }
+        catch
+        {
+            // 目录读不了就只有内置语言可选
+        }
+
+        return codes.Select(code =>
+            new LanguageOption(code, LocalizationManager.ReadLanguageName(configDir, code))).ToList();
     }
 
     [RelayCommand]
