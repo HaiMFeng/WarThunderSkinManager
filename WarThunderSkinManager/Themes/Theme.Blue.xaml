@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============ 主题：默认蓝（界面设计规范 §2.1 默认配色） ============ -->
+    <Color x:Key="ColorPrimary">#2563eb</Color>
+    <Color x:Key="ColorPrimaryHover">#3b82f6</Color>
+    <Color x:Key="ColorPrimaryPressed">#1d4ed8</Color>
+    <Color x:Key="ColorPrimaryFill">#3b82f6</Color>
+    <Color x:Key="ColorPrimaryFillHover">#60a5fa</Color>
+    <Color x:Key="ColorPrimaryFillPressed">#2563eb</Color>
+    <Color x:Key="ColorAccent">#60a5fa</Color>
+    <Color x:Key="ColorBorder">#e2e8f0</Color>
+    <Color x:Key="ColorBorderStrong">#cbd5e1</Color>
+    <Color x:Key="ColorBorderFocus">#2563eb</Color>
+    <Color x:Key="ColorSurface">#f1f5f9</Color>
+    <Color x:Key="ColorSurface2">#e0ecff</Color>
+    <Color x:Key="ColorHover">#eef2f7</Color>
+    <Color x:Key="ColorBackground">#FFFFFF</Color>
+    <Color x:Key="ColorCanvas">#f8fafc</Color>
+    <Color x:Key="ColorText">#1e293b</Color>
+    <Color x:Key="ColorTextSecondary">#475569</Color>
+    <Color x:Key="ColorTextMuted">#94a3b8</Color>
+    <Color x:Key="ColorDanger">#ef4444</Color>
+    <Color x:Key="ColorDangerHover">#dc2626</Color>
+    <Color x:Key="ColorDangerPressed">#b91c1c</Color>
+    <Color x:Key="ColorDangerSoftBg">#FEF2F2</Color>
+    <Color x:Key="ColorDangerSoftBorder">#FECACA</Color>
+    <Color x:Key="ColorDangerSoftText">#B91C1C</Color>
+    <Color x:Key="ColorWarning">#d97706</Color>
+    <Color x:Key="ColorOnAccent">#FFFFFF</Color>
+    <Color x:Key="ColorCardOverlay">#B3101828</Color>
+    <Color x:Key="ColorShadow">#0f172a</Color>
+    <Color x:Key="ColorScrollBarTrack">#EDF1F6</Color>
+    <Color x:Key="ColorScrollBarThumb">#C7D2DE</Color>
+    <Color x:Key="ColorScrollBarThumbHover">#9AA9BB</Color>
+    <Color x:Key="ColorScrollBarThumbDrag">#6B7A8D</Color>
+    <Color x:Key="ColorTagDefaultBg">#DBEAFE</Color>
+    <Color x:Key="ColorTagDefaultBorder">#2563EB</Color>
+    <Color x:Key="ColorTagDefaultText">#1D4ED8</Color>
+    <Color x:Key="ColorTagTextureBg">#DCFCE7</Color>
+    <Color x:Key="ColorTagTextureBorder">#22C55E</Color>
+    <Color x:Key="ColorTagTextureText">#15803D</Color>
+    <Color x:Key="ColorTagNormalBg">#FEF3C7</Color>
+    <Color x:Key="ColorTagNormalBorder">#F59E0B</Color>
+    <Color x:Key="ColorTagNormalText">#B45309</Color>
+    <Color x:Key="ColorTagWeaponBg">#FEE2E2</Color>
+    <Color x:Key="ColorTagWeaponBorder">#EF4444</Color>
+    <Color x:Key="ColorTagWeaponText">#B91C1C</Color>
+    <Color x:Key="ColorTagCrossBg">#EDE9FE</Color>
+    <Color x:Key="ColorTagCrossBorder">#8B5CF6</Color>
+    <Color x:Key="ColorTagCrossText">#6D28D9</Color>
+    <Color x:Key="ColorActive">#16A34A</Color>
+    <Color x:Key="ColorActiveFill">#22C55E</Color>
+    <Color x:Key="ColorActiveStrip">#CC15803D</Color>
+    <!-- 透明色：悬停离开动画的终点。rgb 随主题走（深色用黑），避免淡出途中闪白 -->
+    <Color x:Key="ColorTransparent">#00FFFFFF</Color>
+</ResourceDictionary>

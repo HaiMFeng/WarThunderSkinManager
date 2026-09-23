@@ -26,6 +26,28 @@
                 </StackPanel>
             </Border>
 
+            <!-- 主题（界面设计规范 §3）：内置四套配色，重启生效 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.theme}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.theme.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox Style="{StaticResource BaseComboBox}" Width="220"
+                                  ItemsSource="{Binding Themes}"
+                                  SelectedItem="{Binding SelectedTheme, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Content="{loc:Loc settings.theme.restart}" Style="{StaticResource SecondaryButton}"
+                                Margin="10,0,0,0" Command="{Binding RestartCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- 目录配置 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>

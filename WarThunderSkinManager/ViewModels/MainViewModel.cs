@@ -36,6 +36,21 @@ public sealed class LanguageOption
     public override string ToString() => DisplayName;
 }
 
+/// <summary>主题下拉项（名称走语言文件 theme.* 键）。</summary>
+public sealed class ThemeItem
+{
+    public string Id { get; }
+    public string DisplayName { get; }
+
+    public ThemeItem(string id)
+    {
+        Id = id;
+        DisplayName = LocalizationManager.Instance[$"theme.{id.ToLowerInvariant()}"];
+    }
+
+    public override string ToString() => DisplayName;
+}
+
 /// <summary>主窗体导航页。</summary>
 public enum TabKey
 {
@@ -84,6 +99,11 @@ public partial class MainViewModel : ObservableObject
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
 
+        // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
+        Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();
+        _selectedTheme = Themes.FirstOrDefault(
+            t => string.Equals(t.Id, config.Theme, StringComparison.OrdinalIgnoreCase)) ?? Themes[0];
+
         // 子页状态变化 → 刷新标题右侧的统一提示位点
         Skins.PropertyChanged += OnChildChanged;
         Vehicles.PropertyChanged += OnChildChanged;
@@ -123,6 +143,35 @@ public partial class MainViewModel : ObservableObject
         if (e.PropertyName != nameof(AppConfig.ConfigDirectory)) return;
 
         OnPropertyChanged(nameof(DataTablesDirectory));
+    }
+
+    // ---------- 主题（界面设计规范 §3）----------
+
+    /// <summary>内置主题下拉项。</summary>
+    public IReadOnlyList<ThemeItem> Themes { get; }
+
+    [ObservableProperty] private ThemeItem? _selectedTheme;
+
+    partial void OnSelectedThemeChanged(ThemeItem? value)
+    {
+        if (value == null) return;
+        if (string.Equals(value.Id, Config.Theme, StringComparison.OrdinalIgnoreCase)) return;
+
+        // 主题字典在启动时合并，切换后重启生效（§3「生效时机」采用重启方案）
+        Config.Theme = value.Id;
+        PersistConfig();
+        ShowStatus(Loc["settings.theme.changed"]);
+    }
+
+    /// <summary>重启程序（主题等需重启生效的设置使用）。</summary>
+    [RelayCommand]
+    private void Restart()
+    {
+        var exe = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(exe)) return;
+
+        Process.Start(exe);
+        Application.Current?.Shutdown();
     }
 
     // ---------- 界面语言（功能设计 §3.9）----------

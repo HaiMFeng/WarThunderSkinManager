@@ -25,6 +25,9 @@ public partial class App : Application
         if (string.IsNullOrEmpty(config.ConfigDirectory))
             config.ConfigDirectory = cfgDir;
 
+        // 1.5) 主题：先合并所选主题的颜色字典，再合并画刷与组件样式（界面设计规范 §3）
+        ApplyTheme(config.Theme);
+
         // 2) 语言文件：内置语言（zh-CN / en-US）各写出一份默认文件，再加载配置所选语言（§3.9）
         foreach (var culture in LocalizationManager.BuiltInCultures)
             LocalizationManager.Instance.EnsureDefaultFile(config.ConfigDirectory, culture);
@@ -35,5 +38,20 @@ public partial class App : Application
 
         // 4) 建主窗口（XAML 中的 {loc:Loc} 此时已能取到文案）
         new MainWindow(config).Show();
+    }
+
+    /// <summary>
+    /// 按配置合并主题：先合并**主题颜色字典**（Themes/Theme.&lt;Id&gt;.xaml），
+    /// 再合并画刷与组件样式（Themes/ThemeResources.xaml，其中画刷按 key 引用主题颜色）。
+    /// 必须在创建任何窗口之前调用（StaticResource 在解析时取值，主题切换因此重启生效，§3）。
+    /// </summary>
+    private static void ApplyTheme(string? themeId)
+    {
+        var dictionaries = Current.Resources.MergedDictionaries;
+        dictionaries.Add(ThemeCatalog.LoadThemeDictionary(themeId));
+        dictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("Themes/ThemeResources.xaml", UriKind.Relative)
+        });
     }
 }

@@ -665,6 +665,12 @@ internal static class SelfTest
 
             LocalizationManager.Instance.Load(Path.Combine(workDir, "cfg-lang"), "zh-CN"); // 恢复中文，避免影响后续输出
 
+            // ---- 主题（界面设计规范 §3）----
+            log.AppendLine();
+            log.AppendLine("---- 主题 ----");
+            log.AppendLine($"内置主题  : {string.Join(", ", ThemeCatalog.ThemeIds)}");
+            log.AppendLine($"未知 id   : nope → {ThemeCatalog.Normalize("nope")}（应为 {ThemeCatalog.DefaultTheme}）");
+
             // ---- 数据表可单独替换（§3.6 / §3.7）：用户表优先、内置表兜底、替换后立即生效 ----
             log.AppendLine();
             log.AppendLine("---- 数据表（可单独替换）----");

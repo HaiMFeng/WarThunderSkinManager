@@ -4,7 +4,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Themes/ThemeResources.xaml"/>
+                <!-- 主题颜色字典与样式字典在 App.OnStartup 中按配置合并（主题选择见界面设计规范 §3） -->
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
