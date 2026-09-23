@@ -241,6 +241,56 @@ internal static class SelfTest
             log.AppendLine($"含国旗/零宽字符条目: {flagged} 条，查表后残留: {leftover} 条"
                          + (leftoverSample.Length > 0 ? $"（例：{leftoverSample}）" : ""));
 
+            // ---- 资源库索引快照（懒加载，§4）----
+            log.AppendLine();
+            log.AppendLine("---- 资源库索引快照（懒加载）----");
+
+            var indexConfigDir = Path.Combine(workDir, "cfg-index");
+            var indexWatch = System.Diagnostics.Stopwatch.StartNew();
+            var indexBuilt = LibraryService.Build(indexConfigDir, resourceDir);
+            indexWatch.Stop();
+
+            int IndexMappings(LibrarySnapshot snapshot) => snapshot.Packages.Sum(p => p.Mappings.Count);
+            int VehicleMappings(List<Vehicle> list)
+                => list.Sum(v => v.SkinPackages.Sum(p => p.Mappings.Count));
+            int VehicleTextures(List<Vehicle> list)
+                => list.Sum(v => v.SkinPackages.Sum(p => p.Textures.Count));
+
+            var indexMappings = IndexMappings(indexBuilt);
+            log.AppendLine($"全量构建  : {indexBuilt.Packages.Count} 个包、{indexMappings} 条映射，{indexWatch.ElapsedMilliseconds} ms");
+
+            var indexFile = LibraryService.IndexFile(indexConfigDir);
+            log.AppendLine($"快照落盘  : index/{Path.GetFileName(indexFile)}，{new FileInfo(indexFile).Length} 字节");
+
+            var indexBack = LibraryService.LoadSnapshot(indexConfigDir, resourceDir);
+            log.AppendLine($"读回快照  : {(indexBack == null ? "失败" : $"{indexBack.Packages.Count} 个包、{IndexMappings(indexBack)} 条映射")}"
+                         + $"，与全量构建一致 = {indexBack != null && IndexMappings(indexBack) == indexMappings}");
+
+            // 快照还原出的库必须与「直接扫盘聚合」等价（不只数量，映射与贴图引用也要一致）
+            var aggDirect = VehicleAggregator.BuildAll(resourceDir);
+            var fromSnapshot = LibraryService.ToVehicles(indexBack ?? indexBuilt);
+            log.AppendLine($"还原载具  : 快照 {fromSnapshot.Count} 台 / 直接聚合 {aggDirect.Count} 台"
+                         + $"，映射一致 = {VehicleMappings(fromSnapshot) == VehicleMappings(aggDirect)}"
+                         + $"，贴图引用一致 = {VehicleTextures(fromSnapshot) == VehicleTextures(aggDirect)}");
+
+            log.AppendLine($"未改动    : 判定已过期 = {LibraryService.IsStale(indexBuilt, resourceDir)}（应为 False → 启动时零扫描）");
+
+            var indexProbe = indexBuilt.Packages.FirstOrDefault();
+            var indexProbeMeta = indexProbe == null ? null : PackageStore.Load(resourceDir, indexProbe.Meta.Id);
+            if (indexProbeMeta != null)
+            {
+                indexProbeMeta.Name += "（改名探测）";
+                PackageStore.SaveMeta(resourceDir, indexProbeMeta);
+                log.AppendLine($"改过 meta : 判定已过期 = {LibraryService.IsStale(indexBuilt, resourceDir)}（应为 True）");
+
+                var indexResaved = LibraryService.Build(indexConfigDir, resourceDir);
+                var nameNow = LibraryService.ToVehicles(indexResaved).SelectMany(v => v.SkinPackages)
+                    .FirstOrDefault(p => p.Id == indexProbeMeta.Id)?.Name;
+                log.AppendLine($"重建后    : 快照里的新名字 = {nameNow}");
+            }
+
+            log.AppendLine($"换资源目录: 旧快照作废 = {LibraryService.LoadSnapshot(indexConfigDir, Path.Combine(workDir, "另一个库")) == null}（应为 True）");
+
             // ---- 部件标签推测（§3.6，命名规律见格式文档 §6；仅供参考）----
             log.AppendLine();
             log.AppendLine("---- 部件标签推测（武器 + 部位 + 贴图类型）----");

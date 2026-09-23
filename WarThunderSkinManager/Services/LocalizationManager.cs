@@ -246,6 +246,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
   "skins.activeIs": "当前激活：{0}",
   "skins.notActive": "尚未激活任何涂装包（右键卡片可激活）",
   "skins.needActive": "请先右键激活一套涂装包",
+  "library.scanning": "首次启动：正在扫描资源库，完成后会立即显示…",
+  "library.refreshed": "资源库有变化，列表已更新",
   "skins.syncDone": "已输出：{0} 条映射、写入 {1} 张贴图",
   "skins.syncWarnings": "（{0} 条告警）",
   "skins.syncFailed": "输出失败：{0}",

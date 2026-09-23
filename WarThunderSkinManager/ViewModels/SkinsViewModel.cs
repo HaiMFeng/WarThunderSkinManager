@@ -38,10 +38,19 @@ public partial class CountryItem : ObservableObject
 /// </summary>
 public partial class SkinsViewModel : ObservableObject
 {
+    /// <summary>
+    /// 卡片缩略图的解码宽度（见 <see cref="LoadPreviews"/>）：卡片实际宽 140–340，
+    /// 上采样到 640 足以覆盖高 DPI 下的清晰度，同时把每张图的内存占用压到 MB 以下。
+    /// </summary>
+    private const int ThumbnailDecodeWidth = 640;
+
     private readonly AppConfig _config;
     private readonly DispatcherTimer _statusTimer;
 
     private List<Vehicle> _allVehicles = new();
+
+    /// <summary>已经加载过预览图的载具（切换时释放，避免整库图常驻内存）。</summary>
+    private Vehicle? _previewVehicle;
 
     [ObservableProperty] private ObservableCollection<CountryItem> _countries = new();
     [ObservableProperty] private CountryItem? _selectedCountry;
@@ -68,7 +77,7 @@ public partial class SkinsViewModel : ObservableObject
             _statusTimer.Stop();
         };
 
-        RefreshLibrary();
+        InitializeLibrary();
     }
 
     public bool HasVehicles => Vehicles.Count > 0;
@@ -130,6 +139,7 @@ public partial class SkinsViewModel : ObservableObject
         Packages = new ObservableCollection<SkinPackage>(value?.SkinPackages ?? new List<SkinPackage>());
         SelectedPackage = Packages.FirstOrDefault();
         LoadActivation();
+        LoadPreviews(value); // 只解码当前载具的预览图（§3.6 / §4）
 
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectedVehicleTitle));
@@ -473,19 +483,41 @@ public partial class SkinsViewModel : ObservableObject
 
     // ---------- 库刷新 ----------
 
+    /// <summary>
+    /// 启动加载（功能设计 §4「几百 GB 资源目录的性能」）：**先用索引快照立刻出界面**，
+    /// 再在**后台线程**核对实际文件；只有真的变了才重建并刷新列表，没变化则零扫描。
+    /// </summary>
+    private void InitializeLibrary()
+    {
+        var configDir = _config.ConfigDirectory;
+        var resourceDir = _config.ResourceDirectory;
+
+        var snapshot = LibraryService.TakeCached(configDir, resourceDir)
+                       ?? LibraryService.LoadSnapshot(configDir, resourceDir);
+
+        if (snapshot != null)
+            ApplySnapshot(snapshot);
+        else
+            ShowStatus(Loc["library.scanning"]); // 首次启动无快照：先说明，再后台建
+
+        // 回调在后台线程 → 切回 UI 线程更新界面
+        LibraryService.VerifyInBackground(configDir, resourceDir, snapshot, fresh =>
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                ApplySnapshot(fresh);
+                ShowStatus(Loc["library.refreshed"]);
+            }));
+    }
+
+    /// <summary>
+    /// 全量重建库（**同步**，慢）：由本程序自己改了库之后调用（导入 / 删除 / 复制 / 改部件配置 / 清除数据），
+    /// 顺便把索引快照写成最新 —— 下次启动就只需读快照。
+    /// </summary>
     private void RefreshLibrary()
     {
-        var previousPackageId = SelectedPackage?.Id;
-
         try
         {
-            _allVehicles = LoadVehicles();
-            ApplyVehicleMappings(_allVehicles);
-            ResolvePreviews(_allVehicles);
-            RebuildCountries();
-            ApplyCountryFilter();
-
-            SelectedPackage = Packages.FirstOrDefault(p => p.Id == previousPackageId) ?? Packages.FirstOrDefault();
+            ApplySnapshot(LibraryService.Build(_config.ConfigDirectory, _config.ResourceDirectory));
         }
         catch (Exception ex)
         {
@@ -493,19 +525,24 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
-    private List<Vehicle> LoadVehicles()
+    /// <summary>快照 → 界面：载具列表 → 显示名 → 国家横条与筛选（选中项尽量保持）。</summary>
+    private void ApplySnapshot(LibrarySnapshot snapshot)
     {
-        var resourceDir = _config.ResourceDirectory;
-        if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
-            return new List<Vehicle>();
+        var previousPackageId = SelectedPackage?.Id;
 
-        // 国家以用户在「载具管理」里的手动归类为准（§3.4 / §3.10）
-        var overrides = string.IsNullOrWhiteSpace(_config.ConfigDirectory)
+        _allVehicles = LibraryService.ToVehicles(snapshot, LoadCountryOverrides());
+        ApplyVehicleMappings(_allVehicles);
+        RebuildCountries();
+        ApplyCountryFilter(); // 选中载具若已不存在会自动回退；变化会触发预览图加载
+
+        SelectedPackage = Packages.FirstOrDefault(p => p.Id == previousPackageId) ?? Packages.FirstOrDefault();
+    }
+
+    /// <summary>国家以用户在「载具管理」里的手动归类为准（§3.4 / §3.10）。</summary>
+    private IReadOnlyDictionary<string, string>? LoadCountryOverrides()
+        => string.IsNullOrWhiteSpace(_config.ConfigDirectory)
             ? null
             : ConfigService.LoadVehicleCountries(_config.ConfigDirectory);
-
-        return VehicleAggregator.BuildAll(resourceDir, overrides);
-    }
 
     /// <summary>
     /// 载具显示名（功能设计 §3.7）：用户映射 → 内置译名表（units.csv，按界面语言）→ 内部标识。
@@ -530,17 +567,31 @@ public partial class SkinsViewModel : ObservableObject
             vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, map);
     }
 
-    /// <summary>加载各包预览图到内存（不占用文件句柄；缺失则留空 → 界面显示占位）。</summary>
-    private void ResolvePreviews(IEnumerable<Vehicle> vehicles)
+    /// <summary>
+    /// 预览图**按需加载**（§3.6）：只解码**当前载具**的包，切走时释放上一个载具的图，
+    /// 并按卡片需要的宽度**降采样解码** —— 否则几百个包一次性全解码会同时拖慢启动、吃掉大量内存。
+    /// 缺失 / 解码失败则留空 → 界面显示占位。
+    /// </summary>
+    private void LoadPreviews(Vehicle? vehicle)
     {
-        foreach (var vehicle in vehicles)
-            foreach (var package in vehicle.SkinPackages)
-            {
-                var full = PreviewStore.FullPath(_config.ConfigDirectory, package.Id);
-                package.PreviewPath = File.Exists(full) ? full : "";
-                // 不降采样：缩略图可能用于辨认载具，保持原始清晰度
-                package.PreviewImage = PreviewStore.LoadImage(full);
-            }
+        if (_previewVehicle != null && !ReferenceEquals(_previewVehicle, vehicle))
+        {
+            foreach (var package in _previewVehicle.SkinPackages) package.PreviewImage = null;
+        }
+
+        _previewVehicle = vehicle;
+
+        if (vehicle == null || string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return;
+
+        foreach (var package in vehicle.SkinPackages)
+        {
+            if (package.PreviewImage != null) continue; // 同一载具反复选中不重复解码
+
+            var full = PreviewStore.FullPath(_config.ConfigDirectory, package.Id);
+            var image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth);
+            package.PreviewPath = image == null ? "" : full;
+            package.PreviewImage = image;
+        }
     }
 
     private void RebuildCountries()

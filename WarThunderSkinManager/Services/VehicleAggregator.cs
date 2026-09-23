@@ -91,58 +91,72 @@ public static class VehicleAggregator
 
         // 同载具内按用户排序（meta.Order），名称兜底保证稳定
         foreach (var meta in metas.OrderBy(m => m.Order).ThenBy(m => m.Name, StringComparer.Ordinal))
-        {
-            var package = new SkinPackage
-            {
-                Id = meta.Id,
-                VehicleId = meta.VehicleId,
-                Name = meta.Name,
-                SourceImportId = meta.SourceImportId,
-                PreviewPath = meta.Preview
-            };
-
-            if (meta.PartsConfigured || meta.Parts.Count > 0)
-            {
-                foreach (var part in meta.Parts)
-                {
-                    if (string.IsNullOrWhiteSpace(part.From) || string.IsNullOrWhiteSpace(part.To)) continue;
-
-                    package.Mappings.Add(new TexMapping
-                    {
-                        Mode = part.Mode,
-                        FromModule = part.From,
-                        ToFile = part.To,
-                        Param = part.Param,
-                        HasWildcard = part.From.Contains('*')
-                    });
-                }
-            }
-            else
-            {
-                var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
-                if (File.Exists(sourceBlk))
-                {
-                    var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
-                    package.Mappings.AddRange(blk.Mappings);
-                }
-            }
-
-            foreach (var texture in meta.Textures)
-            {
-                package.Textures.Add(new TextureRef { To = texture.To, Blob = texture.Blob });
-
-                // 回填映射的内容寻址引用，供激活输出使用
-                foreach (var mapping in package.Mappings.Where(
-                             m => string.Equals(m.ToFile, texture.To, StringComparison.OrdinalIgnoreCase)))
-                {
-                    mapping.TextureRef = texture.Blob + Path.GetExtension(texture.To).ToLowerInvariant();
-                }
-            }
-
-            packages.Add(package);
-        }
+            packages.Add(BuildPackage(resourceDir, meta));
 
         return packages;
+    }
+
+    /// <summary>
+    /// 还原**单个包**（读 meta.parts，或解析 source.blk，再回填贴图引用）。
+    /// 也是索引快照（<see cref="LibraryService"/>）构建时用的入口。
+    /// </summary>
+    public static SkinPackage BuildPackage(string resourceDir, PackageMeta meta)
+    {
+        var package = new SkinPackage
+        {
+            Id = meta.Id,
+            VehicleId = meta.VehicleId,
+            Name = meta.Name,
+            SourceImportId = meta.SourceImportId,
+            PreviewPath = meta.Preview
+        };
+
+        if (meta.PartsConfigured || meta.Parts.Count > 0)
+        {
+            foreach (var part in meta.Parts)
+            {
+                if (string.IsNullOrWhiteSpace(part.From) || string.IsNullOrWhiteSpace(part.To)) continue;
+
+                package.Mappings.Add(new TexMapping
+                {
+                    Mode = part.Mode,
+                    FromModule = part.From,
+                    ToFile = part.To,
+                    Param = part.Param,
+                    HasWildcard = part.From.Contains('*')
+                });
+            }
+        }
+        else
+        {
+            var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
+            if (File.Exists(sourceBlk))
+            {
+                var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
+                package.Mappings.AddRange(blk.Mappings);
+            }
+        }
+
+        ApplyTextures(package, meta.Textures);
+        return package;
+    }
+
+    /// <summary>
+    /// 按 <c>meta.textures</c> 回填该包的贴图引用，并把内容寻址引用（blob）关联到对应映射
+    /// （激活输出靠它调度贴图）。
+    /// </summary>
+    public static void ApplyTextures(SkinPackage package, IEnumerable<TextureEntry> textures)
+    {
+        foreach (var texture in textures)
+        {
+            package.Textures.Add(new TextureRef { To = texture.To, Blob = texture.Blob });
+
+            foreach (var mapping in package.Mappings.Where(
+                         m => string.Equals(m.ToFile, texture.To, StringComparison.OrdinalIgnoreCase)))
+            {
+                mapping.TextureRef = texture.Blob + Path.GetExtension(texture.To).ToLowerInvariant();
+            }
+        }
     }
 
     /// <summary>国家判定：用户覆盖优先，否则按前缀自动归类。</summary>

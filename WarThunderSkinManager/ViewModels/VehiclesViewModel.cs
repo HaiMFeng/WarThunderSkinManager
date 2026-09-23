@@ -67,7 +67,7 @@ public partial class VehiclesViewModel : ObservableObject
         };
 
         BuildCountryOptions();
-        RefreshLibrary();
+        InitializeLibrary();
     }
 
     public bool HasVehicles => Vehicles.Count > 0;
@@ -260,39 +260,68 @@ public partial class VehiclesViewModel : ObservableObject
                 .Select(id => new CountryOption(id, Loc[CountryCatalog.DisplayNameKey(id)])));
     }
 
+    /// <summary>
+    /// 启动加载：与涂装管理页共用同一份索引快照（§4）——快就先出界面，
+    /// 没有快照时交给后台构建，不在 UI 线程扫库。
+    /// </summary>
+    private void InitializeLibrary()
+    {
+        var snapshot = LibraryService.TakeCached(_config.ConfigDirectory, _config.ResourceDirectory)
+                       ?? LibraryService.LoadSnapshot(_config.ConfigDirectory, _config.ResourceDirectory);
+
+        if (snapshot != null) ApplySnapshot(snapshot);
+
+        LibraryService.VerifyInBackground(_config.ConfigDirectory, _config.ResourceDirectory, snapshot, fresh =>
+            System.Windows.Application.Current?.Dispatcher.Invoke(() => ApplySnapshot(fresh)));
+    }
+
+    /// <summary>
+    /// 刷新载具列表：优先用**内存/磁盘快照**（导航到本页不再扫库，§4），
+    /// 只在两者都没有时才全量重建；随后后台核对外部变化。
+    /// </summary>
     private void RefreshLibrary()
     {
         try
         {
             var configDir = _config.ConfigDirectory;
-            _displayNames = string.IsNullOrWhiteSpace(configDir)
-                ? new Dictionary<string, string>(StringComparer.Ordinal)
-                : new Dictionary<string, string>(ConfigService.LoadVehicleMappings(configDir), StringComparer.Ordinal);
-
-            _countryOverrides = string.IsNullOrWhiteSpace(configDir)
-                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                : new Dictionary<string, string>(ConfigService.LoadVehicleCountries(configDir), StringComparer.OrdinalIgnoreCase);
-
             var resourceDir = _config.ResourceDirectory;
-            var list = string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir)
-                ? new List<Vehicle>()
-                : VehicleAggregator.BuildAll(resourceDir, _countryOverrides);
 
-            // 显示名：用户映射 → 内置译名表（units.csv，按界面语言）→ 内部标识（§3.7）
-            foreach (var vehicle in list)
-                vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, _displayNames);
+            var snapshot = LibraryService.TakeCached(configDir, resourceDir)
+                           ?? LibraryService.LoadSnapshot(configDir, resourceDir)
+                           ?? LibraryService.Build(configDir, resourceDir);
 
-            var previousId = SelectedVehicle?.Id;
-            Vehicles = new ObservableCollection<Vehicle>(
-                list.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(v => v.DisplayName, StringComparer.Ordinal));
-
-            SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousId) ?? Vehicles.FirstOrDefault();
+            ApplySnapshot(snapshot);
         }
         catch (Exception ex)
         {
             ShowStatus(ex.Message);
         }
+    }
+
+    /// <summary>快照 → 界面（显示名 → 排序 → 列表，尽量保持选中）。</summary>
+    private void ApplySnapshot(LibrarySnapshot snapshot)
+    {
+        var configDir = _config.ConfigDirectory;
+        _displayNames = string.IsNullOrWhiteSpace(configDir)
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(ConfigService.LoadVehicleMappings(configDir), StringComparer.Ordinal);
+
+        _countryOverrides = string.IsNullOrWhiteSpace(configDir)
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(ConfigService.LoadVehicleCountries(configDir), StringComparer.OrdinalIgnoreCase);
+
+        var list = LibraryService.ToVehicles(snapshot, _countryOverrides);
+
+        // 显示名：用户映射 → 内置译名表（units.csv，按界面语言）→ 内部标识（§3.7）
+        foreach (var vehicle in list)
+            vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, _displayNames);
+
+        var previousId = SelectedVehicle?.Id;
+        Vehicles = new ObservableCollection<Vehicle>(
+            list.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(v => v.DisplayName, StringComparer.Ordinal));
+
+        SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousId) ?? Vehicles.FirstOrDefault();
     }
 
     /// <summary>把选中载具的值同步到界面字段（期间不触发落盘）。</summary>
