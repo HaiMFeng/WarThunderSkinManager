@@ -554,17 +554,33 @@ public partial class SkinsViewModel : ObservableObject
     {
         try
         {
-            var candidates = scan();
+            RunImport(scan(), sourceType, sourcePath);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// 「预览 → 解构」流程（功能设计 §3.1）。<paramref name="archives"/> 非空时，
+    /// 预览里提供「导入成功后删除压缩包」选项（默认不勾，见 <see cref="ImportPreviewViewModel"/>）。
+    /// </summary>
+    private void RunImport(List<ImportCandidate> candidates, ImportSourceType sourceType, string sourcePath,
+        bool canDeleteArchive = false, IReadOnlyList<string>? archives = null, string extraStatus = "")
+    {
+        try
+        {
             if (candidates.Count == 0)
             {
                 ShowStatus(Loc["import.empty"]);
                 return;
             }
 
-            // 从 UserSkins 或用户选中的文件夹导入时，提供「导入后清理源文件夹」（§3.1）
+            // 从 UserSkins / 用户选中的文件夹导入时，提供「导入后清理源文件夹」（§3.1）
             var sourceExists = !string.IsNullOrWhiteSpace(sourcePath) && Directory.Exists(sourcePath);
 
-            var preview = new ImportPreviewViewModel(candidates, sourceType, sourceExists);
+            var preview = new ImportPreviewViewModel(candidates, sourceType, sourceExists, canDeleteArchive);
             var window = new ImportPreviewWindow
             {
                 DataContext = preview,
@@ -579,6 +595,10 @@ public partial class SkinsViewModel : ObservableObject
             var message = Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
             if (preview.DeleteSource)
                 message += CleanupImportedSource(sourcePath, candidates, result, preview.DeleteWholeRoot);
+            if (preview.DeleteArchive && archives is { Count: > 0 })
+                message += DeleteArchives(archives);
+
+            message += extraStatus;
 
             RefreshLibrary();
             ShowStatus(message);
@@ -587,6 +607,141 @@ public partial class SkinsViewModel : ObservableObject
         {
             ShowStatus(Loc.Format("import.failed", ex.Message));
         }
+    }
+
+    // ---------- 拖入导入（§3.1：拖入涂装文件夹 / 压缩包）----------
+
+    /// <summary>
+    /// 拖入导入：支持**涂装文件夹**与**压缩包**（可一次拖多个）。
+    /// 压缩包先解压到资源目录下的暂存区，再走同一套「扫描 → 预览 → 解构」流程，
+    /// 暂存目录在流程结束后清理（解压产物只是中间物）。
+    /// </summary>
+    public void ImportDropped(IReadOnlyList<string> droppedPaths)
+    {
+        if (droppedPaths.Count == 0 || !EnsureResourceDir()) return;
+
+        var folders = droppedPaths.Where(Directory.Exists).ToList();
+        var archives = droppedPaths.Where(path => File.Exists(path) && ArchiveService.IsArchive(path)).ToList();
+
+        if (folders.Count == 0 && archives.Count == 0)
+        {
+            ShowStatus(Loc["import.drop.none"]);
+            return;
+        }
+
+        var resourceDir = _config.ResourceDirectory;
+        var staging = new List<string>();
+        var skipped = 0;
+
+        try
+        {
+            var candidates = new List<ImportCandidate>();
+
+            // 压缩包：解压（可能要密码）→ 扫描；建议包名 = 压缩包名 / 包内唯一顶层文件夹名
+            foreach (var archive in archives)
+            {
+                var extracted = ExtractArchiveWithPrompt(archive, resourceDir);
+                if (extracted == null)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                staging.Add(extracted);
+                candidates.AddRange(ImportService.Scan(
+                    extracted, ImportSourceType.Archive, ArchivePackName(archive, extracted)));
+            }
+
+            // 涂装文件夹：直接扫描
+            foreach (var folder in folders)
+                candidates.AddRange(ImportService.Scan(folder, ImportSourceType.Folder));
+
+            // 只拖入一个文件夹 → 沿用「导入文件夹」语义（可勾选删除该文件夹）
+            var singleFolder = folders.Count == 1 && archives.Count == 0;
+
+            RunImport(candidates,
+                archives.Count > 0 ? ImportSourceType.Archive : ImportSourceType.Folder,
+                singleFolder
+                    ? folders[0]
+                    : string.Join("; ", archives.Count > 0
+                        ? archives.Select(Path.GetFileName)
+                        : folders.Select(Path.GetFileName)),
+                canDeleteArchive: archives.Count > 0,
+                archives: archives,
+                extraStatus: skipped > 0 ? Loc.Format("import.archive.skipped", skipped) : "");
+        }
+        finally
+        {
+            ArchiveService.CleanupStaging(staging);
+        }
+    }
+
+    /// <summary>
+    /// 解压压缩包，遇到密码保护时弹密码框（密码不对可重试，最多 3 次）。
+    /// 返回解压根目录；用户取消或解压失败返回 <c>null</c>（该压缩包跳过，不影响其他来源）。
+    /// </summary>
+    private string? ExtractArchiveWithPrompt(string archivePath, string resourceDir)
+    {
+        var fileName = Path.GetFileName(archivePath);
+        string? password = null;
+        var wrongPassword = false;
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                return ArchiveService.Extract(archivePath, resourceDir, password);
+            }
+            catch (ArchivePasswordException ex)
+            {
+                password = PasswordDialogWindow.Prompt(
+                    Application.Current?.MainWindow, fileName, wrongPassword || ex.WrongPassword);
+
+                if (password == null) return null; // 用户取消 → 跳过该压缩包
+                wrongPassword = true;
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(Loc.Format("import.archive.openFailed", $"{fileName}：{ex.Message}"));
+                return null;
+            }
+        }
+
+        return null; // 连续 3 次密码不对
+    }
+
+    /// <summary>压缩包的建议包名：压缩包文件名（去扩展名）；包内只有一个顶层文件夹时取该文件夹名。</summary>
+    private static string ArchivePackName(string archivePath, string extractedRoot)
+    {
+        var entries = Directory.GetFileSystemEntries(extractedRoot);
+        if (entries.Length == 1 && Directory.Exists(entries[0]))
+            return Path.GetFileName(entries[0]);
+
+        return Path.GetFileNameWithoutExtension(archivePath);
+    }
+
+    /// <summary>按用户勾选删除压缩包（删除失败只提示数量，不影响导入结果）。</summary>
+    private static string DeleteArchives(IReadOnlyList<string> archives)
+    {
+        var removed = 0;
+        var failed = 0;
+
+        foreach (var path in archives)
+        {
+            try
+            {
+                File.Delete(path);
+                removed++;
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+
+        var text = Loc.Format("import.deletedArchives", removed);
+        if (failed > 0) text += Loc.Format("import.deleteArchiveFailed", failed);
+        return text;
     }
 
     /// <summary>

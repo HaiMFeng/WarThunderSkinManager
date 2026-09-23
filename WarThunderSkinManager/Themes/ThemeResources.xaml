@@ -147,6 +147,43 @@
         </Setter>
     </Style>
 
+    <!-- 密码框：外观与 BaseTextBox 一致（压缩包密码输入用） -->
+    <Style x:Key="BasePasswordBox" TargetType="PasswordBox">
+        <Setter Property="Height" Value="34"/>
+        <Setter Property="Padding" Value="6,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BrushBorderStrong}"/>
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource BrushText}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Border x:Name="bd" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"
+                                      VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Hidden"
+                                      Focusable="False"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
+                            <Setter TargetName="bd" Property="BorderThickness" Value="1.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============ 按钮基类 ============ -->
     <Style x:Key="ButtonBase" TargetType="Button">
         <Setter Property="Height" Value="34"/>

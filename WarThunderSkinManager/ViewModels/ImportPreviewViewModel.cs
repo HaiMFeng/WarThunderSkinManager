@@ -30,6 +30,15 @@ public partial class ImportPreviewViewModel : ObservableObject
     /// <summary>导入完成后删除源文件夹（清理未受管理的原始涂装，见 §3.1）。</summary>
     [ObservableProperty] private bool _deleteSource;
 
+    /// <summary>是否提供「导入成功后删除压缩包」选项（本次导入含压缩包时）。</summary>
+    public bool CanDeleteArchive { get; }
+
+    /// <summary>
+    /// 导入完成后删除压缩包（功能设计 §3.1「解压后可选项」）。
+    /// 默认**不勾**：压缩包是用户自己下载的原件，删掉更不可逆，勾选才删。
+    /// </summary>
+    [ObservableProperty] private bool _deleteArchive;
+
     /// <summary>是否有任何分组包含多于一个条目（有则显示「一同改名」提示）。</summary>
     public bool HasMultiEntryGroup => Groups.Any(g => g.Rows.Count > 1);
 
@@ -40,10 +49,11 @@ public partial class ImportPreviewViewModel : ObservableObject
     public string CleanupHint => Loc[DeleteWholeRoot ? "import.deleteSourceFolderHint" : "import.deleteSourceHint"];
 
     public ImportPreviewViewModel(IEnumerable<ImportCandidate> candidates, ImportSourceType sourceType,
-        bool sourceExists)
+        bool sourceExists, bool canDeleteArchive = false)
     {
         CanDeleteSource = sourceExists && sourceType is ImportSourceType.UserSkins or ImportSourceType.Folder;
         DeleteWholeRoot = sourceType == ImportSourceType.Folder;
+        CanDeleteArchive = canDeleteArchive;
         _deleteSource = CanDeleteSource; // 默认勾选：涂装已入资源库，可用「导出」恢复原始模组
 
         // 建议名相同 = 来自同名文件夹 = 同一套模组 → 归为一组（保持扫描顺序）

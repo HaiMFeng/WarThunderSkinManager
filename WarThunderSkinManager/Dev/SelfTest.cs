@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using SharpCompress.Archives.Zip;
+using SharpCompress.Common;
+using SharpCompress.Writers;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
 
@@ -266,6 +269,54 @@ internal static class SelfTest
                 log.AppendLine($"{from,-28} (载具 {vehicleId}) → ["
                              + string.Join("][", PartTagResolver.Resolve(from, vehicleId)
                                  .Select(t => t.Text + ToneMark(t.Tone))) + "]");
+            }
+
+            // ---- 压缩包导入（§3.1：拖入压缩包）----
+            log.AppendLine();
+            log.AppendLine("---- 压缩包导入 ----");
+            var zipSource = Path.Combine(workDir, "zip-src");
+            CopyDirectory(sourceFolder, zipSource);
+            var archivePath = Path.Combine(workDir, "MyZipPack.zip");
+
+            using (var stream = File.Create(archivePath))
+            using (var writer = WriterFactory.OpenWriter(stream, ArchiveType.Zip,
+                       new WriterOptions(CompressionType.Deflate)))
+            {
+                foreach (var file in Directory.EnumerateFiles(zipSource, "*", SearchOption.AllDirectories))
+                    writer.Write(Path.GetRelativePath(zipSource, file), file);
+            }
+
+            log.AppendLine($"识别压缩包: {ArchiveService.IsArchive(archivePath)}"
+                         + $"（.7z: {ArchiveService.IsArchive("x.7z")}，.tar.gz: {ArchiveService.IsArchive("x.tar.gz")}，"
+                         + $".dds: {ArchiveService.IsArchive("x.dds")}）");
+
+            var extractDir = ArchiveService.Extract(archivePath, resourceDir);
+            var extractedFiles = Directory.GetFiles(extractDir, "*", SearchOption.AllDirectories);
+            log.AppendLine($"解压到暂存区: {Path.GetRelativePath(resourceDir, extractDir)}"
+                         + $"（{extractedFiles.Length} 个文件，blk {extractedFiles.Count(f => f.EndsWith(".blk", StringComparison.OrdinalIgnoreCase))} 个）");
+
+            var zipCandidates = ImportService.Scan(extractDir, ImportSourceType.Archive, "MyZipPack");
+            log.AppendLine($"按压缩包扫描: {zipCandidates.Count} 个候选 → "
+                         + string.Join("、", zipCandidates.Select(c => $"{c.VehicleId}（建议名 {c.SuggestedName}，{c.MappingCount} 条）")));
+
+            ArchiveService.CleanupStaging(new[] { extractDir });
+            log.AppendLine($"清理暂存目录后仍存在: {Directory.Exists(extractDir)}");
+
+            // 非压缩包 / 损坏文件：应抛普通异常（而不是被当成"需要密码"）
+            var brokenPath = Path.Combine(workDir, "broken.zip");
+            File.WriteAllText(brokenPath, "not an archive", new UTF8Encoding(false));
+            try
+            {
+                ArchiveService.Extract(brokenPath, resourceDir);
+                log.AppendLine("损坏压缩包: 未抛异常（异常）");
+            }
+            catch (ArchivePasswordException)
+            {
+                log.AppendLine("损坏压缩包: 误判为需要密码（异常）");
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine($"损坏压缩包: 已按普通错误处理 → {ex.GetType().Name}");
             }
 
             // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----
