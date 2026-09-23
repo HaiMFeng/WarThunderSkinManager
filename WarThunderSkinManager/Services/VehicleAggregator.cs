@@ -69,7 +69,8 @@ public static class VehicleAggregator
         {
             var packages = new List<SkinPackage>();
 
-            foreach (var meta in group)
+            // 同载具内按用户排序（meta.Order），名称兜底保证稳定
+            foreach (var meta in group.OrderBy(m => m.Order).ThenBy(m => m.Name, StringComparer.Ordinal))
             {
                 var package = new SkinPackage
                 {

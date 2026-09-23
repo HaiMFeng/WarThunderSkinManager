@@ -9,6 +9,7 @@
         MinWidth="900" MinHeight="560"
         Opacity="0"
         FontFamily="Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}"
         WindowStyle="None">
     <WindowChrome.WindowChrome>

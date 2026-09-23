@@ -1,0 +1,90 @@
+<Window x:Class="WarThunderSkinManager.Views.ImportPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+        Title="{loc:Loc import.title}"
+        Width="880" Height="560"
+        MinWidth="660" MinHeight="380"
+        WindowStyle="None" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
+        Background="{StaticResource BrushBackground}">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
+
+    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏 -->
+            <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <TextBlock Text="{loc:Loc import.title}" Margin="14,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Foreground="{StaticResource BrushText}"/>
+                <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                        HorizontalAlignment="Right" Click="Cancel_Click"/>
+            </Grid>
+
+            <TextBlock Grid.Row="1" Text="{loc:Loc import.hint}" Margin="16,14,16,10"
+                       Style="{StaticResource PageSubtitle}" TextWrapping="Wrap"/>
+
+            <!-- 列表：表头与行放在同一滚动区，保证列对齐 -->
+            <ScrollViewer Grid.Row="2" Margin="16,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="210"/>
+                            <ColumnDefinition Width="56"/>
+                            <ColumnDefinition Width="56"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc import.col.vehicle}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" Text="{loc:Loc import.col.name}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Margin="8,0"/>
+                        <TextBlock Grid.Column="2" Text="{loc:Loc import.col.blk}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="3" Text="{loc:Loc import.col.entries}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="4" Text="{loc:Loc import.col.warnings}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="210"/>
+                                        <ColumnDefinition Width="56"/>
+                                        <ColumnDefinition Width="56"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding VehicleId}" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBox Grid.Column="1" Margin="8,0" Style="{StaticResource BaseTextBox}"
+                                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding BlkFileName}" VerticalAlignment="Center"
+                                               Foreground="{StaticResource BrushTextSecondary}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding MappingCount}" VerticalAlignment="Center"
+                                               Foreground="{StaticResource BrushTextMuted}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding WarningCount}" VerticalAlignment="Center"
+                                               Foreground="{StaticResource BrushTextMuted}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,14,16,16">
+                <Button Content="{loc:Loc import.cancel}" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>
+                <Button Content="{loc:Loc import.confirm}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0" Click="Ok_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

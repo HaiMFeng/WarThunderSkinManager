@@ -33,6 +33,9 @@ artifacts/
 # 游戏 UserSkins 目录：本地测试用的皮肤数据（blk + dds，可达数百 MB～GB），不入库
 UserSkins/
 
+# 本地测试数据（解构/导出等临时产物），不入库
+TestData/
+
 # ===================== OS / 杂项 =====================
 Thumbs.db
 Desktop.ini

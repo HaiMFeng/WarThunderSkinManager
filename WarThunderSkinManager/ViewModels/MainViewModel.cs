@@ -30,11 +30,15 @@ public partial class MainViewModel : ObservableObject
 
     private readonly DispatcherTimer _statusTimer;
 
+    /// <summary>涂装管理页视图模型（导入入口 + 涂装包列表）</summary>
+    public SkinsViewModel Skins { get; }
+
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     public MainViewModel(AppConfig config)
     {
         Config = config;
+        Skins = new SkinsViewModel(config);
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         _statusTimer.Tick += (_, _) =>

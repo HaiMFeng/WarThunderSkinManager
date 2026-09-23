@@ -120,8 +120,29 @@ public static class ImportService
             }
         }
 
+        AssignOrder(resourceDir, result.Packages);
         SaveManifest(resourceDir, record, result.Packages);
         return result;
+    }
+
+    /// <summary>新导入的包追加到同载具既有顺序之后（功能设计 §3.4 卡片排序）。</summary>
+    private static void AssignOrder(string resourceDir, IEnumerable<SkinPackage> packages)
+    {
+        var maxOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in PackageStore.LoadAll(resourceDir).GroupBy(m => m.VehicleId, StringComparer.OrdinalIgnoreCase))
+            maxOrder[group.Key] = group.Max(m => m.Order);
+
+        foreach (var package in packages)
+        {
+            var meta = PackageStore.Load(resourceDir, package.Id);
+            if (meta == null) continue;
+
+            var current = maxOrder.TryGetValue(package.VehicleId, out var value) ? value : -1;
+            meta.Order = current + 1;
+            maxOrder[package.VehicleId] = meta.Order;
+
+            PackageStore.SaveMeta(resourceDir, meta);
+        }
     }
 
     // ---------- 便捷入口（扫描 + 提交，自动命名） ----------

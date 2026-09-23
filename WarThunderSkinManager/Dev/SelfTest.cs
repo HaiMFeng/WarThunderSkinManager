@@ -100,6 +100,58 @@ internal static class SelfTest
                     log.AppendLine(line);
             }
 
+            // ---- 涂装包操作验证（复制 / 导出 / 删除，见 §3.4 / §3.11 / §6.5）----
+            var metas = PackageStore.LoadAll(resourceDir);
+            var sample = metas.FirstOrDefault();
+            if (sample != null)
+            {
+                var blobBefore = BlobStore.EnumerateBlobs(resourceDir).Length;
+
+                var copy = PackageStore.Duplicate(resourceDir, sample.Id, sample.Name + " (copy)");
+                var blobAfter = BlobStore.EnumerateBlobs(resourceDir).Length;
+                var copyMeta = copy == null ? null : PackageStore.Load(resourceDir, copy.Id);
+
+                var exportDir = Path.Combine(workDir, "export", sample.VehicleId);
+                PackageExporter.Export(resourceDir, sample.Id, exportDir);
+                var exportedBlk = File.Exists(Path.Combine(exportDir, sample.VehicleId + ".blk"));
+                var exportedTextures = Directory.Exists(exportDir)
+                    ? Directory.EnumerateFiles(exportDir, "*", SearchOption.AllDirectories)
+                        .Count(f => f.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) ||
+                                    f.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
+                    : 0;
+
+                var deleted = false;
+                if (copy != null)
+                {
+                    PackageStore.Delete(resourceDir, copy.Id);
+                    deleted = !Directory.Exists(PackageStore.PackageDirectory(resourceDir, copy.Id));
+                }
+
+                log.AppendLine();
+                log.AppendLine("---- 涂装包操作 ----");
+                log.AppendLine($"sample    : {sample.Name} / {sample.Id[..8]}...");
+                log.AppendLine($"duplicate : {(copyMeta != null ? "OK" : "失败")}，textures={copyMeta?.Textures.Count ?? 0}");
+                log.AppendLine($"blobs     : 复制前 {blobBefore} -> 复制后 {blobAfter}（相等 = 零字节增量）");
+                log.AppendLine($"export    : blk={exportedBlk}，贴图={exportedTextures}/{sample.Textures.Count}");
+                log.AppendLine($"delete    : 目录已移除={deleted}");
+            }
+
+            // ---- 语言文件补齐验证（旧语言文件缺 key 时应以内置默认补齐并回写）----
+            var langRoot = Path.Combine(workDir, "langtest");
+            Directory.CreateDirectory(Path.Combine(langRoot, "lang"));
+            File.WriteAllText(Path.Combine(langRoot, "lang", "zh-CN.json"),
+                "{\"app.title\":\"自定义标题\"}", new UTF8Encoding(false));
+
+            LocalizationManager.Instance.Load(langRoot, "zh-CN");
+            var loc = LocalizationManager.Instance;
+            log.AppendLine();
+            log.AppendLine("---- 语言文件补齐 ----");
+            log.AppendLine($"app.title   (用户值)   = {loc["app.title"]}");
+            log.AppendLine($"nav.skins   (默认补齐) = {loc["nav.skins"]}");
+            log.AppendLine($"import.title(默认补齐) = {loc["import.title"]}");
+            var langText = File.ReadAllText(Path.Combine(langRoot, "lang", "zh-CN.json"), Encoding.UTF8);
+            log.AppendLine($"回写后包含 nav.skins : {langText.Contains("nav.skins")}");
+
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))

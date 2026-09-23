@@ -6,6 +6,10 @@
     <Color x:Key="ColorPrimary">#2563eb</Color>
     <Color x:Key="ColorPrimaryHover">#3b82f6</Color>
     <Color x:Key="ColorPrimaryPressed">#1d4ed8</Color>
+    <!-- 填充按钮 / 胶囊底：比主色更亮一档，避免深蓝压白字显得发闷 -->
+    <Color x:Key="ColorPrimaryFill">#3b82f6</Color>
+    <Color x:Key="ColorPrimaryFillHover">#60a5fa</Color>
+    <Color x:Key="ColorPrimaryFillPressed">#2563eb</Color>
     <Color x:Key="ColorAccent">#60a5fa</Color>
     <Color x:Key="ColorBorder">#e2e8f0</Color>
     <Color x:Key="ColorBorderStrong">#cbd5e1</Color>
@@ -24,6 +28,9 @@
     <SolidColorBrush x:Key="BrushPrimary" Color="{StaticResource ColorPrimary}"/>
     <SolidColorBrush x:Key="BrushPrimaryHover" Color="{StaticResource ColorPrimaryHover}"/>
     <SolidColorBrush x:Key="BrushPrimaryPressed" Color="{StaticResource ColorPrimaryPressed}"/>
+    <SolidColorBrush x:Key="BrushPrimaryFill" Color="{StaticResource ColorPrimaryFill}"/>
+    <SolidColorBrush x:Key="BrushPrimaryFillHover" Color="{StaticResource ColorPrimaryFillHover}"/>
+    <SolidColorBrush x:Key="BrushPrimaryFillPressed" Color="{StaticResource ColorPrimaryFillPressed}"/>
     <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource ColorAccent}"/>
     <SolidColorBrush x:Key="BrushBorder" Color="{StaticResource ColorBorder}"/>
     <SolidColorBrush x:Key="BrushBorderStrong" Color="{StaticResource ColorBorderStrong}"/>
@@ -43,8 +50,9 @@
     <FontFamily x:Key="IconFont">Segoe MDL2 Assets</FontFamily>
 
     <!-- ============ 排版 ============ -->
+    <!-- 注意：这里不设置 Foreground！隐式样式优先级高于继承，会覆盖 Button 等父级的前景色，
+         导致深色按钮底上的文字变成深色而看不清。默认文字色由窗口 Foreground 继承下发。 -->
     <Style TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
     </Style>
 
@@ -120,7 +128,7 @@
 
     <!-- 主按钮 -->
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
-        <Setter Property="Background" Value="{StaticResource BrushPrimary}"/>
+        <Setter Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Template">
@@ -140,7 +148,7 @@
                                     <Storyboard>
                                         <ColorAnimation Storyboard.TargetName="bd"
                                             Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="{StaticResource ColorPrimaryHover}" Duration="0:0:0.15"/>
+                                            To="{StaticResource ColorPrimaryFillHover}" Duration="0:0:0.15"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.EnterActions>
@@ -149,13 +157,13 @@
                                     <Storyboard>
                                         <ColorAnimation Storyboard.TargetName="bd"
                                             Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="{StaticResource ColorPrimary}" Duration="0:0:0.2"/>
+                                            To="{StaticResource ColorPrimaryFill}" Duration="0:0:0.2"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushPrimaryPressed}"/>
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushPrimaryFillPressed}"/>
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
@@ -230,6 +238,12 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- 危险操作按钮（描边 + 红字） -->
+    <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+        <Setter Property="Foreground" Value="{StaticResource BrushDanger}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BrushDanger}"/>
     </Style>
 
     <!-- ============ 左侧导航项 ============ -->
@@ -354,6 +368,69 @@
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource BrushPrimary}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============ 胶囊 Chip（国家横条） ============ -->
+    <Style x:Key="ChipButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="Background" Value="{StaticResource BrushSurface}"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="15"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                <Setter Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
+                <Setter Property="Foreground" Value="White"/>
+            </DataTrigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Opacity" Value="0.86"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ============ 二级侧栏列表 ============ -->
+    <Style x:Key="SidebarListBox" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+    </Style>
+
+    <Style x:Key="SidebarListBoxItem" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="Margin" Value="0,0,0,2"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="bd" Background="Transparent" CornerRadius="8"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Stretch"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushHover}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushSurface2}"/>
+                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

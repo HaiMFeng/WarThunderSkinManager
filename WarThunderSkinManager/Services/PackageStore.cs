@@ -45,6 +45,63 @@ public static class PackageStore
             JsonSerializer.Serialize(meta, JsonOpts), new UTF8Encoding(false));
     }
 
+    /// <summary>只更新 meta.json（改名 / 预览图等元数据变更）。</summary>
+    public static void SaveMeta(string resourceDir, PackageMeta meta)
+    {
+        if (string.IsNullOrWhiteSpace(meta.Id))
+            throw new ArgumentException("包 Id 不能为空", nameof(meta));
+
+        Directory.CreateDirectory(PackageDirectory(resourceDir, meta.Id));
+        File.WriteAllText(MetaPath(resourceDir, meta.Id),
+            JsonSerializer.Serialize(meta, JsonOpts), new UTF8Encoding(false));
+    }
+
+    /// <summary>
+    /// 复制涂装包：新 Id + 新 meta（textures 引用**相同的 blob**）→ **零字节增量**（功能设计 §6.5）。
+    /// 副本插在源包之后（同载具内 order 更大的包整体后移）。
+    /// </summary>
+    public static PackageMeta? Duplicate(string resourceDir, string id, string newName)
+    {
+        var source = Load(resourceDir, id);
+        if (source == null) return null;
+
+        foreach (var sibling in LoadAll(resourceDir)
+                     .Where(m => !string.Equals(m.Id, id, StringComparison.Ordinal)
+                                 && string.Equals(m.VehicleId, source.VehicleId, StringComparison.OrdinalIgnoreCase)
+                                 && m.Order > source.Order))
+        {
+            sibling.Order++;
+            SaveMeta(resourceDir, sibling);
+        }
+
+        var copy = new PackageMeta
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            VehicleId = source.VehicleId,
+            Name = newName,
+            SourceImportId = source.SourceImportId,
+            Preview = "", // 预览图缓存键跟随包，不自动继承
+            Order = source.Order + 1,
+            Textures = new List<TextureEntry>(source.Textures)
+        };
+
+        Directory.CreateDirectory(PackageDirectory(resourceDir, copy.Id));
+
+        var sourceBlk = SourceBlkPath(resourceDir, id);
+        if (File.Exists(sourceBlk))
+            File.Copy(sourceBlk, SourceBlkPath(resourceDir, copy.Id), overwrite: true);
+
+        SaveMeta(resourceDir, copy);
+        return copy;
+    }
+
+    /// <summary>删除涂装包目录（其引用的 blob 交由后续 GC 处理）。</summary>
+    public static void Delete(string resourceDir, string id)
+    {
+        var dir = PackageDirectory(resourceDir, id);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+    }
+
     public static PackageMeta? Load(string resourceDir, string id)
     {
         var path = MetaPath(resourceDir, id);

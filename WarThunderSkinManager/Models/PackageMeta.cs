@@ -23,6 +23,9 @@ public sealed class PackageMeta
     /// <summary>预览图（png，可选），键跟随包</summary>
     public string Preview { get; set; } = "";
 
+    /// <summary>同载具内的显示顺序（用户可拖动卡片调整）</summary>
+    public int Order { get; set; }
+
     /// <summary>贴图引用表：blk 内 to 原名 → 内容哈希</summary>
     public List<TextureEntry> Textures { get; set; } = new();
 }

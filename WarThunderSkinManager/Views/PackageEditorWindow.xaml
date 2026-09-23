@@ -1,0 +1,108 @@
+<Window x:Class="WarThunderSkinManager.Views.PackageEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+        Title="{loc:Loc pkg.editor.title}"
+        Width="560" Height="480"
+        MinWidth="460" MinHeight="380"
+        WindowStyle="None" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
+        Background="{StaticResource BrushBackground}">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
+
+    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <TextBlock Text="{loc:Loc pkg.editor.title}" Margin="14,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Foreground="{StaticResource BrushText}"/>
+                <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                        HorizontalAlignment="Right" Click="Cancel_Click"/>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="20,18,20,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 只读信息 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
+                    <TextBlock Text="{loc:Loc pkg.editor.vehicle}" Foreground="{StaticResource BrushTextMuted}"/>
+                    <TextBlock Text="{Binding VehicleId}" Margin="6,0,18,0" FontWeight="SemiBold"/>
+                    <TextBlock Text="{loc:Loc pkg.editor.textures}" Foreground="{StaticResource BrushTextMuted}"/>
+                    <TextBlock Text="{Binding TextureCount}" Margin="6,0,0,0" FontWeight="SemiBold"/>
+                </StackPanel>
+
+                <TextBlock Grid.Row="1" Text="{loc:Loc pkg.editor.preview}"
+                           Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+
+                <!-- 预览区：随窗口大小自适应 -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="150"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" CornerRadius="8" Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                            MinHeight="110" Margin="0,0,14,0" SnapsToDevicePixels="True">
+                        <Grid>
+                            <TextBlock Text="{loc:Loc pkg.editor.noPreview}" Style="{StaticResource PageSubtitle}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Image Source="{Binding PreviewImage}" Stretch="Uniform">
+                                <Image.Style>
+                                    <Style TargetType="Image">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasPreview}" Value="False">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Image.Style>
+                            </Image>
+                        </Grid>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Width="150" VerticalAlignment="Top">
+                        <Button Content="{loc:Loc pkg.editor.chooseFile}" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Stretch" Command="{Binding ChoosePreviewCommand}"/>
+                        <Button Content="{loc:Loc pkg.editor.paste}" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding PastePreviewCommand}"/>
+                        <Button Content="{loc:Loc pkg.editor.clear}" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding ClearPreviewCommand}"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 显示名 -->
+                <StackPanel Grid.Row="3">
+                    <TextBlock Text="{loc:Loc pkg.editor.name}" Style="{StaticResource FieldLabel}" Margin="0,18,0,6"/>
+                    <TextBox Style="{StaticResource BaseTextBox}"
+                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+
+                <TextBlock Grid.Row="4" Text="{Binding StatusMessage}" Margin="0,10,0,0" TextWrapping="Wrap"
+                           FontSize="12" Foreground="{StaticResource BrushDanger}"/>
+            </Grid>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16,20,18">
+                <Button Content="{loc:Loc common.cancel}" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>
+                <Button Content="{loc:Loc common.ok}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0" Click="Ok_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

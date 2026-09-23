@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace WarThunderSkinManager.Models;
@@ -20,6 +21,9 @@ public partial class SkinPackage : ObservableObject
 
     /// <summary>预览图路径（png，可选）</summary>
     [ObservableProperty] private string _previewPath = "";
+
+    /// <summary>预览图（已解码到内存，不占用文件句柄；界面绑定用）</summary>
+    [ObservableProperty] private ImageSource? _previewImage;
 
     /// <summary>blk 内每条 replace_tex / set_tex</summary>
     [ObservableProperty] private List<TexMapping> _mappings = new();
