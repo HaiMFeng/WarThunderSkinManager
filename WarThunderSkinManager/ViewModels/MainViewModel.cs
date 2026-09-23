@@ -21,7 +21,7 @@ public enum TabKey
     Settings
 }
 
-/// <summary>主窗口视图模型。承载导航状态与配置（三目录 + 同步设置）。</summary>
+/// <summary>主窗口视图模型。承载导航状态与配置（三个目录）。</summary>
 public partial class MainViewModel : ObservableObject
 {
     [ObservableProperty] private AppConfig _config;
@@ -33,12 +33,6 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _statusMessage = "";
 
     private readonly DispatcherTimer _statusTimer;
-
-    /// <summary>缓冲时间下限（秒）：低于此值弹窗提醒（功能设计 §3.8）。</summary>
-    private const int MinBufferSeconds = 2;
-
-    /// <summary>上一次的缓冲时间，用于只在「越过阈值」时提醒一次。</summary>
-    private int _lastBufferSeconds = MinBufferSeconds;
 
     /// <summary>涂装管理页视图模型（导入入口 + 涂装包卡片）</summary>
     public SkinsViewModel Skins { get; }
@@ -64,7 +58,6 @@ public partial class MainViewModel : ObservableObject
         Skins.PropertyChanged += OnChildChanged;
         Vehicles.PropertyChanged += OnChildChanged;
 
-        _lastBufferSeconds = config.SyncBufferSeconds;
         Config.PropertyChanged += OnConfigChanged;
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
@@ -94,28 +87,12 @@ public partial class MainViewModel : ObservableObject
         if (message.Length > 0) ShowStatus(message);
     }
 
-    /// <summary>缓冲时间被改到 2 秒以下时提醒一次（§3.8「短缓冲提醒」）。</summary>
+    /// <summary>配置变更：数据表目录跟随配置目录刷新（§3.6 / §3.7）。</summary>
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // 数据表目录跟随配置目录
-        if (e.PropertyName == nameof(AppConfig.ConfigDirectory))
-        {
-            OnPropertyChanged(nameof(DataTablesDirectory));
-            return;
-        }
+        if (e.PropertyName != nameof(AppConfig.ConfigDirectory)) return;
 
-        if (e.PropertyName != nameof(AppConfig.SyncBufferSeconds)) return;
-
-        var current = Config.SyncBufferSeconds;
-        if (current < MinBufferSeconds && _lastBufferSeconds >= MinBufferSeconds)
-        {
-            MessageDialog.Warn(
-                Loc["settings.buffer.warn"],
-                Loc["settings.buffer.warnTitle"],
-                Application.Current?.MainWindow);
-        }
-
-        _lastBufferSeconds = current;
+        OnPropertyChanged(nameof(DataTablesDirectory));
     }
 
     [RelayCommand]

@@ -75,21 +75,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- 同步 -->
-            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.sync}" Style="{StaticResource SectionTitle}" Margin="0,0,0,16"/>
-                    <CheckBox Content="{loc:Loc settings.autoSync}" IsChecked="{Binding Config.AutoSync}"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <TextBlock Text="{loc:Loc settings.buffer.label}" Style="{StaticResource FieldLabel}" VerticalAlignment="Center"/>
-                        <TextBox Style="{StaticResource BaseTextBox}" Width="84" Margin="10,0,0,0"
-                                 Text="{Binding Config.SyncBufferSeconds, UpdateSourceTrigger=PropertyChanged}"/>
-                        <TextBlock Text="{loc:Loc settings.buffer.hint}" Style="{StaticResource PageSubtitle}"
-                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
             <!-- 数据表（可单独替换更新） -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>

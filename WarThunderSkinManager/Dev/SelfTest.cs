@@ -415,6 +415,61 @@ internal static class SelfTest
             log.AppendLine($"config.json 往返: UserSkins={optionCfg.ImportDeleteSourceUserSkins}"
                          + $"、文件夹={optionCfg.ImportDeleteSourceFolder}、压缩包={optionCfg.ImportDeleteArchive}");
 
+            // ---- 取消激活 → 清空该载具在 UserSkins 下的输出（保留空 blk，§3.8）----
+            log.AppendLine();
+            log.AppendLine("---- 取消激活 → 清空输出 ----");
+
+            // 注意：用独立目录（Windows 路径不区分大小写，别与前面「激活输出」用的 UserSkins 撞名）
+            var userSkinsRoot = Path.Combine(workDir, "userskins-clear");
+            Directory.CreateDirectory(userSkinsRoot);
+
+            var syncPackage = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId)
+                ?.SkinPackages.FirstOrDefault();
+
+            if (syncPackage != null)
+            {
+                var syncReport = OutputService.SyncVehicle(userSkinsRoot, resourceDir, firstVehicleId,
+                    LoadoutService.BuildLoadout(syncPackage));
+                var outputDir = OutputService.VehicleOutputDir(userSkinsRoot, firstVehicleId);
+                var blkPath = Path.Combine(outputDir, firstVehicleId + ".blk");
+
+                log.AppendLine($"同步输出: {Path.GetFileName(outputDir)} → {syncReport.BlkEntries} 条映射、"
+                             + $"{syncReport.WrittenTextures} 张贴图，blk 存在 = {File.Exists(blkPath)}，"
+                             + $"首次生成（要提示去游戏里选）= {syncReport.BlkCreated}");
+
+                var secondReport = OutputService.SyncVehicle(userSkinsRoot, resourceDir, firstVehicleId,
+                    LoadoutService.BuildLoadout(syncPackage));
+                log.AppendLine($"再次同步: 首次生成 = {secondReport.BlkCreated}（blk 已存在 → 不再提示）");
+
+                var (cleared, clearError) = OutputService.ClearVehicle(userSkinsRoot, firstVehicleId);
+                var blkText = File.Exists(blkPath)
+                    ? File.ReadAllText(blkPath).Replace("\r\n", " ").Trim()
+                    : "(blk 丢失)";
+                var textureLeft = Directory.Exists(outputDir)
+                    ? Directory.GetFiles(outputDir, "*", SearchOption.AllDirectories).Count(
+                        f => f.EndsWith(".dds", StringComparison.OrdinalIgnoreCase)
+                             || f.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
+                    : -1;
+
+                log.AppendLine($"清空后: {(clearError ?? "无错误")}，已清空 = {cleared}，"
+                             + $"目录保留 = {Directory.Exists(outputDir)}，blk 保留 = {File.Exists(blkPath)}"
+                             + $"（内容「{blkText}」），贴图剩余 = {textureLeft}");
+
+                var afterClearReport = OutputService.SyncVehicle(userSkinsRoot, resourceDir, firstVehicleId,
+                    LoadoutService.BuildLoadout(syncPackage));
+                log.AppendLine($"清空后重新同步: 首次生成 = {afterClearReport.BlkCreated}"
+                             + "（空 blk 仍在 → 游戏里无需重选，也不会重复提示）");
+
+                // 越界保护：WTSM 之外的目录不允许被清空
+                var outsideDir = Path.Combine(userSkinsRoot, "别删我");
+                Directory.CreateDirectory(outsideDir);
+                File.WriteAllText(Path.Combine(outsideDir, "keep.dds"), "x", new UTF8Encoding(false));
+
+                var (_, guardError) = OutputService.ClearVehicle(userSkinsRoot, @"..\别删我");
+                log.AppendLine($"越界保护: {(guardError ?? "未拦截（异常）")}，目录仍在 = {Directory.Exists(outsideDir)}，"
+                             + $"文件仍在 = {File.Exists(Path.Combine(outsideDir, "keep.dds"))}");
+            }
+
             // ---- 映射文件导出 / 导入 / 合并（§3.7）----
             log.AppendLine();
             log.AppendLine("---- 映射文件导出 / 合并 ----");

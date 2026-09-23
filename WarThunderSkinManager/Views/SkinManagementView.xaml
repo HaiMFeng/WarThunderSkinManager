@@ -180,15 +180,10 @@
                                 <TextBlock Text="{Binding Skins.SelectedVehicleSubtitle}" Style="{StaticResource PageSubtitle}"
                                            Margin="0,4,0,0"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
-                                <TextBlock Text="{Binding Skins.PackagesTitle}" FontSize="13"
-                                           Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Center"
-                                           Margin="0,0,12,0"/>
-                                <Button Content="{loc:Loc skins.sync}" Style="{StaticResource PrimaryButton}"
-                                        Command="{Binding Skins.SyncVehicleCommand}"/>
-                                <Button Content="{loc:Loc skins.syncAll}" Style="{StaticResource SecondaryButton}"
-                                        Margin="8,0,0,0" Command="{Binding Skins.SyncAllCommand}"/>
-                            </StackPanel>
+                            <!-- 无手动「同步」按钮：输出只在激活 / 切换激活包 / 属性页保存 / 取消激活时发生（§3.8） -->
+                            <TextBlock Grid.Column="1" Text="{Binding Skins.PackagesTitle}" FontSize="13"
+                                       Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Top"
+                                       Margin="12,2,0,0"/>
                         </Grid>
 
                         <!-- 当前激活的涂装包：已激活 = 绿（与卡片激活态一致）；未激活 = 主色蓝（只是提示） -->

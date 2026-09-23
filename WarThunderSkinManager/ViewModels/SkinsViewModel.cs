@@ -41,9 +41,6 @@ public partial class SkinsViewModel : ObservableObject
     private readonly AppConfig _config;
     private readonly DispatcherTimer _statusTimer;
 
-    /// <summary>自动同步缓冲计时（§3.8：停止操作达缓冲时间后再落盘，避免频繁读写）。</summary>
-    private readonly DispatcherTimer _autoSyncTimer;
-
     private List<Vehicle> _allVehicles = new();
 
     [ObservableProperty] private ObservableCollection<CountryItem> _countries = new();
@@ -69,13 +66,6 @@ public partial class SkinsViewModel : ObservableObject
         {
             StatusMessage = "";
             _statusTimer.Stop();
-        };
-
-        _autoSyncTimer = new DispatcherTimer();
-        _autoSyncTimer.Tick += (_, _) =>
-        {
-            _autoSyncTimer.Stop();
-            SyncCurrentVehicle();
         };
 
         RefreshLibrary();
@@ -137,8 +127,6 @@ public partial class SkinsViewModel : ObservableObject
 
     partial void OnSelectedVehicleChanged(Vehicle? value)
     {
-        _autoSyncTimer.Stop(); // 换载具时放弃未到期的自动同步，避免写到新载具
-
         Packages = new ObservableCollection<SkinPackage>(value?.SkinPackages ?? new List<SkinPackage>());
         SelectedPackage = Packages.FirstOrDefault();
         LoadActivation();
@@ -206,87 +194,53 @@ public partial class SkinsViewModel : ObservableObject
         LoadoutService.Activate(_config.ConfigDirectory, vehicleId, package.Id);
         LoadActivation();
 
-        // 不受「自动同步 / 缓冲时间」影响：显式激活 = 立刻落盘（游戏热重载生效）
+        // 激活 = 明确要输出这套包 → 立即落盘（游戏热重载随即生效，§3.8）
         var activated = Loc.Format("pkg.activated", package.Name);
-        var sync = SyncCurrentVehicleMessage();
+        var sync = SyncCurrentVehicleMessage(out var blkCreated);
 
         ShowStatus(sync.Length > 0 ? Loc.Format("pkg.activatedSynced", package.Name, sync) : activated);
+
+        // 首次生成该载具的 blk → 提示到游戏里选中这套用户涂装
+        if (blkCreated) PromptFirstOutput(vehicleId);
     }
 
-    /// <summary>取消该载具的激活（不再向 WTSM 输出该载具）。</summary>
+    /// <summary>
+    /// 取消该载具的激活：清空激活设置，并**删掉该载具在 UserSkins/WTSM 下的输出**
+    /// ——不再输出就该把旧的 blk 与贴图清掉，否则游戏里还会继续显示那套已取消的涂装。
+    /// </summary>
     [RelayCommand]
     private void DeactivatePackage()
     {
         if (SelectedVehicle == null) return;
         if (!EnsureConfigDir()) return;
 
-        LoadoutService.Activate(_config.ConfigDirectory, SelectedVehicle.Id, "");
+        var vehicleId = SelectedVehicle.Id;
+        LoadoutService.Activate(_config.ConfigDirectory, vehicleId, "");
         LoadActivation();
 
-        ShowStatus(Loc["pkg.deactivated"]);
-    }
+        var status = Loc["pkg.deactivated"];
 
-    /// <summary>手动同步当前载具激活的涂装包（§3.8）。</summary>
-    [RelayCommand]
-    private void SyncVehicle()
-    {
-        if (SelectedVehicle == null) return;
-        SyncCurrentVehicle();
-    }
-
-    /// <summary>同步所有已激活涂装包的载具（§3.8「同步所有」）。</summary>
-    [RelayCommand]
-    private void SyncAll()
-    {
-        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error))
+        // 未配置 UserSkins 时无从清理（只提示已取消激活）
+        var userSkins = _config.UserSkinsDirectory;
+        if (!string.IsNullOrWhiteSpace(userSkins) && Directory.Exists(userSkins))
         {
-            ShowStatus(error);
-            return;
+            var (cleared, error) = OutputService.ClearVehicle(userSkins, vehicleId);
+            if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
+            else if (cleared) status += Loc["pkg.deactivatedCleared"];
         }
 
-        try
-        {
-            var synced = 0;
-            var entries = 0;
-            var textures = 0;
-            var warnings = 0;
-
-            foreach (var vehicle in _allVehicles)
-            {
-                var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, vehicle.Id);
-                if (string.IsNullOrWhiteSpace(activation.ActivePackageId)) continue;
-
-                var package = vehicle.SkinPackages.FirstOrDefault(
-                    p => string.Equals(p.Id, activation.ActivePackageId, StringComparison.Ordinal));
-                if (package == null) continue;
-
-                var report = OutputService.SyncVehicle(userSkins, resourceDir, vehicle.Id,
-                    LoadoutService.BuildLoadout(package));
-
-                synced++;
-                entries += report.BlkEntries;
-                textures += report.WrittenTextures;
-                warnings += report.Warnings.Count;
-            }
-
-            var message = Loc.Format("skins.syncAllDone", synced, entries, textures);
-            if (warnings > 0) message += " " + Loc.Format("skins.syncWarnings", warnings);
-            ShowStatus(message);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(Loc.Format("skins.syncFailed", ex.Message));
-        }
+        ShowStatus(status);
     }
-
-    private void SyncCurrentVehicle() => ShowStatus(SyncCurrentVehicleMessage());
 
     /// <summary>
-    /// 同步当前载具（§3.8）并返回结果文案；无法同步时返回原因文案
-    /// （供「同步此载具」按钮与「激活即同步」共用）。
+    /// 输出当前载具的激活涂装包（§3.8）并返回结果文案；无法输出时返回原因文案
+    /// （供「激活即同步」与「属性页保存后立即落盘」共用）。
     /// </summary>
-    private string SyncCurrentVehicleMessage()
+    /// <param name="blkCreated">本次是否**首次**生成该载具的 blk（需要提示用户去游戏里选一次）。</param>
+    private string SyncCurrentVehicleMessage(out bool blkCreated)
     {
+        blkCreated = false;
+
         if (SelectedVehicle == null) return "";
 
         var active = Packages.FirstOrDefault(p => p.IsActive);
@@ -299,6 +253,8 @@ public partial class SkinsViewModel : ObservableObject
             var report = OutputService.SyncVehicle(userSkins, resourceDir, SelectedVehicle.Id,
                 LoadoutService.BuildLoadout(active));
 
+            blkCreated = report.BlkCreated;
+
             var message = Loc.Format("skins.syncDone", report.BlkEntries, report.WrittenTextures);
             if (report.Warnings.Count > 0)
                 message += " " + Loc.Format("skins.syncWarnings", report.Warnings.Count);
@@ -310,14 +266,16 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
-    /// <summary>自动同步开关开启时，停止操作「缓冲时间」后再落盘（§3.8）。</summary>
-    private void ScheduleAutoSync()
+    /// <summary>
+    /// 首次生成某载具的 blk 后提示：用户涂装必须**在游戏里手动选中一次**才会生效
+    /// （取消激活会保留空 blk，正是为了之后切换不必重选，见 §3.8）。
+    /// </summary>
+    private void PromptFirstOutput(string vehicleId)
     {
-        if (!_config.AutoSync) return;
-
-        _autoSyncTimer.Stop();
-        _autoSyncTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, _config.SyncBufferSeconds));
-        _autoSyncTimer.Start();
+        MessageDialog.Info(
+            Loc.Format("skins.firstOutput", SelectedVehicle?.DisplayName ?? vehicleId, vehicleId + ".blk"),
+            Loc["skins.firstOutput.title"],
+            Application.Current?.MainWindow);
     }
 
     /// <summary>读取该载具的激活设置并刷新各包的激活标记。</summary>
@@ -356,8 +314,16 @@ public partial class SkinsViewModel : ObservableObject
         var wasActive = SelectedPackage.IsActive;
         RefreshLibrary();
 
-        // 改的正是当前激活包 → 按需自动同步
-        if (wasActive) ScheduleAutoSync();
+        // 改的正是当前激活包 → **立即落盘**：属性页点「确定」就是一次"改变输出"，
+        // 不该再让用户点一次同步（贴图内容一致会跳过复制，只重写 blk，开销很小）
+        if (wasActive)
+        {
+            LoadActivation(); // RefreshLibrary 重建了包集合，先刷新激活标记
+
+            var sync = SyncCurrentVehicleMessage(out var blkCreated);
+            if (sync.Length > 0) ShowStatus(sync);
+            if (blkCreated && SelectedVehicle != null) PromptFirstOutput(SelectedVehicle.Id);
+        }
     }
 
     [RelayCommand]
@@ -417,12 +383,33 @@ public partial class SkinsViewModel : ObservableObject
         try
         {
             var id = SelectedPackage.Id;
+            var wasActive = SelectedPackage.IsActive;
+            var vehicleId = SelectedPackage.VehicleId;
+
             PreviewStore.Delete(_config.ConfigDirectory, id);
             PackageStore.Delete(_config.ResourceDirectory, id);
 
             PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
+
+            var status = Loc["pkg.deleted"];
+
+            // 删掉的正是该载具当前激活的包 → 载具已无激活包，输出也该清掉（与「取消激活」同一条规则）
+            if (wasActive && !string.IsNullOrWhiteSpace(vehicleId))
+            {
+                LoadoutService.Activate(_config.ConfigDirectory, vehicleId, "");
+                LoadActivation();
+
+                var userSkins = _config.UserSkinsDirectory;
+                if (!string.IsNullOrWhiteSpace(userSkins) && Directory.Exists(userSkins))
+                {
+                    var (cleared, error) = OutputService.ClearVehicle(userSkins, vehicleId);
+                    if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
+                    else if (cleared) status += Loc["pkg.deletedClearedOutput"];
+                }
+            }
+
             RefreshLibrary();
-            ShowStatus(Loc["pkg.deleted"]);
+            ShowStatus(status);
         }
         catch (Exception ex)
         {
