@@ -1,37 +1,52 @@
-using System;
 using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
 
 /// <summary>
-/// 激活组合的编辑与持久化（功能设计 §6.3）。
-/// 每个载具一份 <see cref="ActiveLoadout"/>，存于配置目录 <c>loadouts/&lt;载具Id&gt;.json</c>。
+/// 载具激活设置的读写与派生（功能设计 §3.5 / §3.8 / §6.3）。
+/// 载具只记录**当前激活哪一套涂装包**（<c>&lt;配置目录&gt;/loadouts/&lt;载具Id&gt;.json</c>）；
+/// "用什么贴图"是该涂装包自身的属性（§3.6），输出用的 <see cref="ActiveLoadout"/>
+/// 由激活包的部件贴图配置派生（<see cref="BuildLoadout"/>）。
 /// </summary>
 public static class LoadoutService
 {
-    public static ActiveLoadout LoadOrCreate(string configDir, string vehicleId)
-        => ConfigService.LoadLoadout(configDir, vehicleId) ?? new ActiveLoadout();
+    public static VehicleActivation LoadActivation(string configDir, string vehicleId)
+        => string.IsNullOrWhiteSpace(configDir)
+            ? new VehicleActivation()
+            : ConfigService.LoadActivation(configDir, vehicleId) ?? new VehicleActivation();
 
-    public static void Save(string configDir, string vehicleId, ActiveLoadout loadout)
-        => ConfigService.SaveLoadout(configDir, vehicleId, loadout);
-
-    /// <summary>为某部件位置设置选中贴图（键 = <see cref="VehiclePart.From"/>，即归一化后的 from）。</summary>
-    public static void Set(ActiveLoadout loadout, string partFrom, string packageId,
-        TexMapping mapping, MappingMode? modeOverride = null)
+    public static void SaveActivation(string configDir, string vehicleId, VehicleActivation activation)
     {
-        loadout.Selections[partFrom] = new SelectedMapping
-        {
-            PackageId = packageId,
-            Mapping = mapping,
-            ModeOverride = modeOverride
-        };
+        if (string.IsNullOrWhiteSpace(configDir)) return;
+        ConfigService.SaveActivation(configDir, vehicleId, activation);
     }
 
-    /// <summary>清除某部件位置的选择。</summary>
-    public static bool Clear(ActiveLoadout loadout, string partFrom)
-        => loadout.Selections.Remove(partFrom);
+    /// <summary>激活某套涂装包（<paramref name="packageId"/> 为空 = 取消激活）。</summary>
+    public static void Activate(string configDir, string vehicleId, string packageId)
+        => SaveActivation(configDir, vehicleId,
+            new VehicleActivation { ActivePackageId = packageId ?? "" });
 
-    /// <summary>计算某条件下的有效 Mode（用户覆盖优先，否则随贴图，见 §6.3）。</summary>
-    public static MappingMode EffectiveMode(SelectedMapping selection)
-        => selection.ModeOverride ?? selection.Mapping?.Mode ?? MappingMode.Replace;
+    /// <summary>
+    /// 由激活的涂装包派生输出用组合（§6.3）：键 = 归一化部件位置，
+    /// 值 = 该包在该位置使用的贴图（Mode / Param 随贴图走）。
+    /// </summary>
+    public static ActiveLoadout BuildLoadout(SkinPackage? package)
+    {
+        var loadout = new ActiveLoadout();
+        if (package == null) return loadout;
+
+        foreach (var mapping in package.Mappings)
+        {
+            var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
+            if (key.Length == 0) continue;
+
+            loadout.Selections[key] = new SelectedMapping
+            {
+                PackageId = package.Id,
+                Mapping = mapping
+            };
+        }
+
+        return loadout;
+    }
 }

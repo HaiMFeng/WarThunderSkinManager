@@ -49,23 +49,24 @@ public static class OutputService
             var mapping = selection?.Mapping;
             if (mapping == null) continue;
 
-            var mode = selection!.ModeOverride ?? mapping.Mode;
-            var from = BlkWriter.EnsureWildcard(mapping.FromModule);
-            entries.Add(new BlkWriter.Entry(mode, from, mapping.ToFile,
-                mode == MappingMode.Set ? mapping.Param : null));
-
+            // 贴图不可用的部件**不写入 blk**：游戏不会报错，但会静默失败（§3.8）
             if (string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
-                report.Warnings.Add($"{pair.Key}：缺少贴图引用，未输出贴图");
+                report.Warnings.Add($"{pair.Key}：无可用贴图，已跳过该部件");
                 continue;
             }
 
             var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
             if (!File.Exists(blobPath))
             {
-                report.Warnings.Add($"{pair.Key}：blob 缺失（{mapping.TextureRef}）");
+                report.Warnings.Add($"{pair.Key}：贴图文件缺失（{mapping.TextureRef}），已跳过该部件");
                 continue;
             }
+
+            var mode = selection!.ModeOverride ?? mapping.Mode;
+            var from = BlkWriter.EnsureWildcard(mapping.FromModule);
+            entries.Add(new BlkWriter.Entry(mode, from, mapping.ToFile,
+                mode == MappingMode.Set ? mapping.Param : null));
 
             used.Add((mapping.ToFile, mapping.TextureRef));
         }

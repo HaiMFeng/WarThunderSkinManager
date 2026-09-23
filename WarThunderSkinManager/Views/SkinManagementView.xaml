@@ -33,6 +33,9 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource BrushPrimaryFill}"/>
                             </Trigger>
+                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource BrushPrimary}"/>
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -118,7 +121,7 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <!-- 主体：左侧载具（二级导航） + 右侧涂装包卡片 -->
+        <!-- 主体：左侧载具（二级导航） + 右侧涂装包 -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250"/>
@@ -191,8 +194,8 @@
                             </Style>
                         </DockPanel.Style>
 
-                        <!-- 载具标题 + 涂装包数量（右上角，省出纵向空间） -->
-                        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <!-- 载具标题 + 包数量 + 同步 -->
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -203,12 +206,22 @@
                                 <TextBlock Text="{Binding Skins.SelectedVehicleSubtitle}" Style="{StaticResource PageSubtitle}"
                                            Margin="0,4,0,0"/>
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="{Binding Skins.PackagesTitle}" FontSize="13"
-                                       Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Top"
-                                       Margin="12,4,0,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
+                                <TextBlock Text="{Binding Skins.PackagesTitle}" FontSize="13"
+                                           Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Center"
+                                           Margin="0,0,12,0"/>
+                                <Button Content="{loc:Loc skins.sync}" Style="{StaticResource PrimaryButton}"
+                                        Command="{Binding Skins.SyncVehicleCommand}"/>
+                                <Button Content="{loc:Loc skins.syncAll}" Style="{StaticResource SecondaryButton}"
+                                        Margin="8,0,0,0" Command="{Binding Skins.SyncAllCommand}"/>
+                            </StackPanel>
                         </Grid>
 
-                        <!-- 卡片网格（列数与尺寸随窗口自适应；可拖动排序） -->
+                        <!-- 当前激活的涂装包 -->
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding Skins.ActivePackageText}" FontSize="13"
+                                   Foreground="{StaticResource BrushPrimary}" Margin="0,0,0,10"/>
+
+                        <!-- 卡片网格（列数与尺寸随窗口自适应；可拖动排序；右键菜单可激活/编辑等） -->
                         <ListBox x:Name="PackageList"
                                  Background="Transparent" BorderThickness="0" Padding="0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -222,6 +235,14 @@
                             <!-- 右键菜单：作用于当前选中的涂装包 -->
                             <ListBox.ContextMenu>
                                 <ContextMenu>
+                                    <MenuItem Header="{loc:Loc pkg.activate}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.ActivatePackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              CommandParameter="{Binding PlacementTarget.DataContext.Skins.SelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <MenuItem Header="{loc:Loc pkg.deactivate}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.DeactivatePackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <Separator/>
                                     <MenuItem Header="{loc:Loc pkg.edit}"
                                               Command="{Binding PlacementTarget.DataContext.Skins.EditPackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                               IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
@@ -260,6 +281,22 @@
                                                 CornerRadius="0,0,10,10" Padding="9,6">
                                             <TextBlock Text="{Binding Name}" Foreground="White" FontSize="12"
                                                        TextTrimming="CharacterEllipsis"/>
+                                        </Border>
+                                        <!-- 已激活标记 -->
+                                        <Border VerticalAlignment="Top" HorizontalAlignment="Left"
+                                                Margin="8" Padding="8,3" CornerRadius="9"
+                                                Background="{StaticResource BrushPrimaryFill}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{loc:Loc skins.active}" Foreground="White" FontSize="11"/>
                                         </Border>
                                     </Grid>
                                 </DataTemplate>

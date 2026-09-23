@@ -55,7 +55,7 @@ public static class DeconstructionService
             if (string.IsNullOrWhiteSpace(mapping.ToFile)) continue;
             if (!seenTo.Add(mapping.ToFile)) continue;
 
-            var resolved = ResolveTexture(blk.Directory, mapping.ToFile, out var caseWarning);
+            var resolved = BlkParser.ResolveTexture(blk.Directory, mapping.ToFile, out var caseWarning);
             if (caseWarning != null) warnings.Add($"{blk.VehicleId}/{mapping.ToFile}：{caseWarning}");
             if (resolved == null) continue; // 贴图缺失（parser 已记录 issue）
 
@@ -67,27 +67,5 @@ public static class DeconstructionService
 
         PackageStore.Save(resourceDir, meta, blkPath);
         return new DeconstructResult { Package = package, Warnings = warnings };
-    }
-
-    /// <summary>
-    /// 在 blk 所在目录解析 <paramref name="to"/> 指向的贴图；精确名不存在时回退大小写不敏感匹配（格式文档 §9）。
-    /// </summary>
-    private static string? ResolveTexture(string blkDirectory, string to, out string? warning)
-    {
-        warning = null;
-        var exact = Path.Combine(blkDirectory, to);
-        if (File.Exists(exact)) return exact;
-
-        var targetDir = Path.GetDirectoryName(exact);
-        var fileName = Path.GetFileName(exact);
-        if (string.IsNullOrEmpty(targetDir) || !Directory.Exists(targetDir)) return null;
-
-        var match = Directory.EnumerateFiles(targetDir).FirstOrDefault(
-            f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));
-
-        if (match != null)
-            warning = $"大小写不一致（实际 {Path.GetFileName(match)}）";
-
-        return match;
     }
 }

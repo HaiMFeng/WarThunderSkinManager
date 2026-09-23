@@ -85,24 +85,24 @@ public static class ConfigService
             JsonSerializer.Serialize(map, JsonOpts));
     }
 
-    // ---- 激活输出：loadouts/<vehicleId>.json ----
-    public static string LoadoutFile(string configDir, string vehicleId)
+    // ---- 载具激活设置：loadouts/<vehicleId>.json ----
+    public static string ActivationFile(string configDir, string vehicleId)
         => Path.Combine(configDir, "loadouts", $"{vehicleId}.json");
 
-    public static ActiveLoadout? LoadLoadout(string configDir, string vehicleId)
+    public static VehicleActivation? LoadActivation(string configDir, string vehicleId)
     {
-        var path = LoadoutFile(configDir, vehicleId);
+        var path = ActivationFile(configDir, vehicleId);
         return File.Exists(path)
-            ? JsonSerializer.Deserialize<ActiveLoadout>(File.ReadAllText(path))
+            ? JsonSerializer.Deserialize<VehicleActivation>(File.ReadAllText(path))
             : null;
     }
 
-    public static void SaveLoadout(string configDir, string vehicleId, ActiveLoadout loadout)
+    public static void SaveActivation(string configDir, string vehicleId, VehicleActivation activation)
     {
         var dir = Path.Combine(configDir, "loadouts");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(LoadoutFile(configDir, vehicleId),
-            JsonSerializer.Serialize(loadout, JsonOpts));
+        File.WriteAllText(ActivationFile(configDir, vehicleId),
+            JsonSerializer.Serialize(activation, JsonOpts));
     }
 
     // ---- 国家列表：countries.json [ { id, name } ] ----

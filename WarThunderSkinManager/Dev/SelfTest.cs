@@ -50,18 +50,12 @@ internal static class SelfTest
                     log.AppendLine($"    {part.From}  x{part.Candidates.Count}");
             }
 
-            // ---- 激活输出验证 ----
+            // ---- 激活输出验证（载具激活一套涂装包，见 §3.8 / §6.3）----
             var target = vehicles.FirstOrDefault(v => v.SkinPackages.Count > 1) ?? vehicles.FirstOrDefault();
             if (target != null)
             {
-                var loadout = new ActiveLoadout();
-                foreach (var part in target.Parts)
-                {
-                    var mapping = part.Candidates.FirstOrDefault();
-                    if (mapping == null) continue;
-                    var package = target.SkinPackages.First(p => p.Mappings.Contains(mapping));
-                    LoadoutService.Set(loadout, part.From, package.Id, mapping);
-                }
+                var activePackage = target.SkinPackages.First();
+                var loadout = LoadoutService.BuildLoadout(activePackage);
 
                 var userSkins = Path.Combine(workDir, "UserSkins");
                 var sync = OutputService.SyncVehicle(userSkins, resourceDir, target.Id, loadout);
@@ -88,12 +82,13 @@ internal static class SelfTest
                                 f.EndsWith(".tga", StringComparison.OrdinalIgnoreCase));
                 log.AppendLine($"outDir   : {textureCount} 张贴图 + 1 个 blk");
 
-                // 激活组合持久化往返
+                // 激活设置持久化往返（loadouts/<载具Id>.json = 只存激活的包 Id）
                 var cfgDir = Path.Combine(workDir, "cfg");
-                LoadoutService.Save(cfgDir, target.Id, loadout);
-                var reloaded = LoadoutService.LoadOrCreate(cfgDir, target.Id);
-                log.AppendLine($"loadout  : 往返后 selections={reloaded.Selections.Count}");
-                log.AppendLine($"loadout  : 示例 key={reloaded.Selections.Keys.FirstOrDefault() ?? "-"}");
+                LoadoutService.Activate(cfgDir, target.Id, activePackage.Id);
+                var reloaded = LoadoutService.LoadActivation(cfgDir, target.Id);
+                log.AppendLine($"active   : 往返后 {(reloaded.ActivePackageId == activePackage.Id ? "OK" : reloaded.ActivePackageId)}");
+                log.AppendLine($"loadout  : 由激活包派生 selections={loadout.Selections.Count}");
+                log.AppendLine($"loadout  : 示例 key={loadout.Selections.Keys.FirstOrDefault() ?? "-"}");
 
                 log.AppendLine("---- 生成的 blk 前 16 行 ----");
                 foreach (var line in File.ReadAllLines(sync.BlkPath).Take(16))
@@ -134,6 +129,61 @@ internal static class SelfTest
                 log.AppendLine($"blobs     : 复制前 {blobBefore} -> 复制后 {blobAfter}（相等 = 零字节增量）");
                 log.AppendLine($"export    : blk={exportedBlk}，贴图={exportedTextures}/{sample.Textures.Count}");
                 log.AppendLine($"delete    : 目录已移除={deleted}");
+            }
+
+            // ---- 涂装包部件配置（"用什么贴图"是包自身的属性，见 §3.5 / §3.6）----
+            if (target != null && target.Parts.Count > 0)
+            {
+                var pkg = target.SkinPackages.First();
+                var meta = PackageStore.Load(resourceDir, pkg.Id);
+
+                var entries = target.Parts
+                    .Select(p => p.Candidates.FirstOrDefault())
+                    .Where(m => m != null)
+                    .Select(m => new PackagePartEntry
+                    {
+                        From = m!.FromModule,
+                        Mode = m.Mode,
+                        To = m.ToFile,
+                        Param = m.Param
+                    })
+                    .ToList();
+
+                if (meta != null)
+                {
+                    meta.Parts = entries;
+                    meta.PartsConfigured = true;
+                    PackageStore.SaveMeta(resourceDir, meta);
+
+                    var rebuilt = VehicleAggregator.BuildVehicle(resourceDir, target.Id);
+                    var rebuiltMappings = rebuilt?.SkinPackages
+                        .FirstOrDefault(p => p.Id == pkg.Id)?.Mappings.Count ?? -1;
+
+                    log.AppendLine();
+                    log.AppendLine("---- 涂装包部件配置 ----");
+                    log.AppendLine($"parts 写回 : {entries.Count} 条（PartsConfigured=true）");
+                    log.AppendLine($"重建映射   : {rebuiltMappings} 条（应与写回条数一致）");
+
+                    // 写入方式（滑块）验证：把第一条改为 set_tex → 输出 blk 应出现 set_tex + param
+                    if (entries.Count > 0)
+                    {
+                        entries[0].Mode = MappingMode.Set;
+                        entries[0].Param = null;
+                        meta.Parts = entries;
+                        PackageStore.SaveMeta(resourceDir, meta);
+
+                        var rebuilt2 = VehicleAggregator.BuildVehicle(resourceDir, target.Id);
+                        var pkg2 = rebuilt2?.SkinPackages.FirstOrDefault(p => p.Id == pkg.Id);
+                        var sync3 = OutputService.SyncVehicle(
+                            Path.Combine(workDir, "UserSkins"), resourceDir, target.Id,
+                            LoadoutService.BuildLoadout(pkg2));
+                        var blkText = File.ReadAllText(sync3.BlkPath, Encoding.UTF8);
+
+                        log.AppendLine($"写入方式   : set_tex={(blkText.Contains("set_tex") ? "OK" : "缺失")}"
+                                     + $"，param:camo_skin_tex={(blkText.Contains("camo_skin_tex") ? "OK" : "缺失")}"
+                                     + $"，replace_tex 条数={sync3.BlkEntries - 1}");
+                    }
+                }
             }
 
             // ---- 语言文件补齐验证（旧语言文件缺 key 时应以内置默认补齐并回写）----

@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
         Title="{loc:Loc pkg.editor.title}"
-        Width="560" Height="480"
-        MinWidth="460" MinHeight="380"
+        Width="760" Height="660"
+        MinWidth="640" MinHeight="480"
         WindowStyle="None" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         FontFamily="Segoe UI, Microsoft YaHei UI"
@@ -30,74 +30,153 @@
                         HorizontalAlignment="Right" Click="Cancel_Click"/>
             </Grid>
 
-            <Grid Grid.Row="1" Margin="20,18,20,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+            <ScrollViewer Grid.Row="1" Margin="20,18,20,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
 
-                <!-- 只读信息 -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
-                    <TextBlock Text="{loc:Loc pkg.editor.vehicle}" Foreground="{StaticResource BrushTextMuted}"/>
-                    <TextBlock Text="{Binding VehicleId}" Margin="6,0,18,0" FontWeight="SemiBold"/>
-                    <TextBlock Text="{loc:Loc pkg.editor.textures}" Foreground="{StaticResource BrushTextMuted}"/>
-                    <TextBlock Text="{Binding TextureCount}" Margin="6,0,0,0" FontWeight="SemiBold"/>
-                </StackPanel>
-
-                <TextBlock Grid.Row="1" Text="{loc:Loc pkg.editor.preview}"
-                           Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
-
-                <!-- 预览区：随窗口大小自适应 -->
-                <Grid Grid.Row="2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" MinWidth="150"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0" CornerRadius="8" Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                            MinHeight="110" Margin="0,0,14,0" SnapsToDevicePixels="True">
-                        <Grid>
-                            <TextBlock Text="{loc:Loc pkg.editor.noPreview}" Style="{StaticResource PageSubtitle}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Image Source="{Binding PreviewImage}" Stretch="Uniform">
-                                <Image.Style>
-                                    <Style TargetType="Image">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasPreview}" Value="False">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Image.Style>
-                            </Image>
-                        </Grid>
-                    </Border>
-
-                    <StackPanel Grid.Column="1" Width="150" VerticalAlignment="Top">
-                        <Button Content="{loc:Loc pkg.editor.chooseFile}" Style="{StaticResource SecondaryButton}"
-                                HorizontalAlignment="Stretch" Command="{Binding ChoosePreviewCommand}"/>
-                        <Button Content="{loc:Loc pkg.editor.paste}" Style="{StaticResource SecondaryButton}"
-                                HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding PastePreviewCommand}"/>
-                        <Button Content="{loc:Loc pkg.editor.clear}" Style="{StaticResource SecondaryButton}"
-                                HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding ClearPreviewCommand}"/>
+                    <!-- 只读信息 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <TextBlock Text="{loc:Loc pkg.editor.vehicle}" Foreground="{StaticResource BrushTextMuted}"/>
+                        <TextBlock Text="{Binding VehicleId}" Margin="6,0,18,0" FontWeight="SemiBold"/>
+                        <TextBlock Text="{loc:Loc pkg.editor.partsCount}" Foreground="{StaticResource BrushTextMuted}"/>
+                        <TextBlock Text="{Binding PartCount}" Margin="6,0,0,0" FontWeight="SemiBold"/>
                     </StackPanel>
-                </Grid>
 
-                <!-- 显示名 -->
-                <StackPanel Grid.Row="3">
+                    <TextBlock Text="{loc:Loc pkg.editor.preview}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+
+                    <!-- 预览区 -->
+                    <Grid Height="180">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="150"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" CornerRadius="8" Background="{StaticResource BrushSurface}"
+                                BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                                Margin="0,0,14,0" SnapsToDevicePixels="True">
+                            <Grid>
+                                <TextBlock Text="{loc:Loc pkg.editor.noPreview}" Style="{StaticResource PageSubtitle}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Image Source="{Binding PreviewImage}" Stretch="Uniform">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasPreview}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                </Image>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Grid.Column="1" Width="150" VerticalAlignment="Top">
+                            <Button Content="{loc:Loc pkg.editor.chooseFile}" Style="{StaticResource SecondaryButton}"
+                                    HorizontalAlignment="Stretch" Command="{Binding ChoosePreviewCommand}"/>
+                            <Button Content="{loc:Loc pkg.editor.paste}" Style="{StaticResource SecondaryButton}"
+                                    HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding PastePreviewCommand}"/>
+                            <Button Content="{loc:Loc pkg.editor.clear}" Style="{StaticResource SecondaryButton}"
+                                    HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding ClearPreviewCommand}"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 显示名 -->
                     <TextBlock Text="{loc:Loc pkg.editor.name}" Style="{StaticResource FieldLabel}" Margin="0,18,0,6"/>
                     <TextBox Style="{StaticResource BaseTextBox}"
                              Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
-                </StackPanel>
 
-                <TextBlock Grid.Row="4" Text="{Binding StatusMessage}" Margin="0,10,0,0" TextWrapping="Wrap"
-                           FontSize="12" Foreground="{StaticResource BrushDanger}"/>
-            </Grid>
+                    <!-- 部件贴图（该包自己的属性，§3.5 / §3.6） -->
+                    <TextBlock Text="{loc:Loc pkg.editor.parts}" Style="{StaticResource SectionTitle}" Margin="0,24,0,4"/>
+                    <TextBlock Text="{loc:Loc pkg.editor.partsHint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="190"/>
+                            <ColumnDefinition Width="300"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc pkg.editor.col.part}"
+                                   Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" Text="{loc:Loc pkg.editor.col.mode}"
+                                   Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="2" Text="{loc:Loc pkg.editor.col.tex}"
+                                   Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Parts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="190"/>
+                                            <ColumnDefinition Width="300"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                            <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding CandidateCountText}" FontSize="11"
+                                                       Foreground="{StaticResource BrushTextMuted}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+
+                                        <!-- 写入方式滑块（blk 里写 replace_tex 还是 set_tex）；初值跟随所选贴图 -->
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{loc:Loc pkg.editor.mode.replace}" FontSize="12"
+                                                       VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsReplaceMode}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+                                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <CheckBox Style="{StaticResource ToggleSwitch}" Margin="8,0"
+                                                      IsChecked="{Binding IsSetMode}"
+                                                      IsEnabled="{Binding IsModeEnabled}"/>
+                                            <TextBlock Text="{loc:Loc pkg.editor.mode.set}" FontSize="12"
+                                                       VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSetMode}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+                                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+
+                                        <ComboBox Grid.Column="2" Style="{StaticResource BaseComboBox}"
+                                                  MaxDropDownHeight="260"
+                                                  ItemsSource="{Binding Candidates}"
+                                                  SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="{Binding StatusMessage}" Margin="0,10,0,0" TextWrapping="Wrap"
+                               FontSize="12" Foreground="{StaticResource BrushDanger}"/>
+                </StackPanel>
+            </ScrollViewer>
 
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16,20,18">
                 <Button Content="{loc:Loc common.cancel}" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>

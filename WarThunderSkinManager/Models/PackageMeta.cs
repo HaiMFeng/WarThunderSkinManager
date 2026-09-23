@@ -26,6 +26,19 @@ public sealed class PackageMeta
     /// <summary>同载具内的显示顺序（用户可拖动卡片调整）</summary>
     public int Order { get; set; }
 
+    /// <summary>
+    /// 该包的**部件贴图配置**（功能设计 §3.5 / §3.6）：部件位置 → 使用的贴图。
+    /// 用户在「涂装包属性」界面改动后写入**完整快照**（即该包最终使用哪些部件贴图）。
+    /// </summary>
+    public List<PackagePartEntry> Parts { get; set; } = new();
+
+    /// <summary>
+    /// 是否已由用户在属性界面**配置过**部件贴图。
+    /// <c>false</c> = 沿用 <c>source.blk</c> 内的原始条目；
+    /// <c>true</c> = 以 <see cref="Parts"/> 为准（即使为空 = 该包不输出任何部件）。
+    /// </summary>
+    public bool PartsConfigured { get; set; }
+
     /// <summary>贴图引用表：blk 内 to 原名 → 内容哈希</summary>
     public List<TextureEntry> Textures { get; set; } = new();
 }
@@ -38,4 +51,23 @@ public sealed class TextureEntry
 
     /// <summary>内容哈希（sha256 十六进制小写，不含扩展名）</summary>
     public string Blob { get; set; } = "";
+}
+
+/// <summary>
+/// 涂装包的部件条目：某部件位置使用哪张贴图
+/// （<see cref="MappingMode"/> 与 <c>param</c> 随贴图走，见功能设计 §6.2）。
+/// </summary>
+public sealed class PackagePartEntry
+{
+    /// <summary>原模块代码（from，保留原值含通配符 <c>*</c>）</summary>
+    public string From { get; set; } = "";
+
+    /// <summary>replace_tex / set_tex</summary>
+    public MappingMode Mode { get; set; } = MappingMode.Replace;
+
+    /// <summary>使用的贴图名（to），对应 <see cref="TextureEntry.To"/></summary>
+    public string To { get; set; } = "";
+
+    /// <summary>仅 Set 模式使用：camo_skin_tex</summary>
+    public string? Param { get; set; }
 }

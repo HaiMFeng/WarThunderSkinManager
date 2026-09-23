@@ -58,57 +58,91 @@ public static class VehicleAggregator
         return vehicle;
     }
 
-    /// <summary>
-    /// 从资源目录重建载具视图：读 packages/*/meta.json 分组，
-    /// 因 meta.json 不含映射，需回读各包 <c>source.blk</c> 才能聚合部件。
-    /// </summary>
+    /// <summary>从资源目录重建全部载具视图（读 packages/*/meta.json 分组）。</summary>
     public static List<Vehicle> BuildAll(string resourceDir,
         IReadOnlyDictionary<string, string>? countryOverrides = null)
     {
-        var vehicles = new List<Vehicle>();
+        return PackageStore.LoadAll(resourceDir)
+            .GroupBy(m => m.VehicleId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => Build(group.Key, BuildPackages(resourceDir, group), countryOverrides))
+            .OrderBy(v => v.Id, StringComparer.Ordinal)
+            .ToList();
+    }
 
-        foreach (var group in PackageStore.LoadAll(resourceDir)
-                     .GroupBy(m => m.VehicleId, StringComparer.OrdinalIgnoreCase))
+    /// <summary>只重建**单个载具**（涂装包属性界面用，避免解析整个库的 blk）。</summary>
+    public static Vehicle? BuildVehicle(string resourceDir, string vehicleId,
+        IReadOnlyDictionary<string, string>? countryOverrides = null)
+    {
+        var metas = PackageStore.LoadAll(resourceDir)
+            .Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return metas.Count == 0 ? null : Build(vehicleId, BuildPackages(resourceDir, metas), countryOverrides);
+    }
+
+    /// <summary>
+    /// 把包元数据还原为 <see cref="SkinPackage"/>：
+    /// 映射取 <c>meta.parts</c>（用户配置过的部件贴图快照），为空则回读 <c>source.blk</c>；
+    /// 并由 <c>meta.textures</c> 回填内容寻址引用（blob 文件名 = 哈希 + 扩展名）。
+    /// </summary>
+    private static List<SkinPackage> BuildPackages(string resourceDir, IEnumerable<PackageMeta> metas)
+    {
+        var packages = new List<SkinPackage>();
+
+        // 同载具内按用户排序（meta.Order），名称兜底保证稳定
+        foreach (var meta in metas.OrderBy(m => m.Order).ThenBy(m => m.Name, StringComparer.Ordinal))
         {
-            var packages = new List<SkinPackage>();
-
-            // 同载具内按用户排序（meta.Order），名称兜底保证稳定
-            foreach (var meta in group.OrderBy(m => m.Order).ThenBy(m => m.Name, StringComparer.Ordinal))
+            var package = new SkinPackage
             {
-                var package = new SkinPackage
-                {
-                    Id = meta.Id,
-                    VehicleId = meta.VehicleId,
-                    Name = meta.Name,
-                    SourceImportId = meta.SourceImportId,
-                    PreviewPath = meta.Preview
-                };
+                Id = meta.Id,
+                VehicleId = meta.VehicleId,
+                Name = meta.Name,
+                SourceImportId = meta.SourceImportId,
+                PreviewPath = meta.Preview
+            };
 
+            if (meta.PartsConfigured || meta.Parts.Count > 0)
+            {
+                foreach (var part in meta.Parts)
+                {
+                    if (string.IsNullOrWhiteSpace(part.From) || string.IsNullOrWhiteSpace(part.To)) continue;
+
+                    package.Mappings.Add(new TexMapping
+                    {
+                        Mode = part.Mode,
+                        FromModule = part.From,
+                        ToFile = part.To,
+                        Param = part.Param,
+                        HasWildcard = part.From.Contains('*')
+                    });
+                }
+            }
+            else
+            {
                 var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
                 if (File.Exists(sourceBlk))
                 {
                     var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
                     package.Mappings.AddRange(blk.Mappings);
                 }
-
-                foreach (var texture in meta.Textures)
-                {
-                    package.Textures.Add(new TextureRef { To = texture.To, Blob = texture.Blob });
-
-                    // 回填映射的内容寻址引用（blob 文件名 = 哈希 + 扩展名），供激活输出使用
-                    var mapping = package.Mappings.FirstOrDefault(
-                        m => string.Equals(m.ToFile, texture.To, StringComparison.OrdinalIgnoreCase));
-                    if (mapping != null)
-                        mapping.TextureRef = texture.Blob + Path.GetExtension(texture.To).ToLowerInvariant();
-                }
-
-                packages.Add(package);
             }
 
-            vehicles.Add(Build(group.Key, packages, countryOverrides));
+            foreach (var texture in meta.Textures)
+            {
+                package.Textures.Add(new TextureRef { To = texture.To, Blob = texture.Blob });
+
+                // 回填映射的内容寻址引用，供激活输出使用
+                foreach (var mapping in package.Mappings.Where(
+                             m => string.Equals(m.ToFile, texture.To, StringComparison.OrdinalIgnoreCase)))
+                {
+                    mapping.TextureRef = texture.Blob + Path.GetExtension(texture.To).ToLowerInvariant();
+                }
+            }
+
+            packages.Add(package);
         }
 
-        return vehicles.OrderBy(v => v.Id, StringComparer.Ordinal).ToList();
+        return packages;
     }
 
     /// <summary>国家判定：用户覆盖优先，否则按前缀自动归类。</summary>

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace WarThunderSkinManager.Models;
@@ -14,4 +15,10 @@ public partial class VehiclePart : ObservableObject
 
     /// <summary>各涂装包里 from 命中本部件的候选贴图</summary>
     [ObservableProperty] private List<TexMapping> _candidates = new();
+
+    /// <summary>
+    /// **有可用贴图**的候选数量（贴图缺失的条目不计入，见 §3.2 校验）。
+    /// 为 0 表示该部位无贴图可用，界面显示「无」。
+    /// </summary>
+    public int TextureCandidateCount => Candidates.Count(c => c.HasTexture);
 }

@@ -82,7 +82,10 @@ public static class PackageStore
             SourceImportId = source.SourceImportId,
             Preview = "", // 预览图缓存键跟随包，不自动继承
             Order = source.Order + 1,
-            Textures = new List<TextureEntry>(source.Textures)
+            Textures = new List<TextureEntry>(source.Textures),
+            // 派生新组合：先继承源包的部件贴图配置，再在属性界面替换部件
+            Parts = new List<PackagePartEntry>(source.Parts),
+            PartsConfigured = source.PartsConfigured
         };
 
         Directory.CreateDirectory(PackageDirectory(resourceDir, copy.Id));

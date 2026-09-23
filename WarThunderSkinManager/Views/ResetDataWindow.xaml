@@ -1,0 +1,106 @@
+<Window x:Class="WarThunderSkinManager.Views.ResetDataWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+        Title="{loc:Loc settings.reset.title}"
+        Width="640" Height="620"
+        MinWidth="520" MinHeight="460"
+        WindowStyle="None" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
+        Background="{StaticResource BrushBackground}">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
+
+    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏 -->
+            <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <TextBlock Text="{loc:Loc settings.reset.title}" Margin="14,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Foreground="{StaticResource BrushDanger}"/>
+                <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                        HorizontalAlignment="Right" Click="Cancel_Click"/>
+            </Grid>
+
+            <ScrollViewer Grid.Row="1" Margin="20,18,20,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+
+                    <!-- 警告 -->
+                    <Border Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8"
+                            Padding="14,12">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                       Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
+                                       Margin="0,1,10,0"/>
+                            <TextBlock Text="{loc:Loc settings.reset.warn}" TextWrapping="Wrap" FontSize="13"
+                                       Foreground="#B91C1C"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 清除范围 -->
+                    <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,12,0,10">
+                        <StackPanel>
+                            <CheckBox Content="{loc:Loc settings.reset.check.library}" IsChecked="{Binding ClearLibrary}"/>
+                            <TextBlock Text="{Binding ResourceDirectory}" Margin="26,5,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding LibraryStatText}" Margin="26,2,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,12,0,10">
+                        <StackPanel>
+                            <CheckBox Content="{loc:Loc settings.reset.check.config}" IsChecked="{Binding ClearConfigData}"/>
+                            <TextBlock Text="{Binding ConfigDirectory}" Margin="26,5,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding ConfigStatText}" Margin="26,2,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,12,0,10">
+                        <StackPanel>
+                            <CheckBox Content="{loc:Loc settings.reset.check.settings}" IsChecked="{Binding ClearSettings}"/>
+                            <TextBlock Text="{Binding ConfigDirectory}" Margin="26,5,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Padding="0,12,0,4">
+                        <StackPanel>
+                            <CheckBox Content="{loc:Loc settings.reset.check.output}" IsChecked="{Binding ClearUserSkinsOutput}"/>
+                            <TextBlock Text="{Binding WtsmPath}" Margin="26,5,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding OutputStatText}" Margin="26,2,0,0" FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 输入确认词 -->
+                    <TextBlock Text="{loc:Loc settings.reset.confirmLabel}" Style="{StaticResource FieldLabel}"
+                               Margin="0,14,0,6"/>
+                    <TextBox Style="{StaticResource BaseTextBox}" Width="220" HorizontalAlignment="Left"
+                             Text="{Binding ConfirmText, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Text="{loc:Loc settings.reset.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,12,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16,20,18">
+                <Button Content="{loc:Loc common.cancel}" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>
+                <Button Content="{loc:Loc settings.reset}" Style="{StaticResource DangerButton}" Margin="8,0,0,0"
+                        IsEnabled="{Binding CanConfirm}" Click="Ok_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

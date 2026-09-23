@@ -22,4 +22,10 @@ public partial class AppConfig : ObservableObject
 
     /// <summary>界面语言代码（对应 &lt;配置目录&gt;/lang/&lt;culture&gt;.json）</summary>
     [ObservableProperty] private string _language = "zh-CN";
+
+    /// <summary>
+    /// 用户是否已确认了解 replace_tex / set_tex 写入方式的含义（涂装包属性界面的滑块提示，见 §3.6）。
+    /// 未确认前每次尝试改动都会再次提示；确认后不再提示。
+    /// </summary>
+    [ObservableProperty] private bool _replaceSetNoticeSeen;
 }

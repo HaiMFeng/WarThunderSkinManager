@@ -1,11 +1,14 @@
 using System;
+using System.ComponentModel;
 using System.IO;
+using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
+using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.ViewModels;
 
@@ -30,10 +33,16 @@ public partial class MainViewModel : ObservableObject
 
     private readonly DispatcherTimer _statusTimer;
 
+    /// <summary>缓冲时间下限（秒）：低于此值弹窗提醒（功能设计 §3.8）。</summary>
+    private const int MinBufferSeconds = 2;
+
+    /// <summary>上一次的缓冲时间，用于只在「越过阈值」时提醒一次。</summary>
+    private int _lastBufferSeconds = MinBufferSeconds;
+
     /// <summary>涂装管理页视图模型（导入入口 + 涂装包卡片）</summary>
     public SkinsViewModel Skins { get; }
 
-    /// <summary>载具管理页视图模型（显示名 / 国家 / 部件）</summary>
+    /// <summary>载具管理页视图模型（显示名 / 国家 / 部件适配与同步）</summary>
     public VehiclesViewModel Vehicles { get; }
 
     private static LocalizationManager Loc => LocalizationManager.Instance;
@@ -44,12 +53,33 @@ public partial class MainViewModel : ObservableObject
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
 
+        _lastBufferSeconds = config.SyncBufferSeconds;
+        Config.PropertyChanged += OnConfigChanged;
+
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         _statusTimer.Tick += (_, _) =>
         {
             StatusMessage = "";
             _statusTimer.Stop();
         };
+    }
+
+    /// <summary>缓冲时间被改到 2 秒以下时提醒一次（§3.8「短缓冲提醒」）。</summary>
+    private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(AppConfig.SyncBufferSeconds)) return;
+
+        var current = Config.SyncBufferSeconds;
+        if (current < MinBufferSeconds && _lastBufferSeconds >= MinBufferSeconds)
+        {
+            MessageBox.Show(
+                Loc["settings.buffer.warn"],
+                Loc["settings.buffer.warnTitle"],
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        _lastBufferSeconds = current;
     }
 
     [RelayCommand]
@@ -91,6 +121,52 @@ public partial class MainViewModel : ObservableObject
         {
             PersistConfig();
             ShowStatus(Loc["settings.saved"]);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("settings.saveFailed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// 清除所有数据（危险操作，设置页）。
+    /// 三重确认：① 警告弹窗 → ② 清除面板（勾选范围 + **输入确认词**）→ ③ 最后确认弹窗。
+    /// </summary>
+    [RelayCommand]
+    private void ResetData()
+    {
+        // ① 第一次确认：说明后果
+        var first = MessageBox.Show(
+            Loc["settings.reset.confirm1"],
+            Loc["settings.reset.title"],
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (first != MessageBoxResult.OK) return;
+
+        // ② 第二次确认：选择范围 + 输入确认词
+        var reset = new ResetDataViewModel(Config);
+        var window = new ResetDataWindow { DataContext = reset, Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true) return;
+
+        // ③ 第三次确认：列出将要删除的范围
+        var last = MessageBox.Show(
+            Loc.Format("settings.reset.confirm3", reset.SummaryText),
+            Loc["settings.reset.title"],
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Stop);
+        if (last != MessageBoxResult.OK) return;
+
+        try
+        {
+            var errors = reset.Execute();
+
+            // 清掉的可能是当前展示的数据 → 让两个页面重新加载
+            Skins.RefreshCommand.Execute(null);
+            Vehicles.RefreshCommand.Execute(null);
+
+            ShowStatus(errors.Count == 0
+                ? Loc["settings.reset.done"]
+                : Loc.Format("settings.reset.doneWithErrors", errors.Count));
         }
         catch (Exception ex)
         {

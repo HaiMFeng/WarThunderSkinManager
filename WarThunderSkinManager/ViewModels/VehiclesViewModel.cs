@@ -28,16 +28,17 @@ public sealed class CountryOption
 }
 
 /// <summary>
-/// 载具管理页视图模型（功能设计 §3.10 / §3.7）：
-/// 列出载具（内部标识 / 显示名 / 国家 / 涂装包数 / 部件）；
-/// 可编辑**显示名**（写入映射文件）与**国家**（写入覆盖文件），改动即时自动保存。
+/// 载具管理页视图模型（功能设计 §3.7 / §3.10）。
+/// 本页**只负责载具显示数据**：显示名映射（<c>mappings/vehicles.json</c>）、
+/// 国家归类（<c>mappings/vehicle_countries.json</c>），并只读展示内部标识、涂装包数量与
+/// 各 <c>from</c> 结构；**部件贴图适配与同步输出在涂装管理页**（§3.5 / §3.8）。
 /// </summary>
 public partial class VehiclesViewModel : ObservableObject
 {
     private readonly AppConfig _config;
     private readonly DispatcherTimer _statusTimer;
 
-    /// <summary>同步界面字段时置位，避免把“加载”误当成“用户修改”而反复落盘。</summary>
+    /// <summary>同步界面字段时置位，避免把「加载」误当成「用户修改」而反复落盘。</summary>
     private bool _syncing;
 
     private Dictionary<string, string> _displayNames = new(StringComparer.Ordinal);
@@ -71,11 +72,15 @@ public partial class VehiclesViewModel : ObservableObject
 
     public bool HasSelection => SelectedVehicle != null;
 
+    public bool HasParts => (SelectedVehicle?.Parts.Count ?? 0) > 0;
+
     public string VehicleCountText => Loc.Format("vehicles.count", Vehicles.Count);
 
     public string VehicleIdText => SelectedVehicle?.Id ?? "";
 
     public string PackageCountText => Loc.Format("vehicles.packageCount", SelectedVehicle?.SkinPackages.Count ?? 0);
+
+    public string PartCountText => Loc.Format("vehicles.partCount", SelectedVehicle?.Parts.Count ?? 0);
 
     // ---------- 状态联动 ----------
 
@@ -90,8 +95,10 @@ public partial class VehiclesViewModel : ObservableObject
         SyncFromVehicle();
 
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasParts));
         OnPropertyChanged(nameof(VehicleIdText));
         OnPropertyChanged(nameof(PackageCountText));
+        OnPropertyChanged(nameof(PartCountText));
     }
 
     /// <summary>显示名改动（TextBox 失焦触发）→ 更新映射文件。</summary>

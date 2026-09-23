@@ -133,9 +133,12 @@
                                 <TextBlock Text="{Binding Vehicles.VehicleIdText}" FontSize="18" FontWeight="SemiBold"
                                            TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="{Binding Vehicles.PackageCountText}" FontSize="13"
-                                       Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Top"
-                                       Margin="12,4,0,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,4,0,0">
+                                <TextBlock Text="{Binding Vehicles.PackageCountText}" FontSize="13"
+                                           Foreground="{StaticResource BrushTextMuted}"/>
+                                <TextBlock Text="{Binding Vehicles.PartCountText}" FontSize="13" Margin="10,0,0,0"
+                                           Foreground="{StaticResource BrushTextMuted}"/>
+                            </StackPanel>
                         </Grid>
 
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -158,8 +161,10 @@
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
 
-                                <!-- 部件 -->
+                                <!-- 部件（按 from 聚合，只读展示；贴图适配在涂装管理页，见 §3.5 / §3.10） -->
                                 <TextBlock Text="{loc:Loc vehicles.parts}" Style="{StaticResource SectionTitle}" Margin="0,24,0,8"/>
+                                <TextBlock Text="{loc:Loc vehicles.parts.hint}" Style="{StaticResource PageSubtitle}"
+                                           TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -179,8 +184,20 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="{Binding From}" TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding Candidates.Count}"
-                                                               Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Center"/>
+                                                    <!-- 只统计有可用贴图的候选；为 0 时显示「无」（贴图缺失，见 §3.2） -->
+                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource BrushTextMuted}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="{Binding TextureCandidateCount}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding TextureCandidateCount}" Value="0">
+                                                                        <Setter Property="Text" Value="{loc:Loc vehicles.none}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>

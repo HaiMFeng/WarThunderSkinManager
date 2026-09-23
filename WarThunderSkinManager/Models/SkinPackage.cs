@@ -30,6 +30,9 @@ public partial class SkinPackage : ObservableObject
 
     /// <summary>贴图引用：to 原名 -> blobs/&lt;hash&gt;（内容寻址）。解构阶段填充。</summary>
     [ObservableProperty] private List<TextureRef> _textures = new();
+
+    /// <summary>是否为该载具当前**激活**的涂装包（界面标记用，不落盘，见 §3.8）</summary>
+    [ObservableProperty] private bool _isActive;
 }
 
 /// <summary>贴图内容寻址引用：原名(to) -> blobs/&lt;hash&gt;。</summary>

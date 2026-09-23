@@ -31,13 +31,18 @@ public partial class CountryItem : ObservableObject
 }
 
 /// <summary>
-/// 涂装管理页视图模型（功能设计 §3.1 / §3.4 / §3.6 / §3.11）：
-/// 国家横条（顶）→ 载具列表（左二级）→ 涂装包（右，含改名 / 预览图 / 复制 / 导出 / 删除）。
+/// 涂装管理页视图模型（功能设计 §3.1 / §3.4 / §3.6 / §3.8 / §3.11）：
+/// 国家横条（顶）→ 载具列表（左二级）→ 涂装包（右，含改名 / 预览图 / 复制 / 导出 / 删除 / **激活**）。
+/// 每个载具**同一时刻只激活一套涂装包**（"用什么贴图"是该包自身的属性，见 §3.6）；
+/// 同步时把激活包的内容输出到 <c>&lt;UserSkins&gt;/WTSM/&lt;载具Id&gt;/</c>（§3.8）。
 /// </summary>
 public partial class SkinsViewModel : ObservableObject
 {
     private readonly AppConfig _config;
     private readonly DispatcherTimer _statusTimer;
+
+    /// <summary>自动同步缓冲计时（§3.8：停止操作达缓冲时间后再落盘，避免频繁读写）。</summary>
+    private readonly DispatcherTimer _autoSyncTimer;
 
     private List<Vehicle> _allVehicles = new();
 
@@ -47,6 +52,7 @@ public partial class SkinsViewModel : ObservableObject
     [ObservableProperty] private Vehicle? _selectedVehicle;
     [ObservableProperty] private ObservableCollection<SkinPackage> _packages = new();
     [ObservableProperty] private SkinPackage? _selectedPackage;
+    [ObservableProperty] private VehicleActivation _activation = new();
     [ObservableProperty] private string _statusMessage = "";
 
     /// <summary>包卡片宽度（随窗口自适应，由视图在 SizeChanged 时计算下发）</summary>
@@ -63,6 +69,13 @@ public partial class SkinsViewModel : ObservableObject
         {
             StatusMessage = "";
             _statusTimer.Stop();
+        };
+
+        _autoSyncTimer = new DispatcherTimer();
+        _autoSyncTimer.Tick += (_, _) =>
+        {
+            _autoSyncTimer.Stop();
+            SyncCurrentVehicle();
         };
 
         RefreshLibrary();
@@ -82,6 +95,16 @@ public partial class SkinsViewModel : ObservableObject
             : $"{SelectedVehicle.Id} · {Loc[CountryCatalog.DisplayNameKey(SelectedVehicle.CountryId)]}";
 
     public string PackagesTitle => Loc.Format("skins.packages.count", Packages.Count);
+
+    /// <summary>当前激活的涂装包说明（显示在载具标题右侧）。</summary>
+    public string ActivePackageText
+    {
+        get
+        {
+            var active = Packages.FirstOrDefault(p => p.IsActive);
+            return active == null ? Loc["skins.notActive"] : Loc.Format("skins.activeIs", active.Name);
+        }
+    }
 
     /// <summary>卡片高度 = 宽度 × 0.72（约 16:11 的缩略图比例）</summary>
     public double CardHeight => Math.Round(CardWidth * 0.72);
@@ -108,8 +131,11 @@ public partial class SkinsViewModel : ObservableObject
 
     partial void OnSelectedVehicleChanged(Vehicle? value)
     {
+        _autoSyncTimer.Stop(); // 换载具时放弃未到期的自动同步，避免写到新载具
+
         Packages = new ObservableCollection<SkinPackage>(value?.SkinPackages ?? new List<SkinPackage>());
         SelectedPackage = Packages.FirstOrDefault();
+        LoadActivation();
 
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectedVehicleTitle));
@@ -160,6 +186,135 @@ public partial class SkinsViewModel : ObservableObject
                   ImportSourceType.UserSkins, userSkins);
     }
 
+    /// <summary>激活该套涂装包（每载具同一时刻只激活一套；§3.8）。</summary>
+    [RelayCommand]
+    private void ActivatePackage(SkinPackage? package)
+    {
+        if (package == null || SelectedVehicle == null) return;
+        if (!EnsureConfigDir()) return;
+
+        var vehicleId = SelectedVehicle.Id;
+        LoadoutService.Activate(_config.ConfigDirectory, vehicleId, package.Id);
+        LoadActivation();
+
+        ScheduleAutoSync();
+        ShowStatus(Loc.Format("pkg.activated", package.Name));
+    }
+
+    /// <summary>取消该载具的激活（不再向 WTSM 输出该载具）。</summary>
+    [RelayCommand]
+    private void DeactivatePackage()
+    {
+        if (SelectedVehicle == null) return;
+        if (!EnsureConfigDir()) return;
+
+        LoadoutService.Activate(_config.ConfigDirectory, SelectedVehicle.Id, "");
+        LoadActivation();
+
+        ShowStatus(Loc["pkg.deactivated"]);
+    }
+
+    /// <summary>手动同步当前载具激活的涂装包（§3.8）。</summary>
+    [RelayCommand]
+    private void SyncVehicle()
+    {
+        if (SelectedVehicle == null) return;
+        SyncCurrentVehicle();
+    }
+
+    /// <summary>同步所有已激活涂装包的载具（§3.8「同步所有」）。</summary>
+    [RelayCommand]
+    private void SyncAll()
+    {
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir)) return;
+
+        try
+        {
+            var synced = 0;
+            var entries = 0;
+            var textures = 0;
+            var warnings = 0;
+
+            foreach (var vehicle in _allVehicles)
+            {
+                var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, vehicle.Id);
+                if (string.IsNullOrWhiteSpace(activation.ActivePackageId)) continue;
+
+                var package = vehicle.SkinPackages.FirstOrDefault(
+                    p => string.Equals(p.Id, activation.ActivePackageId, StringComparison.Ordinal));
+                if (package == null) continue;
+
+                var report = OutputService.SyncVehicle(userSkins, resourceDir, vehicle.Id,
+                    LoadoutService.BuildLoadout(package));
+
+                synced++;
+                entries += report.BlkEntries;
+                textures += report.WrittenTextures;
+                warnings += report.Warnings.Count;
+            }
+
+            var message = Loc.Format("skins.syncAllDone", synced, entries, textures);
+            if (warnings > 0) message += " " + Loc.Format("skins.syncWarnings", warnings);
+            ShowStatus(message);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("skins.syncFailed", ex.Message));
+        }
+    }
+
+    private void SyncCurrentVehicle()
+    {
+        if (SelectedVehicle == null) return;
+
+        var active = Packages.FirstOrDefault(p => p.IsActive);
+        if (active == null)
+        {
+            ShowStatus(Loc["skins.needActive"]);
+            return;
+        }
+
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir)) return;
+
+        try
+        {
+            var report = OutputService.SyncVehicle(userSkins, resourceDir, SelectedVehicle.Id,
+                LoadoutService.BuildLoadout(active));
+
+            var message = Loc.Format("skins.syncDone", report.BlkEntries, report.WrittenTextures);
+            if (report.Warnings.Count > 0)
+                message += " " + Loc.Format("skins.syncWarnings", report.Warnings.Count);
+            ShowStatus(message);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("skins.syncFailed", ex.Message));
+        }
+    }
+
+    /// <summary>自动同步开关开启时，停止操作「缓冲时间」后再落盘（§3.8）。</summary>
+    private void ScheduleAutoSync()
+    {
+        if (!_config.AutoSync) return;
+
+        _autoSyncTimer.Stop();
+        _autoSyncTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, _config.SyncBufferSeconds));
+        _autoSyncTimer.Start();
+    }
+
+    /// <summary>读取该载具的激活设置并刷新各包的激活标记。</summary>
+    private void LoadActivation()
+    {
+        Activation = SelectedVehicle == null
+            ? new VehicleActivation()
+            : LoadoutService.LoadActivation(_config.ConfigDirectory, SelectedVehicle.Id);
+
+        foreach (var package in Packages)
+            package.IsActive = string.Equals(package.Id, Activation.ActivePackageId, StringComparison.Ordinal);
+
+        OnPropertyChanged(nameof(ActivePackageText));
+    }
+
     // ---------- 涂装包操作（§3.4 / §3.6 / §3.11）----------
 
     [RelayCommand]
@@ -170,13 +325,19 @@ public partial class SkinsViewModel : ObservableObject
         var meta = PackageStore.Load(_config.ResourceDirectory, SelectedPackage.Id);
         if (meta == null) return;
 
-        var editor = new PackageEditorViewModel(_config.ConfigDirectory, meta);
+        // 属性界面可配置该包的部件贴图（§3.5），需要配置对象以读取/记录「写入方式提示已确认」标记
+        var editor = new PackageEditorViewModel(_config, meta);
         var window = new PackageEditorWindow { DataContext = editor, Owner = Application.Current?.MainWindow };
         if (window.ShowDialog() != true) return;
 
         editor.Apply();
         PackageStore.SaveMeta(_config.ResourceDirectory, meta);
+
+        var wasActive = SelectedPackage.IsActive;
         RefreshLibrary();
+
+        // 改的正是当前激活包 → 按需自动同步
+        if (wasActive) ScheduleAutoSync();
     }
 
     [RelayCommand]
@@ -312,7 +473,7 @@ public partial class SkinsViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
             return new List<Vehicle>();
 
-        // 国家以用户在“载具管理”里的手动归类为准（§3.4 / §3.10）
+        // 国家以用户在「载具管理」里的手动归类为准（§3.4 / §3.10）
         var overrides = string.IsNullOrWhiteSpace(_config.ConfigDirectory)
             ? null
             : ConfigService.LoadVehicleCountries(_config.ConfigDirectory);
@@ -398,7 +559,12 @@ public partial class SkinsViewModel : ObservableObject
                 return;
             }
 
-            var preview = new ImportPreviewViewModel(candidates);
+            // 从 UserSkins 导入时提供「导入后清理源文件夹」（§3.1）
+            var canCleanSource = sourceType == ImportSourceType.UserSkins
+                                 && !string.IsNullOrWhiteSpace(sourcePath)
+                                 && Directory.Exists(sourcePath);
+
+            var preview = new ImportPreviewViewModel(candidates, canCleanSource);
             var window = new ImportPreviewWindow
             {
                 DataContext = preview,
@@ -410,13 +576,31 @@ public partial class SkinsViewModel : ObservableObject
             preview.ApplyNames();
             var result = ImportService.Commit(candidates, _config.ResourceDirectory, sourceType, sourcePath);
 
+            var message = Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
+            if (preview.DeleteSource)
+                message += CleanupImportedSource(sourcePath, result);
+
             RefreshLibrary();
-            ShowStatus(Loc.Format("import.done", result.Packages.Count, result.Warnings.Count));
+            ShowStatus(message);
         }
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("import.failed", ex.Message));
         }
+    }
+
+    /// <summary>
+    /// 导入成功后清理 UserSkins 中未受管理的原始涂装文件夹（功能设计 §3.1）。
+    /// 只删除**本次成功导入**的 blk 所在顶层文件夹，`WTSM` 永不删除。
+    /// </summary>
+    private static string CleanupImportedSource(string sourceRoot, ImportResult result)
+    {
+        var errors = new List<string>();
+        var removed = ImportService.CleanupSource(sourceRoot, result.ImportedBlkPaths, errors);
+
+        var text = Loc.Format("import.cleaned", removed);
+        if (errors.Count > 0) text += Loc.Format("import.cleanupFailed", errors.Count);
+        return text;
     }
 
     private bool EnsureResourceDir()
@@ -429,6 +613,36 @@ public partial class SkinsViewModel : ObservableObject
         }
 
         Directory.CreateDirectory(dir);
+        return true;
+    }
+
+    private bool EnsureConfigDir()
+    {
+        if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return true;
+
+        ShowStatus(Loc["settings.configDirRequired"]);
+        return false;
+    }
+
+    private bool EnsureOutputDirs(out string userSkins, out string resourceDir)
+    {
+        userSkins = _config.UserSkinsDirectory;
+        resourceDir = _config.ResourceDirectory;
+
+        if (!EnsureConfigDir()) return false;
+
+        if (string.IsNullOrWhiteSpace(userSkins) || !Directory.Exists(userSkins))
+        {
+            ShowStatus(Loc["import.needUserSkins"]);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
+        {
+            ShowStatus(Loc["import.needResource"]);
+            return false;
+        }
+
         return true;
     }
 

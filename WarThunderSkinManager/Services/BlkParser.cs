@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using WarThunderSkinManager.Models;
 
@@ -11,7 +13,7 @@ namespace WarThunderSkinManager.Services;
 ///  - name:t="user" 固定开头
 ///  - replace_tex { from:.. to:.. } / set_tex { from:.. to:.. param:.. }
 ///  - blk 不支持任何注释，按原值解析
-///  - 校验：from 需含 *、to 需 .dds/.tga、set 需 param、贴图需在 blk 同目录存在
+///  - 校验：from 需含 *、to 需 .dds/.tga、set 需 param、**to 指向的贴图需在 blk 同目录存在**
 /// </summary>
 public static class BlkParser
 {
@@ -57,6 +59,33 @@ public static class BlkParser
         return blk;
     }
 
+    /// <summary>
+    /// 在 <paramref name="directory"/> 下解析 <paramref name="to"/> 指向的贴图；
+    /// 精确名不存在时回退**大小写不敏感**匹配（格式文档 §9）。
+    /// </summary>
+    /// <param name="warning">非致命问题（如大小写不一致）；找不到贴图时为 null。</param>
+    /// <returns>贴图绝对路径；找不到返回 null。</returns>
+    public static string? ResolveTexture(string directory, string to, out string? warning)
+    {
+        warning = null;
+        if (string.IsNullOrWhiteSpace(to)) return null;
+
+        var exact = Path.Combine(directory, to);
+        if (File.Exists(exact)) return exact;
+
+        var targetDir = Path.GetDirectoryName(exact);
+        var fileName = Path.GetFileName(exact);
+        if (string.IsNullOrEmpty(targetDir) || !Directory.Exists(targetDir)) return null;
+
+        var match = Directory.EnumerateFiles(targetDir).FirstOrDefault(
+            f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));
+
+        if (match != null)
+            warning = $"大小写不一致（实际 {Path.GetFileName(match)}）";
+
+        return match;
+    }
+
     private static string? Extract(string line)
     {
         var m = Quoted.Match(line);
@@ -76,8 +105,14 @@ public static class BlkParser
             issues.Add("set_tex 缺少 param:t=\"camo_skin_tex\"");
         if (mode == MappingMode.Replace && param != null)
             issues.Add("replace_tex 不应包含 param");
-        if (!File.Exists(Path.Combine(blk.Directory, to)))
-            issues.Add($"贴图缺失: {to}");
+
+        // 贴图校验（关键）：找不到贴图的条目视为「无贴图」，不参与聚合与输出
+        var resolved = ResolveTexture(blk.Directory, to, out var caseWarning);
+        var missing = resolved == null;
+        if (missing)
+            issues.Add($"贴图缺失：{to}");
+        else if (caseWarning != null)
+            issues.Add(caseWarning);
 
         return new TexMapping
         {
@@ -86,6 +121,7 @@ public static class BlkParser
             ToFile = to,
             Param = param,
             HasWildcard = from.Contains('*'),
+            TextureMissing = missing,
             Issues = issues
         };
     }

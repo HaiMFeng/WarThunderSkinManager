@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
         Title="{loc:Loc import.title}"
-        Width="880" Height="560"
-        MinWidth="660" MinHeight="380"
+        Width="900" Height="620"
+        MinWidth="680" MinHeight="400"
         WindowStyle="None" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         FontFamily="Segoe UI, Microsoft YaHei UI"
@@ -18,6 +18,7 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="40"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -35,53 +36,173 @@
             <TextBlock Grid.Row="1" Text="{loc:Loc import.hint}" Margin="16,14,16,10"
                        Style="{StaticResource PageSubtitle}" TextWrapping="Wrap"/>
 
-            <!-- 列表：表头与行放在同一滚动区，保证列对齐 -->
-            <ScrollViewer Grid.Row="2" Margin="16,0" VerticalScrollBarVisibility="Auto">
+            <!-- 从 UserSkins 导入时的「清理源文件夹」选项 -->
+            <StackPanel Grid.Row="2" Margin="16,0,16,12">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CanDeleteSource}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <CheckBox Content="{loc:Loc import.deleteSource}" IsChecked="{Binding DeleteSource}"/>
+                <TextBlock Text="{loc:Loc import.deleteSourceHint}" Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap" Margin="26,4,0,0"/>
+            </StackPanel>
+
+            <!-- 列表：表头与行放在同一滚动区，保证列对齐；按同名来源分组 -->
+            <ScrollViewer Grid.Row="3" Margin="16,0" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
+
+                    <!-- 分组改名提示（存在多条目分组时显示） -->
+                    <TextBlock Text="{loc:Loc import.group.hint}" TextWrapping="Wrap" Margin="0,0,0,10">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasMultiEntryGroup}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="150"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="210"/>
-                            <ColumnDefinition Width="56"/>
-                            <ColumnDefinition Width="56"/>
+                            <ColumnDefinition Width="200"/>
+                            <ColumnDefinition Width="52"/>
+                            <ColumnDefinition Width="64"/>
+                            <ColumnDefinition Width="52"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{loc:Loc import.col.vehicle}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                         <TextBlock Grid.Column="1" Text="{loc:Loc import.col.name}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Margin="8,0"/>
                         <TextBlock Grid.Column="2" Text="{loc:Loc import.col.blk}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                         <TextBlock Grid.Column="3" Text="{loc:Loc import.col.entries}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
-                        <TextBlock Grid.Column="4" Text="{loc:Loc import.col.warnings}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="4" Text="{loc:Loc import.col.missing}" Style="{StaticResource FieldLabel}"
+                                   FontWeight="SemiBold" TextAlignment="Right" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="5" Text="{loc:Loc import.col.warnings}" Style="{StaticResource FieldLabel}"
+                                   FontWeight="SemiBold" TextAlignment="Right"/>
                     </Grid>
 
-                    <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl ItemsSource="{Binding Groups}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="210"/>
-                                        <ColumnDefinition Width="56"/>
-                                        <ColumnDefinition Width="56"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding VehicleId}" VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis"/>
-                                    <TextBox Grid.Column="1" Margin="8,0" Style="{StaticResource BaseTextBox}"
-                                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding BlkFileName}" VerticalAlignment="Center"
-                                               Foreground="{StaticResource BrushTextSecondary}" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding MappingCount}" VerticalAlignment="Center"
-                                               Foreground="{StaticResource BrushTextMuted}"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding WarningCount}" VerticalAlignment="Center"
-                                               Foreground="{StaticResource BrushTextMuted}"/>
-                                </Grid>
+                                <StackPanel Margin="0,0,0,14">
+
+                                    <!-- 组头：来源同名的分组，改这里 → 组内全部一起改 -->
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.Style>
+                                            <Style TargetType="Grid">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsGroup}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Grid.Style>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="200"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding CountText}" VerticalAlignment="Center"
+                                                   FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource BrushPrimary}"/>
+                                        <TextBox Grid.Column="1" Margin="8,0" Style="{StaticResource BaseTextBox}"
+                                                 Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="{loc:Loc import.group.hint}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding SourceText}" VerticalAlignment="Center"
+                                                   FontSize="11" Foreground="{StaticResource BrushTextMuted}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+
+                                    <!-- 组内条目 -->
+                                    <ItemsControl ItemsSource="{Binding Rows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,0,0,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="200"/>
+                                                        <ColumnDefinition Width="52"/>
+                                                        <ColumnDefinition Width="64"/>
+                                                        <ColumnDefinition Width="52"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding VehicleId}" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"/>
+
+                                                    <!-- 多条目分组：包名只读（由组头统一改） -->
+                                                    <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Name}"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{StaticResource BrushTextSecondary}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding ShowNameEditor}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+
+                                                    <!-- 单条目分组：直接改名 -->
+                                                    <TextBox Grid.Column="1" Margin="8,0"
+                                                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}">
+                                                        <TextBox.Style>
+                                                            <Style TargetType="TextBox" BasedOn="{StaticResource BaseTextBox}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding ShowNameEditor}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBox.Style>
+                                                    </TextBox>
+
+                                                    <TextBlock Grid.Column="2" Text="{Binding BlkFileName}" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource BrushTextSecondary}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding MappingCount}" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource BrushTextMuted}"/>
+                                                    <!-- 贴图缺失条目数：这些不会写入 blk -->
+                                                    <TextBlock Grid.Column="4" Text="{Binding MissingTextureCount}" VerticalAlignment="Center"
+                                                               TextAlignment="Right" Margin="0,0,8,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding MissingTextureCount}" Value="0">
+                                                                        <Setter Property="Opacity" Value="0.45"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Grid.Column="5" Text="{Binding WarningCount}" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource BrushTextMuted}" TextAlignment="Right"
+                                                               ToolTip="{Binding WarningText}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
             </ScrollViewer>
 
-            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,14,16,16">
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,14,16,16">
                 <Button Content="{loc:Loc import.cancel}" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>
                 <Button Content="{loc:Loc import.confirm}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0" Click="Ok_Click"/>
             </StackPanel>
