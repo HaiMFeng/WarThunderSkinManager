@@ -357,6 +357,11 @@ public partial class PackageEditorViewModel : ObservableObject
     /// 每条的 <c>mode</c> 取滑块状态（<c>replace_tex</c> / <c>set_tex</c>）；
     /// <see cref="PackageMeta.Textures"/> 只增补引用（保留原始引用，导出原始模组仍可用，见 §3.11）。
     /// </summary>
+    /// <remarks>
+    /// **to 撞名处理**：跨包 / 多源候选可能让两个部件选中**同名文件但内容不同**的贴图——
+    /// 而 meta.textures 以 to 为键，直接写回会让后选者覆盖先选者。因此撞名时给后者生成
+    /// **唯一文件名**（原名 + 贴图哈希前 8 位），保证每个部件"所见即所得"。
+    /// </remarks>
     private void ApplyParts()
     {
         if (!_canEditParts) return;
@@ -371,18 +376,25 @@ public partial class PackageEditorViewModel : ObservableObject
 
             var mode = row.IsSetMode ? MappingMode.Set : MappingMode.Replace;
 
+            // to 撞名：已被**其他贴图**占用的 to 名改用唯一文件名（见 remarks）
+            var assignedTo = choice.To;
+            var occupied = textures.FirstOrDefault(
+                t => string.Equals(t.To, assignedTo, StringComparison.OrdinalIgnoreCase));
+            if (occupied != null && !string.Equals(occupied.Blob, choice.Blob, StringComparison.Ordinal))
+                assignedTo = UniqueTextureTo(assignedTo, choice.Blob, textures);
+
             parts.Add(new PackagePartEntry
             {
                 // 多源候选的 From 是**来源部件**的位置；写回包时仍用本部件自己的 from（§3.13）
                 From = choice.IsMultiSource || string.IsNullOrWhiteSpace(choice.From) ? row.From : choice.From,
                 Mode = mode,
-                To = choice.To,
+                To = assignedTo,
                 Param = mode == MappingMode.Set ? choice.Param : null
             });
 
-            var entry = textures.FirstOrDefault(t => string.Equals(t.To, choice.To, StringComparison.OrdinalIgnoreCase));
+            var entry = textures.FirstOrDefault(t => string.Equals(t.To, assignedTo, StringComparison.OrdinalIgnoreCase));
             if (entry == null)
-                textures.Add(new TextureEntry { To = choice.To, Blob = choice.Blob });
+                textures.Add(new TextureEntry { To = assignedTo, Blob = choice.Blob });
             else if (!string.IsNullOrWhiteSpace(choice.Blob) && !string.Equals(entry.Blob, choice.Blob, StringComparison.Ordinal))
                 entry.Blob = choice.Blob; // 同名贴图以当前配置为准
         }
@@ -390,6 +402,26 @@ public partial class PackageEditorViewModel : ObservableObject
         _meta.Parts = parts;
         _meta.PartsConfigured = true;
         _meta.Textures = textures;
+    }
+
+    /// <summary>为撞名的 to 生成唯一文件名：原名 + 所选贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
+    private static string UniqueTextureTo(string to, string blob, List<TextureEntry> textures)
+    {
+        var directory = Path.GetDirectoryName(to) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(to);
+        var extension = Path.GetExtension(to);
+        var suffix = blob.Length >= 8 ? blob[..8] : blob;
+
+        string Candidate(string marker) => directory.Length == 0
+            ? $"{stem}_{marker}{extension}"
+            : Path.Combine(directory, $"{stem}_{marker}{extension}");
+
+        var candidate = Candidate(suffix);
+        var index = 2;
+        while (textures.Any(t => string.Equals(t.To, candidate, StringComparison.OrdinalIgnoreCase)))
+            candidate = Candidate($"{suffix}_{index++}");
+
+        return candidate;
     }
 
     // ---------- 首次使用的写入方式知会（§3.6）----------

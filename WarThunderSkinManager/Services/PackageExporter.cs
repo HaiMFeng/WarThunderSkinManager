@@ -102,66 +102,75 @@ public static class PackageExporter
         return path;
     }
 
-    /// <summary>写出 blk 与全部贴图：按命名规则计算**新文件名**，非原名时同步重写 blk 的 to 引用。</summary>
+    /// <summary>
+    /// 写出 blk 与贴图。导出条目 = **当前配置的组合**（§3.11）：
+    /// 属性页配置过（<c>PartsConfigured</c>）→ 用 <c>meta.parts</c> 生成 blk；
+    /// 未配置 → 用 source.blk 的原始映射（= 原始模组）。贴图只导出被引用的，
+    /// 文件名按命名规则计算，非原名时 blk 的 to 引用同步重写。
+    /// </summary>
     private static void WriteBlkAndTextures(string resourceDir, PackageMeta meta,
         string sourceBlk, string targetDir, TextureNaming naming)
     {
-        // 部件名规则取**源 blk 的 from→to 映射**（to 名对应的部件位置）——
-        // 未在属性页配置过的包 meta.parts 为空，但 source.blk 里始终有
-        var parsed = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
-        var partByTo = parsed.Mappings
-            .Where(m => !string.IsNullOrWhiteSpace(m.ToFile))
-            .GroupBy(m => m.ToFile, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().FromModule, StringComparer.OrdinalIgnoreCase);
+        var useConfiguredParts = meta.PartsConfigured && meta.Parts.Count > 0;
 
-        // 原始 to（含相对目录）→ 新相对路径；部件名规则下同部件多贴图等冲突回退原名，保证不互相覆盖
+        var entries = (useConfiguredParts
+                ? meta.Parts.Select(p => (From: p.From, ToFile: p.To, Mode: p.Mode, Param: p.Param))
+                : BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8))
+                    .Mappings.Select(m => (From: m.FromModule, ToFile: m.ToFile, Mode: m.Mode, Param: m.Param)))
+            .Where(e => !string.IsNullOrWhiteSpace(e.ToFile))
+            .ToList();
+
+        // to → blob（meta.textures；属性页的配置选择会更新同名条目的 blob，即当前配置）
+        var blobByTo = meta.Textures
+            .Where(t => !string.IsNullOrWhiteSpace(t.To))
+            .GroupBy(t => t.To, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Blob, StringComparer.OrdinalIgnoreCase);
+
+        // 原始 to（含相对目录）→ 新相对路径；部件名规则取条目自己的 from（归一化）；
+        // 冲突回退原名；贴图缺失（blob 拿不到）的条目不导出——与激活输出同一规则
         var rename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var texture in meta.Textures)
+        foreach (var entry in entries)
         {
-            var directory = Path.GetDirectoryName(texture.To) ?? "";
-            var extension = Path.GetExtension(texture.To).ToLowerInvariant();
+            if (!blobByTo.TryGetValue(entry.ToFile, out var blob) || string.IsNullOrWhiteSpace(blob)) continue;
+
+            var directory = Path.GetDirectoryName(entry.ToFile) ?? "";
+            var extension = Path.GetExtension(entry.ToFile).ToLowerInvariant();
 
             var fileName = naming switch
             {
-                TextureNaming.Hash => texture.Blob + extension,
-                TextureNaming.PartName => partByTo.TryGetValue(texture.To, out var from)
-                    ? VehicleAggregator.NormalizeFrom(from) + extension
-                    : texture.To,
-                _ => texture.To
+                TextureNaming.Hash => blob + extension,
+                TextureNaming.PartName => VehicleAggregator.NormalizeFrom(entry.From) + extension,
+                _ => entry.ToFile
             };
 
             var relative = directory.Length == 0 ? fileName : Path.Combine(directory, fileName);
-            if (!used.Add(relative)) relative = texture.To; // 冲突 → 回退原名
+            if (!used.Add(relative)) relative = entry.ToFile; // 冲突 → 回退原名
             used.Add(relative);
 
-            rename[texture.To] = relative;
+            rename[entry.ToFile] = relative;
         }
 
-        // blk：原名规则直接复制（与导入一致、零失真）；改名规则解析后重写 to 再生成
+        // blk：按命名规则生成（to = 新文件名；空白包 = 只有一行 name）
         var blkTarget = Path.Combine(targetDir, meta.VehicleId + ".blk");
-        if (naming == TextureNaming.Original)
-        {
-            File.Copy(sourceBlk, blkTarget, overwrite: true);
-        }
-        else
-        {
-            var entries = parsed.Mappings.Select(m => new BlkWriter.Entry(
-                m.Mode, m.FromModule,
-                rename.TryGetValue(m.ToFile, out var renamed) ? renamed : m.ToFile,
-                m.Mode == MappingMode.Set ? m.Param : null));
+        var blkEntries = entries
+            .Where(e => rename.ContainsKey(e.ToFile))
+            .Select(e => new BlkWriter.Entry(e.Mode, e.From, rename[e.ToFile],
+                e.Mode == MappingMode.Set ? e.Param : null));
 
-            File.WriteAllText(blkTarget, BlkWriter.Write(entries), new UTF8Encoding(false));
-        }
+        File.WriteAllText(blkTarget, BlkWriter.Write(blkEntries), new UTF8Encoding(false));
 
+        // 贴图：只导出被引用的 to（未引用的原始贴图不再混入）
         foreach (var texture in meta.Textures)
         {
+            if (!rename.TryGetValue(texture.To, out var relative)) continue;
+
             var extension = Path.GetExtension(texture.To).ToLowerInvariant();
             var blob = Path.Combine(BlobStore.BlobsDirectory(resourceDir), texture.Blob + extension);
             if (!File.Exists(blob)) continue;
 
-            var dest = Path.Combine(targetDir, rename.TryGetValue(texture.To, out var rel) ? rel : texture.To);
+            var dest = Path.Combine(targetDir, relative);
             var destDir = Path.GetDirectoryName(dest);
             if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
 

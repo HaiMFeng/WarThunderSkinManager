@@ -534,6 +534,26 @@ internal static class SelfTest
             var blankBlk = File.ReadAllText(Path.Combine(blankTarget, firstVehicleId + ".blk")).Trim();
             log.AppendLine($"空白导出 : 导出前无 source.blk = {blankExports}（导出时现场创建）"
                          + $"，导出 blk 内容 = 「{blankBlk}」（应为一行 name）");
+
+            // 配置过的空白包 → 导出 = **配置的组合**：blk 由 meta.parts 生成、只含被引用贴图（§3.11）
+            blank.PartsConfigured = true;
+            blank.Parts = new List<PackagePartEntry>
+            {
+                new() { From = "a*1_c", Mode = MappingMode.Replace, To = "a.dds" }
+            };
+            var referencedBlob = PackageStore.LoadAll(resourceDir).SelectMany(m => m.Textures)
+                .First(t => string.Equals(t.To, "a.dds", StringComparison.OrdinalIgnoreCase)).Blob;
+            blank.Textures = new List<TextureEntry> { new() { To = "a.dds", Blob = referencedBlob } };
+            PackageStore.SaveMeta(resourceDir, blank);
+
+            var blankCfgDir = Path.Combine(workDir, "blank-cfg-export");
+            PackageExporter.Export(resourceDir, blank.Id, blankCfgDir,
+                createFolder: false, folderName: "", TextureNaming.PartName);
+            var blankCfgBlk = File.ReadAllText(Path.Combine(blankCfgDir, firstVehicleId + ".blk"));
+            log.AppendLine($"配置导出 : blk 用 meta.parts 生成（from 保留）= "
+                           + $"{blankCfgBlk.Contains("from:t=\"a*1_c\"")}"
+                           + $"，部件名规则 to = a1_c.dds = {blankCfgBlk.Contains("to:t=\"a1_c.dds\"")}"
+                           + $"，仅导出被引用贴图 = {Directory.GetFiles(blankCfgDir, "*.dds").Length == 1}");
             PackageStore.Delete(resourceDir, blank.Id);
             PartCatalog.Invalidate();
             log.AppendLine("清理     : 已删除");

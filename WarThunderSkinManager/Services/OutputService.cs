@@ -119,10 +119,18 @@ public static class OutputService
 
             var mode = selection!.ModeOverride ?? mapping.Mode;
             var from = BlkWriter.EnsureWildcard(mapping.FromModule);
-            entries.Add(new BlkWriter.Entry(mode, from, mapping.ToFile,
+
+            // to 撞名防御：同一 to 名已被**其他部件**用不同贴图占用（跨包选择可能撞名）时，
+            // 为本条生成唯一文件名——否则后调度的贴图会覆盖先调度的，两个部件显示同一张图
+            var assignedTo = mapping.ToFile;
+            if (used.Any(u => string.Equals(u.To, assignedTo, StringComparison.OrdinalIgnoreCase)
+                           && !string.Equals(u.BlobFile, mapping.TextureRef, StringComparison.OrdinalIgnoreCase)))
+                assignedTo = UniqueTextureName(assignedTo, mapping.TextureRef, used);
+
+            entries.Add(new BlkWriter.Entry(mode, from, assignedTo,
                 mode == MappingMode.Set ? mapping.Param : null));
 
-            used.Add((mapping.ToFile, mapping.TextureRef));
+            used.Add((assignedTo, mapping.TextureRef));
         }
 
         // 写 blk（路径不变 → 热重载）
@@ -172,6 +180,26 @@ public static class OutputService
         }
 
         return report;
+    }
+
+    /// <summary>为撞名的 to 生成唯一文件名：原文件名 + 贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
+    private static string UniqueTextureName(string to, string blobFile, List<(string To, string BlobFile)> used)
+    {
+        var directory = Path.GetDirectoryName(to) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(to);
+        var extension = Path.GetExtension(to);
+        var suffix = blobFile.Length >= 8 ? blobFile[..8] : blobFile;
+
+        string Candidate(string marker) => directory.Length == 0
+            ? $"{stem}_{marker}{extension}"
+            : Path.Combine(directory, $"{stem}_{marker}{extension}");
+
+        var candidate = Candidate(suffix);
+        var index = 2;
+        while (used.Any(u => string.Equals(u.To, candidate, StringComparison.OrdinalIgnoreCase)))
+            candidate = Candidate($"{suffix}_{index++}");
+
+        return candidate;
     }
 
     private static bool SameContent(string a, string b)
