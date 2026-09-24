@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Common;
 using SharpCompress.Writers;
@@ -344,11 +345,15 @@ internal static class SelfTest
             log.AppendLine("---- 部件表（跨载具复用）----");
 
             // 造第二台载具：与第一台**共用同一个部件位置（from）** → 两台载具的贴图应能互相复用
+            // （源里可能有多个 blk：第一个重命名为 f_15c，其余依次加序号，避免撞名）
             var crossSource = Path.Combine(workDir, "cross-src", "ModB");
             CopyDirectory(sourceFolder, crossSource);
+            var renameIndex = 0;
             foreach (var blk in Directory.GetFiles(crossSource, "*.blk"))
             {
-                var renamed = Path.Combine(crossSource, "f_15c.blk");
+                var renamed = Path.Combine(crossSource,
+                    renameIndex == 0 ? "f_15c.blk" : $"f_15c_{renameIndex + 1}.blk");
+                renameIndex++;
                 if (!string.Equals(blk, renamed, StringComparison.OrdinalIgnoreCase)) File.Move(blk, renamed);
             }
 
@@ -406,6 +411,89 @@ internal static class SelfTest
 
             PartCatalog.Invalidate();
             log.AppendLine($"Invalidate 后重建: {PartCatalog.ForFrom(resourceDir, sharedFrom).Count} 条");
+
+            // ---- 多源复用（§3.13）：把两个不同 from 声明为一组 → 编辑器出现「多源」候选 ----
+            log.AppendLine();
+            log.AppendLine("---- 多源复用 ----");
+
+            var reuseConfigDir = Path.Combine(workDir, "reuse-cfg");
+            Directory.CreateDirectory(reuseConfigDir);
+
+            // 选一个与 sharedFrom 不同的部件位置组成组（组内两个 from 的贴图可互换）
+            var otherFrom = PartCatalog.AllFroms(resourceDir).Select(kv => kv.Key)
+                .FirstOrDefault(f => !string.Equals(f, sharedFrom, StringComparison.OrdinalIgnoreCase)) ?? "";
+
+            PartGroupService.Save(reuseConfigDir, new List<PartGroupEntry>
+            {
+                new() { Name = "自检组", Froms = { sharedFrom, otherFrom } }
+            });
+
+            // 单一归属归一化：同一 from 出现在两个组 → 只保留先出现的组
+            PartGroupService.Save(reuseConfigDir, new List<PartGroupEntry>
+            {
+                new() { Name = "A", Froms = { sharedFrom } },
+                new() { Name = "B", Froms = { sharedFrom, otherFrom } }
+            });
+            var normalizedGroups = PartGroupService.Load(reuseConfigDir);
+            var ownerOfShared = normalizedGroups.FirstOrDefault(
+                g => g.Froms.Contains(sharedFrom, StringComparer.OrdinalIgnoreCase));
+            log.AppendLine($"归一化  : {normalizedGroups.Count} 个组；「{sharedFrom}」只属于「{ownerOfShared?.Name}」（应为 A）");
+
+            // 空组保留：「先建组、再添加部件」的界面流程依赖它（§3.13）
+            PartGroupService.Save(reuseConfigDir, new List<PartGroupEntry> { new() { Name = "空组" } });
+            log.AppendLine($"空组保留  : {PartGroupService.Load(reuseConfigDir).Count} 个组（应为 1）");
+
+            PartGroupService.Save(reuseConfigDir, new List<PartGroupEntry>
+            {
+                new() { Name = "自检组", Froms = { sharedFrom, otherFrom } }
+            });
+
+            if (otherFrom.Length > 0)
+            {
+                var reusePackage = PackageStore.LoadAll(resourceDir).FirstOrDefault(
+                    m => string.Equals(m.VehicleId, firstVehicleId, StringComparison.OrdinalIgnoreCase));
+
+                if (reusePackage != null)
+                {
+                    var reuseConfig = new AppConfig
+                    {
+                        ConfigDirectory = reuseConfigDir,
+                        ResourceDirectory = resourceDir,
+                        PartReuseEnabled = true,
+                        PartReuseNoticeSeen = true
+                    };
+
+                    var reuseEditor = new PackageEditorViewModel(reuseConfig, reusePackage);
+                    var multiCandidates = reuseEditor.Parts
+                        .SelectMany(r => r.Candidates)
+                        .Where(c => c.IsMultiSource)
+                        .ToList();
+
+                    log.AppendLine($"多源候选: {multiCandidates.Count} 条"
+                                 + (multiCandidates.Count > 0
+                                     ? $" → {multiCandidates[0].Display} [{multiCandidates[0].MultiSourceText}]"
+                                     : ""));
+
+                    // 写回校验：选中多源候选后，包里写的仍是**本部件自己的 from**（输出模型不变，§3.13）
+                    var multiRow = reuseEditor.Parts.FirstOrDefault(r => r.Candidates.Any(c => c.IsMultiSource));
+                    if (multiRow != null)
+                    {
+                        var chosen = multiRow.Candidates.First(c => c.IsMultiSource);
+                        multiRow.SelectedCandidate = chosen;
+                        reuseEditor.Apply();
+
+                        var written = reusePackage.Parts.FirstOrDefault(p =>
+                            string.Equals(p.From, multiRow.From, StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(p.To, chosen.To, StringComparison.OrdinalIgnoreCase));
+                        log.AppendLine($"写回校验: 「{multiRow.From}」的映射 from 未被替换 = {written != null}"
+                                     + $"，贴图取自组内其他位置（{chosen.From}）= {!string.Equals(chosen.From, multiRow.From, StringComparison.OrdinalIgnoreCase)}");
+                    }
+                }
+            }
+            else
+            {
+                log.AppendLine("多源候选: 库中只有一个部件位置，跳过");
+            }
 
             // ---- 压缩包导入（§3.1：拖入压缩包）----
             log.AppendLine();
@@ -581,6 +669,23 @@ internal static class SelfTest
             catch (Exception ex)
             {
                 log.AppendLine($"格式错误的文件: 其他异常（{ex.GetType().Name}）");
+            }
+
+            // ---- 导出为压缩包（§3.11）：恢复原始结构 → 打包 zip → 校验内容 ----
+            log.AppendLine();
+            log.AppendLine("---- 导出为压缩包 ----");
+            var exportZip = Path.Combine(workDir, "export-out", "pkg.zip");
+            Directory.CreateDirectory(Path.GetDirectoryName(exportZip)!);
+            var exportPkg = PackageStore.LoadAll(resourceDir).First();
+            PackageExporter.ExportToArchive(resourceDir, exportPkg.Id, exportZip);
+
+            using (var exported = System.IO.Compression.ZipFile.OpenRead(exportZip))
+            {
+                var entries = exported.Entries.Where(e => e.FullName.Length > 0 && !e.FullName.EndsWith("/")).ToList();
+                var folders = entries.Select(e => e.FullName.Split('/')[0]).Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
+                log.AppendLine($"导出 zip  : {entries.Count} 个文件，顶层文件夹 = {string.Join(", ", folders)}");
+                log.AppendLine($"含原始 blk = {entries.Any(e => e.FullName.EndsWith(".blk", StringComparison.OrdinalIgnoreCase))}"
+                             + $"，zip 可再导入 = {ArchiveService.IsArchive(exportZip)}");
             }
 
             // ---- 导入后清理源（§3.1）：在副本上验证，主 fixture 不受影响 ----

@@ -394,6 +394,34 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 导出为压缩包（§3.11）：恢复原始模组结构后打包为 zip，
+    /// zip 内有以包名命名的顶层文件夹（解压不散落，重新导入时即建议包名）。
+    /// </summary>
+    [RelayCommand]
+    private void ExportPackageArchive()
+    {
+        if (SelectedPackage == null || !EnsureResourceDir()) return;
+
+        var dialog = new SaveFileDialog
+        {
+            Title = Loc["pkg.exportZipTitle"],
+            Filter = Loc["pkg.exportZipFilter"],
+            FileName = PackageExporter.ArchiveFolderName(SelectedPackage.Name, SelectedPackage.Id) + ".zip"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            PackageExporter.ExportToArchive(_config.ResourceDirectory, SelectedPackage.Id, dialog.FileName);
+            ShowStatus(Loc.Format("pkg.exportedZip", dialog.FileName));
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("pkg.exportFailed", ex.Message));
+        }
+    }
+
     [RelayCommand]
     private void DeletePackage()
     {

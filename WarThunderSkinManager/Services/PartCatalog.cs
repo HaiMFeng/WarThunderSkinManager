@@ -50,6 +50,23 @@ public static class PartCatalog
     /// <summary>表里的部件位置数量（自检 / 诊断用）。</summary>
     public static int PartCount(string resourceDir) => Table(resourceDir).Count;
 
+    /// <summary>
+    /// 库中**全部部件位置**（归一化 from，升序）→ 拥有该位置且贴图可用的载具 Id 列表。
+    /// 「多源复用」页（§3.13）搜索部件用。
+    /// </summary>
+    public static IReadOnlyList<KeyValuePair<string, List<string>>> AllFroms(string resourceDir)
+    {
+        var table = Table(resourceDir);
+
+        lock (Gate)
+        {
+            return table.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => new KeyValuePair<string, List<string>>(kv.Key,
+                    kv.Value.Select(e => e.VehicleId).Distinct(StringComparer.OrdinalIgnoreCase).ToList()))
+                .ToList();
+        }
+    }
+
     /// <summary>库变化后调用：丢弃缓存，下次访问重建。</summary>
     public static void Invalidate()
     {

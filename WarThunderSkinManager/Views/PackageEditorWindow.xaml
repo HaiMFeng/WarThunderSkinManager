@@ -240,6 +240,22 @@
                                                             <TextBlock Text="{Binding CrossVehicleText}" FontSize="11"
                                                                        Foreground="{StaticResource BrushTagCrossText}"/>
                                                         </Border>
+                                                        <!-- 多源复用标注（§3.13）：组内其他 from 的贴图，红色提醒这是用户自证的复用 -->
+                                                        <Border Margin="6,0,0,0" VerticalAlignment="Center">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border" BasedOn="{StaticResource Tag}">
+                                                                    <Setter Property="Background" Value="{StaticResource BrushTagWeaponBg}"/>
+                                                                    <Setter Property="BorderBrush" Value="{StaticResource BrushTagWeaponBorder}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsMultiSource}" Value="False">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <TextBlock Text="{Binding MultiSourceText}" FontSize="11"
+                                                                       Foreground="{StaticResource BrushTagWeaponText}"/>
+                                                        </Border>
                                                     </StackPanel>
                                                 </DataTemplate>
                                             </ComboBox.ItemTemplate>

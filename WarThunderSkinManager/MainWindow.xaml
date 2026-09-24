@@ -125,6 +125,30 @@
                             </StackPanel>
                         </Button>
 
+                        <!-- 多源复用（§3.13）：仅在设置开启后可见 -->
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.PartReuse}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PartReuseVisible}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.PartReuse}">
+                                            <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
+                                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                           Width="24" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc nav.partReuse}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
                         <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Settings}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
@@ -212,6 +236,38 @@
                                 </Style>
                             </views:VehicleManagementView.Style>
                         </views:VehicleManagementView>
+
+                        <views:PartsView>
+                            <views:PartsView.Style>
+                                <Style TargetType="UserControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="RenderTransform">
+                                        <Setter.Value>
+                                            <TranslateTransform Y="0"/>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.PartReuse}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="0" To="1" Duration="0:0:0.25"/>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         From="10" To="0" Duration="0:0:0.25">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </views:PartsView.Style>
+                        </views:PartsView>
 
                         <views:SettingsView>
                             <views:SettingsView.Style>

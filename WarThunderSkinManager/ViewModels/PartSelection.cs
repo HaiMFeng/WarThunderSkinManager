@@ -45,6 +45,16 @@ public sealed class PartCandidate
     /// <summary>跨载具候选的标注文案（非跨载具时为空）</summary>
     public string CrossVehicleText { get; set; } = "";
 
+    /// <summary>
+    /// 是否来自「多源复用」组内的**其他部件位置**（§3.13，需在设置中开启）：
+    /// 用户声明组内 from 之间贴图可互换（UV 一致）。这类候选的 <see cref="From"/> 是
+    /// **来源部件**的 from；写回包时仍用本部件自己的 from（输出不受影响），只有贴图内容取自组内其他位置。
+    /// </summary>
+    public bool IsMultiSource { get; init; }
+
+    /// <summary>多源候选的标注文案（红色「多源 · 载具名」，非多源时为空）</summary>
+    public string MultiSourceText { get; set; } = "";
+
     public override string ToString() => Display;
 }
 

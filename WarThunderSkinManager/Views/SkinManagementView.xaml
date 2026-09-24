@@ -233,6 +233,9 @@
                                     <MenuItem Header="{loc:Loc pkg.export}"
                                               Command="{Binding PlacementTarget.DataContext.Skins.ExportPackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                               IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <MenuItem Header="{loc:Loc pkg.exportZip}"
+                                              Command="{Binding PlacementTarget.DataContext.Skins.ExportPackageArchiveCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                     <MenuItem Header="{loc:Loc pkg.delete}" Foreground="{StaticResource BrushDanger}"
                                               Command="{Binding PlacementTarget.DataContext.Skins.DeletePackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                               IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>

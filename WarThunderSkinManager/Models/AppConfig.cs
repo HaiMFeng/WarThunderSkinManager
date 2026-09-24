@@ -2,7 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace WarThunderSkinManager.Models;
 
-/// <summary>程序配置：三个核心目录 + 同步设置。</summary>
+/// <summary>程序配置：三个核心目录 + 界面选项（语言 / 主题 / 多源复用等）。</summary>
 public partial class AppConfig : ObservableObject
 {
     /// <summary>游戏 UserSkins 目录（用户手动指定）；程序在其下建 WTSM/ 作为激活输出</summary>
@@ -19,6 +19,16 @@ public partial class AppConfig : ObservableObject
 
     /// <summary>界面主题 id（blue / emerald / amber / dark，见 Services.ThemeCatalog；重启生效）</summary>
     [ObservableProperty] private string _theme = "blue";
+
+    /// <summary>
+    /// 是否启用「多源复用」（§3.13，默认关闭）：用户把 UV 一致、贴图可互换的部件位置（from）
+    /// 分为一组后，涂装包属性页选贴图时同组其他 from 的贴图也进入候选（红色「多源」标注）。
+    /// 关闭只停用（导航页隐藏、候选恢复常规），组数据保留。
+    /// </summary>
+    [ObservableProperty] private bool _partReuseEnabled;
+
+    /// <summary>用户是否已确认过开启「多源复用」时的知会（§3.13）；确认后不再提示。</summary>
+    [ObservableProperty] private bool _partReuseNoticeSeen;
 
     /// <summary>
     /// 用户是否已确认了解 replace_tex / set_tex 写入方式的含义（涂装包属性界面的滑块提示，见 §3.6）。

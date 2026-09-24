@@ -1,0 +1,279 @@
+<UserControl x:Class="WarThunderSkinManager.Views.PartsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
+    <UserControl.Resources>
+        <!-- 部件标签胶囊：与涂装包属性页同款（§3.6 / 界面设计规范 §5.10），组内成员与搜索结果共用 -->
+        <DataTemplate x:Key="PartTagTemplate">
+            <Border Margin="0,0,4,0">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource Tag}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Tone}" Value="Texture">
+                                <Setter Property="Background" Value="{StaticResource BrushTagTextureBg}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagTextureBorder}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Tone}" Value="Normal">
+                                <Setter Property="Background" Value="{StaticResource BrushTagNormalBg}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagNormalBorder}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Tone}" Value="Weapon">
+                                <Setter Property="Background" Value="{StaticResource BrushTagWeaponBg}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagWeaponBorder}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock Text="{Binding Text}" FontSize="11">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource BrushTagDefaultText}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Tone}" Value="Texture">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTagTextureText}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Tone}" Value="Normal">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTagNormalText}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Tone}" Value="Weapon">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTagWeaponText}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="{loc:Loc parts.title}" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="{loc:Loc parts.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左：组列表 -->
+            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="8" Margin="0,0,16,0">
+                <DockPanel>
+                    <Button DockPanel.Dock="Top" Content="{loc:Loc parts.group.new}" Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Stretch" Margin="4,4,4,10"
+                            Command="{Binding PartReuse.CreateGroupCommand}"/>
+
+                    <TextBlock DockPanel.Dock="Top" Text="{loc:Loc parts.group.none}" Margin="4,0,4,8" TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PartReuse.HasGroups}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <ListBox Style="{StaticResource SidebarListBox}"
+                             ItemContainerStyle="{StaticResource SidebarListBoxItem}"
+                             ItemsSource="{Binding PartReuse.Groups}"
+                             SelectedItem="{Binding PartReuse.SelectedGroup, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="2,4">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding MembersText}" FontSize="11" Margin="0,2,0,0"
+                                               Foreground="{StaticResource BrushTextMuted}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- 右：所选组详情 + 搜索添加 -->
+            <Border Grid.Column="1" Style="{StaticResource Card}">
+                <Grid>
+                    <!-- 未选择 -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PartReuse.HasSelection}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="30"
+                                   Foreground="{StaticResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock Text="{loc:Loc parts.noSelect}" Style="{StaticResource PageSubtitle}"
+                                   TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- 已选择 -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PartReuse.HasSelection}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{loc:Loc parts.group.name}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+                                    <TextBox Style="{StaticResource BaseTextBox}" MaxWidth="380" HorizontalAlignment="Left"
+                                             Text="{Binding PartReuse.SelectedGroup.Name, UpdateSourceTrigger=LostFocus}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="{loc:Loc parts.group.delete}" Style="{StaticResource DangerButton}"
+                                        VerticalAlignment="Top" Margin="12,0,0,0"
+                                        Command="{Binding PartReuse.DeleteGroupCommand}"
+                                        CommandParameter="{Binding PartReuse.SelectedGroup}"/>
+                            </Grid>
+
+                            <!-- 组内成员 -->
+                            <TextBlock Text="{loc:Loc parts.members}" Style="{StaticResource SectionTitle}" Margin="0,20,0,8"/>
+                            <ItemsControl ItemsSource="{Binding PartReuse.SelectedGroup.Members}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center"/>
+                                                        <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource PartTagTemplate}"
+                                                                      Margin="6,0,0,0" VerticalAlignment="Center" IsTabStop="False">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Orientation="Horizontal"/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding VehiclesText}" FontSize="11" Margin="0,2,0,0"
+                                                               Foreground="{StaticResource BrushTextMuted}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="{loc:Loc parts.member.remove}"
+                                                        Style="{StaticResource SecondaryButton}" VerticalAlignment="Center"
+                                                        Command="{Binding DataContext.PartReuse.RemoveMemberCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 无成员占位：避免「组内部件」与「添加部件」标题直接挨在一起 -->
+                            <TextBlock Text="{loc:Loc vehicles.none}" Margin="0,2,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PartReuse.SelectedGroup.Members.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- 搜索添加 -->
+                            <TextBlock Text="{loc:Loc parts.search.label}" Style="{StaticResource SectionTitle}" Margin="0,24,0,8"/>
+                            <TextBlock Text="{loc:Loc parts.search.hint}" Style="{StaticResource PageSubtitle}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBox Style="{StaticResource BaseTextBox}" Width="420" HorizontalAlignment="Left"
+                                     Text="{Binding PartReuse.SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <TextBlock Text="{loc:Loc parts.search.empty}" Margin="0,8,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PartReuse.SearchResults.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding PartReuse.SearchResults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center"/>
+                                                        <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource PartTagTemplate}"
+                                                                      Margin="6,0,0,0" VerticalAlignment="Center" IsTabStop="False">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Orientation="Horizontal"/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                        </ItemsControl>
+                                                        <TextBlock Text="{Binding GroupedText}" FontSize="11" Margin="8,0,0,0"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource BrushTextMuted}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsGrouped}" Value="False">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding VehiclesText}" FontSize="11" Margin="0,2,0,0"
+                                                               Foreground="{StaticResource BrushTextMuted}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="{loc:Loc parts.search.add}"
+                                                        Style="{StaticResource SecondaryButton}" VerticalAlignment="Center"
+                                                        Command="{Binding DataContext.PartReuse.AddToGroupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

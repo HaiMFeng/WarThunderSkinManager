@@ -56,6 +56,9 @@ public enum TabKey
 {
     Skins,
     Vehicles,
+
+    /// <summary>「多源复用」页（§3.13）：仅在设置开启 <see cref="AppConfig.PartReuseEnabled"/> 后可见。</summary>
+    PartReuse,
     Settings
 }
 
@@ -78,6 +81,12 @@ public partial class MainViewModel : ObservableObject
     /// <summary>载具管理页视图模型（显示名 / 国家 / 部件适配与同步）</summary>
     public VehiclesViewModel Vehicles { get; }
 
+    /// <summary>「多源复用」页视图模型（§3.13，仅在设置开启后可进入）</summary>
+    public PartReuseViewModel PartReuse { get; }
+
+    /// <summary>「多源复用」导航入口是否可见（跟随设置开关）。</summary>
+    public bool PartReuseVisible => Config.PartReuseEnabled;
+
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     /// <summary>
@@ -98,6 +107,7 @@ public partial class MainViewModel : ObservableObject
 
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
+        PartReuse = new PartReuseViewModel(config);
 
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
         Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();
@@ -107,6 +117,7 @@ public partial class MainViewModel : ObservableObject
         // 子页状态变化 → 刷新标题右侧的统一提示位点
         Skins.PropertyChanged += OnChildChanged;
         Vehicles.PropertyChanged += OnChildChanged;
+        PartReuse.PropertyChanged += OnChildChanged;
 
         Config.PropertyChanged += OnConfigChanged;
 
@@ -131,18 +142,66 @@ public partial class MainViewModel : ObservableObject
         {
             SkinsViewModel skins => skins.StatusMessage,
             VehiclesViewModel vehicles => vehicles.StatusMessage,
+            PartReuseViewModel partReuse => partReuse.StatusMessage,
             _ => ""
         };
 
         if (message.Length > 0) ShowStatus(message);
     }
 
-    /// <summary>配置变更：数据表目录跟随配置目录刷新（§3.6 / §3.7）。</summary>
+    /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）。</summary>
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(AppConfig.ConfigDirectory)) return;
+        switch (e.PropertyName)
+        {
+            case nameof(AppConfig.ConfigDirectory):
+                OnPropertyChanged(nameof(DataTablesDirectory));
+                break;
 
-        OnPropertyChanged(nameof(DataTablesDirectory));
+            case nameof(AppConfig.PartReuseEnabled):
+                ConfirmPartReuseToggle();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 「多源复用」开关（§3.13）：**首次开启**弹知会（与 replace/set 滑块同款）——
+    /// 讲清这是用户自证的等价关系、分组错误会贴错图；取消则开关回滚，「我已了解」生效并记住。
+    /// 关闭只是停用：导航页隐藏、候选恢复常规，组数据保留。
+    /// </summary>
+    private void ConfirmPartReuseToggle()
+    {
+        if (!Config.PartReuseEnabled)
+        {
+            OnPropertyChanged(nameof(PartReuseVisible));
+            if (SelectedTab == TabKey.PartReuse) SelectedTab = TabKey.Skins; // 页面随开关隐藏
+            return;
+        }
+
+        if (Config.PartReuseNoticeSeen)
+        {
+            OnPropertyChanged(nameof(PartReuseVisible));
+            return;
+        }
+
+        // 首次开启：知会确认**之前不广播** PartReuseVisible，导航入口不会提前出现
+        var accepted = MessageDialog.Confirm(
+            Loc.Format("settings.partReuse.notice",
+                Loc["settings.partReuse.noticeOk"], Loc["common.cancel"]),
+            Loc["settings.partReuse.noticeTitle"],
+            Loc["settings.partReuse.noticeOk"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
+
+        if (!accepted)
+        {
+            Config.PartReuseEnabled = false; // 回滚（再次触发本方法走关闭分支）
+            return;
+        }
+
+        Config.PartReuseNoticeSeen = true;
+        PersistConfig();
+
+        OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
     }
 
     // ---------- 主题（界面设计规范 §3）----------
@@ -266,6 +325,9 @@ public partial class MainViewModel : ObservableObject
                 break;
             case TabKey.Vehicles:
                 Vehicles.RefreshCommand.Execute(null);
+                break;
+            case TabKey.PartReuse:
+                PartReuse.Refresh(); // 重读组数据与部件表（库可能已变化）
                 break;
         }
     }

@@ -171,6 +171,7 @@ public partial class PackageEditorViewModel : ObservableObject
             }
 
         AddCrossVehicleCandidates(pool);
+        AddMultiSourceCandidates(pool);
 
         var noneLabel = Loc["pkg.editor.partNone"];
 
@@ -264,6 +265,58 @@ public partial class PackageEditorViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 并入**多源复用**候选（功能设计 §3.13，需在设置中开启）：用户把 UV 一致、贴图可互换的
+    /// 部件位置（from）分为一组（<c>mappings/part_groups.json</c>，见 <see cref="PartGroupService"/>）后，
+    /// 同组**其他 from** 的可用贴图——不论属于哪台载具——也进入候选，标注红色「多源 · 载具名」。
+    /// </summary>
+    /// <remarks>
+    /// 与本位置已有候选（含跨载具并入的）按内容（blob）去重；与跨载具共用同一安全上限。
+    /// 选中后写回包的仍是**本部件自己的 from**（见 <see cref="ApplyParts"/>），输出模型不变。
+    /// </remarks>
+    private void AddMultiSourceCandidates(Dictionary<string, List<PartCandidate>> pool)
+    {
+        if (!_config.PartReuseEnabled) return;
+        if (string.IsNullOrWhiteSpace(_configDir) || string.IsNullOrWhiteSpace(_resourceDir)) return;
+
+        var groups = PartGroupService.Load(_configDir);
+        if (groups.Count == 0) return;
+
+        var userMappings = ConfigService.LoadVehicleMappings(_configDir);
+
+        foreach (var key in pool.Keys.ToList())
+        {
+            var others = PartGroupService.OthersOf(groups, key);
+            if (others.Count == 0) continue;
+
+            var ownBlobs = new HashSet<string>(pool[key].Select(c => c.Blob), StringComparer.Ordinal);
+
+            foreach (var other in others)
+            foreach (var entry in PartCatalog.ForFrom(_resourceDir, other))
+            {
+                if (ownBlobs.Contains(entry.Blob)) continue; // 本位置已有的贴图（含跨载具并入的）不重复列
+                ownBlobs.Add(entry.Blob);
+
+                if (pool[key].Count >= MaxCrossVehicleCandidates) break; // 与跨载具共用同一安全上限
+
+                var vehicleName = VehicleNameTable.ResolveDisplayName(entry.VehicleId, userMappings);
+
+                pool[key].Add(new PartCandidate
+                {
+                    PackageId = entry.PackageId,
+                    From = entry.From,
+                    To = entry.To,
+                    Mode = entry.Mode,
+                    Param = entry.Param,
+                    Blob = entry.Blob,
+                    IsMultiSource = true,
+                    Display = $"{entry.PackageName} · {entry.To}",
+                    MultiSourceText = Loc.Format("pkg.editor.multiSource", vehicleName)
+                });
+            }
+        }
+    }
+
     /// <summary>取来源包中某贴图的内容哈希（不含扩展名）。</summary>
     private static string BlobOf(SkinPackage package, string to)
         => package.Textures.FirstOrDefault(
@@ -320,7 +373,8 @@ public partial class PackageEditorViewModel : ObservableObject
 
             parts.Add(new PackagePartEntry
             {
-                From = string.IsNullOrWhiteSpace(choice.From) ? row.From : choice.From,
+                // 多源候选的 From 是**来源部件**的位置；写回包时仍用本部件自己的 from（§3.13）
+                From = choice.IsMultiSource || string.IsNullOrWhiteSpace(choice.From) ? row.From : choice.From,
                 Mode = mode,
                 To = choice.To,
                 Param = mode == MappingMode.Set ? choice.Param : null
