@@ -1,0 +1,71 @@
+<Window x:Class="WarThunderSkinManager.Views.ImportProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+        Title="{Binding TitleText}"
+        Width="480" SizeToContent="Height"
+        WindowStyle="None" ShowInTaskbar="False" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
+        Background="{StaticResource BrushBackground}">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="0" CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
+
+    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}"
+            Background="{StaticResource BrushBackground}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏（可拖动；X = 取消导入） -->
+            <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <TextBlock Text="{Binding TitleText}" Margin="14,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold"/>
+                <Button x:Name="CloseButton" Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                        HorizontalAlignment="Right" Click="Cancel_Click"/>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="20,16,20,18">
+                <!-- 进度条：扫描阶段无总量 → 隐藏 -->
+                <ProgressBar Height="6" Minimum="0" Maximum="{Binding Total}" Value="{Binding Done}">
+                    <ProgressBar.Template>
+                        <ControlTemplate TargetType="ProgressBar">
+                            <Grid>
+                                <Border Background="{StaticResource BrushSurface2}" CornerRadius="3"/>
+                                <Border x:Name="PART_Track" Background="Transparent"/>
+                                <Border x:Name="PART_Indicator" Background="{StaticResource BrushPrimary}"
+                                        CornerRadius="3" HorizontalAlignment="Left"/>
+                            </Grid>
+                        </ControlTemplate>
+                    </ProgressBar.Template>
+                    <ProgressBar.Style>
+                        <Style TargetType="ProgressBar">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding BarVisible}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ProgressBar.Style>
+                </ProgressBar>
+
+                <Grid Margin="0,12,0,0">
+                    <TextBlock Text="{Binding CurrentItem}" Style="{StaticResource PageSubtitle}"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding CountText}" HorizontalAlignment="Right"
+                               Style="{StaticResource PageSubtitle}"/>
+                </Grid>
+
+                <Button x:Name="CancelButton" Content="{loc:Loc common.cancel}"
+                        Style="{StaticResource SecondaryButton}" Margin="0,16,0,0"
+                        HorizontalAlignment="Right" Click="Cancel_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

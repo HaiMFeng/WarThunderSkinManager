@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
@@ -17,6 +19,22 @@ public sealed class ImportResult
 
     /// <summary>成功解构的 blk 绝对路径（用于「导入后清理源文件夹」只清理真正导入成功的部分）。</summary>
     public List<string> ImportedBlkPaths { get; init; } = new();
+
+    /// <summary>因用户取消而中止：已完成的包是完整单元，保留并已登记（源不清理）。</summary>
+    public bool Canceled { get; set; }
+}
+
+/// <summary>导入进度（进度窗口展示，§3.1 后台导入）。</summary>
+public sealed class ImportProgress
+{
+    /// <summary>已完成的包数（从 0 起）</summary>
+    public int Done { get; init; }
+
+    /// <summary>总包数</summary>
+    public int Total { get; init; }
+
+    /// <summary>当前处理的包名</summary>
+    public string Current { get; init; } = "";
 }
 
 /// <summary>源清理结果（功能设计 §3.1）。</summary>
@@ -76,17 +94,20 @@ public static class ImportService
 
     // ---------- 阶段一：扫描（不落盘） ----------
 
-    /// <summary>扫描待导入的 blk，产出带建议名的候选列表（供导入预览对话框）。</summary>
-    public static List<ImportCandidate> Scan(string folder, ImportSourceType sourceType, string? archiveName = null)
-        => Scan(folder, skipWtsm: sourceType == ImportSourceType.UserSkins, archiveName);
+    /// <summary>扫描待导入的 blk，产出带建议名的候选列表（供导入预览对话框）。可在后台线程调用（取消在逐文件间生效）。</summary>
+    public static List<ImportCandidate> Scan(string folder, ImportSourceType sourceType,
+        string? archiveName = null, CancellationToken cancellationToken = default)
+        => Scan(folder, skipWtsm: sourceType == ImportSourceType.UserSkins, archiveName, cancellationToken);
 
-    public static List<ImportCandidate> Scan(string folder, bool skipWtsm, string? archiveName = null)
+    public static List<ImportCandidate> Scan(string folder, bool skipWtsm,
+        string? archiveName = null, CancellationToken cancellationToken = default)
     {
         var root = Path.GetFullPath(folder);
         var list = new List<ImportCandidate>();
 
         foreach (var blkPath in EnumerateBlkFiles(root, skipWtsm))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var candidate = new ImportCandidate
             {
                 BlkPath = blkPath,
@@ -118,9 +139,15 @@ public static class ImportService
 
     // ---------- 阶段二：提交（解构落盘） ----------
 
-    /// <summary>按确认后的候选列表解构落盘，并写导入溯源清单。</summary>
+    /// <summary>
+    /// 按确认后的候选列表解构落盘，并写导入溯源清单。
+    /// **后台调用设计**（§3.1）：逐包解构**并行**执行——贴图哈希与复制是 IO 密集操作，
+    /// 上百 GB 的批量导入用多核并行显著提速（<see cref="BlobStore.Store"/> 线程安全，包目录互不相交）。
+    /// 取消在**包之间**生效：已完成的包是完整单元，保留并正常登记（<see cref="ImportResult.Canceled"/> 置位）。
+    /// </summary>
     public static ImportResult Commit(IReadOnlyList<ImportCandidate> candidates, string resourceDir,
-        ImportSourceType sourceType, string sourcePath)
+        ImportSourceType sourceType, string sourcePath,
+        IProgress<ImportProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var record = new ImportRecord
         {
@@ -131,21 +158,49 @@ public static class ImportService
         };
 
         var result = new ImportResult { Record = record };
+        var gate = new object();
+        var done = 0;
 
-        foreach (var candidate in candidates)
+        var options = new ParallelOptions
         {
-            try
+            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
+            CancellationToken = cancellationToken
+        };
+
+        try
+        {
+            Parallel.ForEach(candidates, options, candidate =>
             {
-                var decon = DeconstructionService.Deconstruct(
-                    candidate.BlkPath, resourceDir, record.Id, candidate.SuggestedName);
-                result.Packages.Add(decon.Package);
-                result.Warnings.AddRange(decon.Warnings);
-                result.ImportedBlkPaths.Add(candidate.BlkPath);
-            }
-            catch (Exception ex)
-            {
-                result.Warnings.Add($"{candidate.BlkPath}：解构失败：{ex.Message}");
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    var decon = DeconstructionService.Deconstruct(
+                        candidate.BlkPath, resourceDir, record.Id, candidate.SuggestedName);
+
+                    lock (gate)
+                    {
+                        result.Packages.Add(decon.Package);
+                        result.Warnings.AddRange(decon.Warnings);
+                        result.ImportedBlkPaths.Add(candidate.BlkPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lock (gate) result.Warnings.Add($"{candidate.BlkPath}：解构失败：{ex.Message}");
+                }
+
+                progress?.Report(new ImportProgress
+                {
+                    Done = Interlocked.Increment(ref done),
+                    Total = candidates.Count,
+                    Current = candidate.SuggestedName
+                });
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            result.Canceled = true;
         }
 
         AssignOrder(resourceDir, result.Packages);

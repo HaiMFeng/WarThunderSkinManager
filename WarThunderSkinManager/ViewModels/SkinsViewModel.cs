@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -782,7 +784,21 @@ public partial class SkinsViewModel : ObservableObject
     {
         try
         {
-            RunImport(scan(), sourceType, sourcePath);
+            // 扫描在后台执行（要读取全部 blk 文本，大库是秒级操作，§3.1）
+            var window = new ImportProgressWindow(Loc["import.progressScanning"], total: 0)
+                { Owner = Application.Current?.MainWindow };
+
+            var scanTask = Task.Run(scan);
+            scanTask.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+
+            window.ShowDialog(); // 阻塞至扫描完成 / 用户取消（关窗即取消）
+
+            var candidates = scanTask.Result; // 取消 → OperationCanceledException（下方捕获）
+            RunImport(candidates, sourceType, sourcePath);
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户取消扫描：无导入发生，静默返回
         }
         catch (Exception ex)
         {
@@ -821,14 +837,30 @@ public partial class SkinsViewModel : ObservableObject
 
             RememberImportChoices(sourceType, preview);
             preview.ApplyNames();
-            var result = ImportService.Commit(candidates, _config.ResourceDirectory, sourceType, sourcePath);
+
+            // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，
+            // 上百 GB 批量导入时进度窗实时可取消——取消在包之间生效，已完成的包保留
+            var progressWindow = new ImportProgressWindow(Loc["import.progressCommitting"], candidates.Count)
+                { Owner = Application.Current?.MainWindow };
+            var reporter = new Progress<ImportProgress>(progressWindow.Update);
+
+            var commitTask = Task.Run(() => ImportService.Commit(
+                candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, progressWindow.Cancellation.Token));
+            commitTask.ContinueWith(_ => progressWindow.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+
+            progressWindow.ShowDialog(); // 阻塞至解构完成 / 取消（进度经 Progress<T> 回调更新）
+
+            var result = commitTask.Result; // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
             PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
 
-            var message = Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
-            if (preview.DeleteSource)
+            // 取消时不清理源（用户可能还要重试剩余部分）
+            var message = result.Canceled
+                ? Loc.Format("import.canceled", result.Packages.Count)
+                : Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
+            if (!result.Canceled && preview.DeleteSource)
                 message += CleanupImportedSource(sourcePath, candidates, result, preview.DeleteWholeRoot);
-            if (preview.DeleteArchive && archives is { Count: > 0 })
-                message += DeleteArchives(archives);
+            if (!result.Canceled && preview.DeleteArchive && archives is { Count: > 0 } list)
+                message += DeleteArchives(list);
 
             message += extraStatus;
 
