@@ -639,12 +639,18 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 界面语言切换后重算**派生自语言**的数据（由设置页触发）：载具显示名
-    /// （译名表按界面语言取列，用户映射仍最优先，§3.7）与国家横条文案（国家名来自语言文件）。
+    /// （译名表按界面语言取列，用户映射仍最优先，§3.7）、国家横条文案（国家名来自语言文件）、
+    /// 载具列表重建（排序随显示名变化）与选中载具的标题 / 副标题（派生自显示名 + 国家名）。
     /// </summary>
     public void ApplyLanguageChange()
     {
         ApplyVehicleMappings(_allVehicles);
-        RebuildCountries(); // 国家名是文案 → 重建横条（保持当前选择）
+        RebuildCountries();   // 国家名是文案 → 重建横条（保持当前选择）
+        ApplyCountryFilter(); // 重建列表：显示名与排序随语言变化（保持选中；变化会触发预览图加载）
+
+        // 选中载具的标题 / 副标题派生自显示名与国家名，属性变更无人可代播报 → 手动补
+        OnPropertyChanged(nameof(SelectedVehicleTitle));
+        OnPropertyChanged(nameof(SelectedVehicleSubtitle));
     }
 
     /// <summary>国家以用户在「载具管理」里的手动归类为准（§3.4 / §3.10）。</summary>
