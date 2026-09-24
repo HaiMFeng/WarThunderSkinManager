@@ -38,9 +38,10 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 自定义标题栏（拖动阈值后才进 DragMove，保证双击切换最大化可用） -->
-            <Grid Grid.Row="0" Background="{StaticResource BrushBackground}"
-                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+            <!-- 自定义标题栏（拖动阈值后才进 DragMove，保证双击切换最大化可用）；底部分隔线与导航栏顶线相连 -->
+            <Border Grid.Row="0" Background="{StaticResource BrushBackground}"
+                    BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1">
+            <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
                   MouseMove="TitleBar_MouseMove">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -73,6 +74,7 @@
                     <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;" Click="Close_Click"/>
                 </StackPanel>
             </Grid>
+            </Border>
 
             <!-- 主体：左侧导航 + 右侧内容 -->
             <Grid Grid.Row="1">
@@ -81,9 +83,9 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 左侧导航 -->
+                <!-- 左侧导航（顶部分隔线由标题栏底线贯通提供） -->
                 <Border Grid.Column="0" Background="{StaticResource BrushCanvas}"
-                        BorderThickness="0,1,1,0" BorderBrush="{StaticResource BrushBorder}">
+                        BorderThickness="0,0,1,0" BorderBrush="{StaticResource BrushBorder}">
                     <StackPanel Margin="0,14,0,0">
                         <TextBlock Text="{loc:Loc nav.header}" Margin="22,0,0,8" FontSize="11" FontWeight="SemiBold"
                                    Foreground="{StaticResource BrushTextMuted}"/>
