@@ -146,6 +146,17 @@
                 </StackPanel>
             </Border>
 
+            <!-- 资源库维护（§4）：外部改动的手动全量同步 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.rebuild.title}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.rebuild.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <Button Content="{loc:Loc settings.rebuild.action}" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Left" Command="{Binding RebuildLibraryCommand}"/>
+                </StackPanel>
+            </Border>
+
             <!-- 存储维护（blob 回收，功能设计 §6.5） -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>

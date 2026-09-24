@@ -28,8 +28,6 @@
                         Command="{Binding Vehicles.ImportMappingsCommand}"/>
                 <Button Content="{loc:Loc vehicles.mappings.merge}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Vehicles.MergeMappingsCommand}"/>
-                <Button Content="{loc:Loc skins.refresh}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
-                        Command="{Binding Vehicles.RefreshCommand}"/>
             </StackPanel>
         </Grid>
 

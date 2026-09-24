@@ -136,8 +136,11 @@ public partial class VehiclesViewModel : ObservableObject
 
     // ---------- 命令 ----------
 
-    [RelayCommand]
-    private void Refresh() => RefreshLibrary();
+    /// <summary>
+    /// 导航进入本页时从快照重新投影（与涂装管理页共用同一份快照，不重复扫库，§4）；
+    /// 涂装管理页做的导入 / 删除借此反映。快照完全没有时才会兜底全量重建。
+    /// </summary>
+    public void Reproject() => RefreshLibrary();
 
     // ---------- 映射文件导出 / 导入 / 合并（§3.7）----------
 
@@ -319,7 +322,7 @@ public partial class VehiclesViewModel : ObservableObject
     }
 
     /// <summary>快照 → 界面（显示名 → 排序 → 列表，尽量保持选中）。</summary>
-    private void ApplySnapshot(LibrarySnapshot snapshot)
+    public void ApplySnapshot(LibrarySnapshot snapshot)
     {
         var configDir = _config.ConfigDirectory;
         _displayNames = string.IsNullOrWhiteSpace(configDir)

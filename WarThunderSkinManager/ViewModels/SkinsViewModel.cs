@@ -160,9 +160,6 @@ public partial class SkinsViewModel : ObservableObject
     private void SelectCountry(CountryItem item) => SelectedCountry = item;
 
     [RelayCommand]
-    private void Refresh() => RefreshLibrary();
-
-    [RelayCommand]
     private void ImportFolder()
     {
         if (!EnsureResourceDir()) return;
@@ -556,8 +553,18 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 导航进入本页时从**内存快照**重新投影（零扫描，§4）：载具管理页改的国家归类 /
+    /// 显示名借此反映。无内存快照（首次启动后台还在构建）则不动，构建完成后会自动刷新。
+    /// </summary>
+    public void Reproject()
+    {
+        var snapshot = LibraryService.TakeCached(_config.ConfigDirectory, _config.ResourceDirectory);
+        if (snapshot != null) ApplySnapshot(snapshot);
+    }
+
     /// <summary>快照 → 界面：载具列表 → 显示名 → 国家横条与筛选（选中项尽量保持）。</summary>
-    private void ApplySnapshot(LibrarySnapshot snapshot)
+    public void ApplySnapshot(LibrarySnapshot snapshot)
     {
         var previousPackageId = SelectedPackage?.Id;
 

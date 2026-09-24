@@ -223,7 +223,8 @@
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center"/>
                                                         <!-- 跨载具复用标注：Gaijin 靠相同的 from 在不同载具间复用贴图（§3.6） -->
                                                         <Border Margin="6,0,0,0" VerticalAlignment="Center">
                                                             <Border.Style>

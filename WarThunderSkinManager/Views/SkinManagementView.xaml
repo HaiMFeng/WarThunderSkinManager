@@ -67,8 +67,6 @@
                         Command="{Binding Skins.ImportFolderCommand}"/>
                 <Button Content="{loc:Loc skins.importUserSkins}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportUserSkinsCommand}"/>
-                <Button Content="{loc:Loc skins.refresh}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
-                        Command="{Binding Skins.RefreshCommand}"/>
             </StackPanel>
         </Grid>
 

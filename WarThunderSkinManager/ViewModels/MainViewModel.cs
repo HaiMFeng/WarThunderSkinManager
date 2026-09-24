@@ -317,14 +317,15 @@ public partial class MainViewModel : ObservableObject
     {
         SelectedTab = tab;
 
-        // 切页时刷新对应子页，保证在另一页做的改动（如国家归类）能立即反映
+        // 切页只做**零扫描**的重新投影（§4）：在另一页做的改动（如国家归类、导入 / 删除）
+        // 借此反映；库本身的变化由启动后台核对与设置页「资源库维护」负责
         switch (tab)
         {
             case TabKey.Skins:
-                Skins.RefreshCommand.Execute(null);
+                Skins.Reproject();
                 break;
             case TabKey.Vehicles:
-                Vehicles.RefreshCommand.Execute(null);
+                Vehicles.Reproject();
                 break;
             case TabKey.PartReuse:
                 PartReuse.Refresh(); // 重读组数据与部件表（库可能已变化）
@@ -504,11 +505,8 @@ public partial class MainViewModel : ObservableObject
         {
             var errors = reset.Execute();
 
-            PartCatalog.Invalidate(); // 库被清 → 部件表重建
-
-            // 清掉的可能是当前展示的数据 → 让两个页面重新加载
-            Skins.RefreshCommand.Execute(null);
-            Vehicles.RefreshCommand.Execute(null);
+            // 清掉的可能是当前展示的数据 → 全量重建并刷新两个页面
+            RebuildAfterReset();
 
             ShowStatus(errors.Count == 0
                 ? Loc["settings.reset.done"]
@@ -546,6 +544,59 @@ public partial class MainViewModel : ObservableObject
         {
             ShowStatus(Loc.Format("datatables.exportFailed", ex.Message));
         }
+    }
+
+    // ---------- 资源库维护（§4：外部改动的手动全量同步）----------
+
+    /// <summary>
+    /// 设置页「全量重建资源库」：程序外部的增删与修改不会即时反映，
+    /// 这里**手动全量同步**——重新扫描并解析全库、重写索引快照、重算部件表、刷新两个页面。
+    /// 扫库在**后台线程**执行（几百个包是秒级到十秒级），完成后回 UI 线程应用结果。
+    /// </summary>
+    [RelayCommand]
+    private void RebuildLibrary()
+    {
+        if (string.IsNullOrWhiteSpace(Config.ResourceDirectory) || !Directory.Exists(Config.ResourceDirectory))
+        {
+            ShowStatus(Loc["settings.rebuild.needResource"]);
+            return;
+        }
+
+        ShowStatus(Loc["settings.rebuild.running"]);
+
+        var configDir = Config.ConfigDirectory;
+        var resourceDir = Config.ResourceDirectory;
+
+        Task.Run(() => LibraryService.Build(configDir, resourceDir)).ContinueWith(t =>
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                if (t.IsFaulted)
+                {
+                    ShowStatus(Loc.Format("settings.rebuild.failed",
+                        t.Exception?.GetBaseException().Message ?? "?"));
+                    return;
+                }
+
+                ApplyRebuiltSnapshot(t.Result);
+                ShowStatus(Loc.Format("settings.rebuild.done", t.Result.Packages.Count));
+            });
+        });
+    }
+
+    /// <summary>重建结果 → 部件表 + 两个页面（**UI 线程**调用；<see cref="LibraryService.Build"/> 已写好快照）。</summary>
+    private void ApplyRebuiltSnapshot(LibrarySnapshot snapshot)
+    {
+        PartCatalog.Invalidate(); // 部件表一并重算：多源复用页与属性页候选不能拿旧数据
+        Skins.ApplySnapshot(snapshot);
+        Vehicles.ApplySnapshot(snapshot);
+    }
+
+    /// <summary>清除数据后全量重建并刷新两个页面（同步执行；调用点已在 UI 线程）。</summary>
+    private void RebuildAfterReset()
+    {
+        var snapshot = LibraryService.Build(Config.ConfigDirectory, Config.ResourceDirectory);
+        ApplyRebuiltSnapshot(snapshot);
     }
 
     /// <summary>原生文件夹选择（Microsoft.Win32.OpenFolderDialog，.NET 8+ WPF 内置）。</summary>
