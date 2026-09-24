@@ -167,8 +167,14 @@ public static class PackageExporter
             };
 
             var relative = directory.Length == 0 ? fileName : Path.Combine(directory, fileName);
-            if (!used.Add(relative)) relative = entry.ToFile; // 冲突 → 回退原名
-            used.Add(relative);
+
+            if (!used.Add(relative))
+            {
+                // 撞名（部件名规则生成的名字与他人原名相同）→ 唯一文件名（原名 + 贴图哈希前 8 位），
+                // 与激活输出同一算法——回退原名可能在"生成名 == 某贴图的原名"时与已占用名重合
+                relative = UniqueRelativeName(directory, fileName, blob, used);
+                used.Add(relative);
+            }
 
             rename[entry.ToFile] = relative;
         }
@@ -197,6 +203,25 @@ public static class PackageExporter
 
             File.Copy(blob, dest, overwrite: true);
         }
+    }
+
+    /// <summary>为撞名的导出文件生成唯一名：原文件名 + 贴图哈希前 8 位（仍撞加序号）。保留相对目录。与激活输出同款算法。</summary>
+    private static string UniqueRelativeName(string directory, string fileName, string blob, ISet<string> used)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var suffix = blob.Length >= 8 ? blob[..8] : blob;
+
+        string Candidate(string marker) => directory.Length == 0
+            ? $"{stem}_{marker}{extension}"
+            : Path.Combine(directory, $"{stem}_{marker}{extension}");
+
+        var candidate = Candidate(suffix);
+        var index = 2;
+        while (used.Contains(candidate))
+            candidate = Candidate($"{suffix}_{index++}");
+
+        return candidate;
     }
 
     private static void WriteAllFiles(IWriter writer, string root, string staging)

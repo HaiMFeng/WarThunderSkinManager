@@ -159,12 +159,8 @@ public static class OutputService
             used.Add((assignedTo, mapping.TextureRef));
         }
 
-        // 写 blk（路径不变 → 热重载）
-        File.WriteAllText(blkPath, BlkWriter.Write(entries), new UTF8Encoding(false));
-        report.BlkPath = blkPath;
-        report.BlkEntries = entries.Count;
-
         // 调度贴图：blob → WTSM/<载具Id>/<to 原名>
+        // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出
         foreach (var (to, blobFile) in used)
         {
             var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile);
@@ -204,6 +200,11 @@ public static class OutputService
                 report.Warnings.Add($"删除旧贴图失败 {Path.GetFileName(file)}：{ex.Message}");
             }
         }
+
+        // 写 blk（最后写 = 提交点；路径不变 → 热重载）
+        File.WriteAllText(blkPath, BlkWriter.Write(entries), new UTF8Encoding(false));
+        report.BlkPath = blkPath;
+        report.BlkEntries = entries.Count;
 
         return report;
     }

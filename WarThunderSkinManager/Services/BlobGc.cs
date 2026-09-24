@@ -62,7 +62,11 @@ public static class BlobGc
 
         report.ReferencedBlobs = referenced.Count;
 
-        // 2) 逐个核对 blobs/ 下的文件：没被引用（或写坏残留的 .tmp）→ 删除
+        // 2) 逐个核对 blobs/ 下的文件：没被引用（或写坏残留的 .tmp）→ 删除。
+        //    竞态防护（§4）：刚写入的 blob 可能还没进任何 meta（导入进行中，引用快照取早了）——
+        //    只回收"早于宽限期"的文件，避免把导入半途的贴图删掉
+        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+
         foreach (var blob in BlobStore.EnumerateBlobs(resourceDir))
         {
             report.ScannedBlobs++;
@@ -70,6 +74,8 @@ public static class BlobGc
             var isTmp = blob.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase);
             var isReferenced = referenced.Contains(Path.GetFileNameWithoutExtension(blob));
             if (!isTmp && isReferenced) continue;
+
+            if (File.GetLastWriteTimeUtc(blob) > cutoff) continue;
 
             try
             {

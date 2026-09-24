@@ -166,6 +166,7 @@ public partial class MainViewModel : ObservableObject
         {
             case nameof(AppConfig.ConfigDirectory):
                 PartExclusionService.Configure(Config.ConfigDirectory);
+                DataTables.Configure(Config.ConfigDirectory); // 译名 / 武器表跟随配置目录（§3.6 / §3.7）
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 break;
 

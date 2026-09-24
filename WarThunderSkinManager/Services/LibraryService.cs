@@ -70,10 +70,17 @@ public static class LibraryService
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    /// <summary>内存中的当前快照（涂装管理页与载具管理页**共用**，避免各扫一遍库）。</summary>
-    public static LibrarySnapshot? Cached { get; private set; }
+    /// <summary>缓存锁：Cached / 投影缓存的读写都在锁内（后台重建与 UI 线程并发访问，§4）。</summary>
+    private static readonly object CacheGate = new();
 
+    private static LibrarySnapshot? _cached;
     private static string _cachedKey = "";
+
+    /// <summary>内存中的当前快照（涂装管理页与载具管理页**共用**，避免各扫一遍库）。</summary>
+    public static LibrarySnapshot? Cached
+    {
+        get { lock (CacheGate) return _cached; }
+    }
 
     public static string IndexDirectory(string configDir) => Path.Combine(configDir, "index");
 
@@ -93,14 +100,22 @@ public static class LibraryService
     /// 部件表构建由此直接用已解析好的包结构，免去重复扫库。配置目录不参与匹配——部件表只关心库内容。
     /// </summary>
     public static LibrarySnapshot? TryGetCachedFor(string resourceDir)
-        => Cached != null && _cachedKey.EndsWith("|" + resourceDir, StringComparison.OrdinalIgnoreCase)
-            ? Cached
-            : null;
+    {
+        lock (CacheGate)
+        {
+            return _cached != null && _cachedKey.EndsWith("|" + resourceDir, StringComparison.OrdinalIgnoreCase)
+                ? _cached
+                : null;
+        }
+    }
 
     public static void PutCached(string configDir, string resourceDir, LibrarySnapshot? snapshot)
     {
-        Cached = snapshot;
-        _cachedKey = snapshot == null ? "" : Key(configDir, resourceDir);
+        lock (CacheGate)
+        {
+            _cached = snapshot;
+            _cachedKey = snapshot == null ? "" : Key(configDir, resourceDir);
+        }
     }
 
     // ---------- 磁盘快照 ----------
@@ -258,10 +273,13 @@ public static class LibraryService
     public static List<Vehicle> ToVehicles(LibrarySnapshot snapshot,
         IReadOnlyDictionary<string, string>? countryOverrides = null)
     {
-        if (ReferenceEquals(_projectedFrom, snapshot)
-            && SameOverrides(_projectedOverrides, countryOverrides)
-            && _projectedVehicles != null)
-            return _projectedVehicles;
+        lock (CacheGate)
+        {
+            if (ReferenceEquals(_projectedFrom, snapshot)
+                && SameOverrides(_projectedOverrides, countryOverrides)
+                && _projectedVehicles != null)
+                return _projectedVehicles;
+        }
 
         var vehicles = snapshot.Packages
             .GroupBy(p => p.Meta.VehicleId, StringComparer.OrdinalIgnoreCase)
@@ -275,9 +293,13 @@ public static class LibraryService
             .OrderBy(v => v.Id, StringComparer.Ordinal)
             .ToList();
 
-        _projectedFrom = snapshot;
-        _projectedOverrides = countryOverrides;
-        _projectedVehicles = vehicles;
+        lock (CacheGate)
+        {
+            _projectedFrom = snapshot;
+            _projectedOverrides = countryOverrides;
+            _projectedVehicles = vehicles;
+        }
+
         return vehicles;
     }
 
