@@ -495,6 +495,22 @@ internal static class SelfTest
                 log.AppendLine("多源候选: 库中只有一个部件位置，跳过");
             }
 
+            // ---- 新建空白涂装包（§3.4）：无 source.blk、无贴图引用，部件在属性页从库内选择 ----
+            log.AppendLine();
+            log.AppendLine("---- 新建空白涂装包 ----");
+            var blank = PackageStore.CreateBlank(resourceDir, firstVehicleId, "空白自检");
+            PartCatalog.Invalidate();
+            var blankPackage = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId)
+                ?.SkinPackages.FirstOrDefault(p => string.Equals(p.Id, blank.Id, StringComparison.Ordinal));
+            log.AppendLine($"创建     : 出现在载具聚合中 = {blankPackage != null}"
+                         + $"，映射 {blankPackage?.Mappings.Count ?? -1} 条（应为 0）"
+                         + $"，Order = {blank.Order}");
+            var blankExports = !File.Exists(PackageStore.SourceBlkPath(resourceDir, blank.Id));
+            log.AppendLine($"无 source.blk = {blankExports}（导出原始模组应明确拒绝）");
+            PackageStore.Delete(resourceDir, blank.Id);
+            PartCatalog.Invalidate();
+            log.AppendLine("清理     : 已删除");
+
             // ---- 压缩包导入（§3.1：拖入压缩包）----
             log.AppendLine();
             log.AppendLine("---- 压缩包导入 ----");

@@ -179,10 +179,13 @@
                                 <TextBlock Text="{Binding Skins.SelectedVehicleSubtitle}" Style="{StaticResource PageSubtitle}"
                                            Margin="0,4,0,0"/>
                             </StackPanel>
-                            <!-- 无手动「同步」按钮：输出只在激活 / 切换激活包 / 属性页保存 / 取消激活时发生（§3.8） -->
-                            <TextBlock Grid.Column="1" Text="{Binding Skins.PackagesTitle}" FontSize="13"
-                                       Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Top"
-                                       Margin="12,2,0,0"/>
+                            <!-- 包计数 + 新建空白涂装包；无手动「同步」按钮：输出只在激活 / 属性页保存 / 取消激活时发生（§3.8） -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
+                                <TextBlock Text="{Binding Skins.PackagesTitle}" FontSize="13"
+                                           Foreground="{StaticResource BrushTextMuted}" Margin="0,2,0,0"/>
+                                <Button Content="{loc:Loc pkg.create}" Style="{StaticResource SecondaryButton}"
+                                        Margin="12,-4,0,0" Command="{Binding Skins.CreateBlankPackageCommand}"/>
+                            </StackPanel>
                         </Grid>
 
                         <!-- 当前激活的涂装包：已激活 = 绿（与卡片激活态一致）；未激活 = 主色蓝（只是提示） -->

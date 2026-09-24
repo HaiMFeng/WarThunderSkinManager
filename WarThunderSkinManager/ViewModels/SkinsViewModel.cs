@@ -327,6 +327,12 @@ public partial class SkinsViewModel : ObservableObject
         if (meta == null) return;
 
         // 属性界面可配置该包的部件贴图（§3.5），需要配置对象以读取/记录「写入方式提示已确认」标记
+        OpenEditor(meta);
+    }
+
+    /// <summary>打开涂装包属性界面（编辑 / 新建共用）：确定后写回 meta，改的若是激活包则立即重新输出。</summary>
+    private void OpenEditor(PackageMeta meta)
+    {
         var editor = new PackageEditorViewModel(_config, meta);
         var window = new PackageEditorWindow { DataContext = editor, Owner = Application.Current?.MainWindow };
         if (window.ShowDialog() != true) return;
@@ -335,7 +341,8 @@ public partial class SkinsViewModel : ObservableObject
         PackageStore.SaveMeta(_config.ResourceDirectory, meta);
         PartCatalog.Invalidate(); // 包内容变了 → 部件表下次访问重建
 
-        var wasActive = SelectedPackage.IsActive;
+        var wasActive = Packages.FirstOrDefault(
+            p => string.Equals(p.Id, meta.Id, StringComparison.Ordinal))?.IsActive == true;
         RefreshLibrary();
 
         // 改的正是当前激活包 → **立即落盘**：属性页点「确定」就是一次"改变输出"，
@@ -347,6 +354,33 @@ public partial class SkinsViewModel : ObservableObject
             var sync = SyncCurrentVehicleMessage(out var blkCreated);
             if (sync.Length > 0) ShowStatus(sync);
             if (blkCreated && SelectedVehicle != null) PromptFirstOutput(SelectedVehicle.Id);
+        }
+    }
+
+    /// <summary>
+    /// 为当前载具**新建空白涂装包**（§3.4）：无 source.blk、无贴图引用——
+    /// 建完直接打开属性界面改名并配置部件贴图（从库内其他包选择，含跨载具 / 多源复用候选）。
+    /// </summary>
+    [RelayCommand]
+    private void CreateBlankPackage()
+    {
+        if (SelectedVehicle == null || !EnsureResourceDir()) return;
+
+        try
+        {
+            var meta = PackageStore.CreateBlank(_config.ResourceDirectory, SelectedVehicle.Id,
+                Loc["pkg.blankDefaultName"]);
+
+            PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
+            RefreshLibrary();
+            SelectPackage(meta.Id);
+            ShowStatus(Loc.Format("pkg.createdBlank", meta.Name));
+
+            OpenEditor(meta);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("pkg.operationFailed", ex.Message));
         }
     }
 
@@ -377,6 +411,13 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
+        // 空白涂装包没有 source.blk，原始模组无从恢复
+        if (!File.Exists(PackageStore.SourceBlkPath(_config.ResourceDirectory, SelectedPackage.Id)))
+        {
+            ShowStatus(Loc["pkg.exportBlank"]);
+            return;
+        }
+
         var dialog = new OpenFolderDialog { Title = Loc["pkg.exportTitle"], Multiselect = false };
         if (dialog.ShowDialog() != true) return;
 
@@ -399,6 +440,12 @@ public partial class SkinsViewModel : ObservableObject
     private void ExportPackageArchive()
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
+
+        if (!File.Exists(PackageStore.SourceBlkPath(_config.ResourceDirectory, SelectedPackage.Id)))
+        {
+            ShowStatus(Loc["pkg.exportBlank"]);
+            return;
+        }
 
         var dialog = new SaveFileDialog
         {
@@ -996,7 +1043,13 @@ public partial class SkinsViewModel : ObservableObject
 
     private void ShowStatus(string message)
     {
-        StatusMessage = message;
+        // 相同消息连续第二次时 setter 因值相等不播报 → 手动补一次通知，
+        // 由主窗口以闪烁提示「又发生了一次」（文本本就在显示，无需重新赋值）
+        if (string.Equals(StatusMessage, message, StringComparison.Ordinal))
+            OnPropertyChanged(nameof(StatusMessage));
+        else
+            StatusMessage = message;
+
         _statusTimer.Stop();
         _statusTimer.Start();
     }

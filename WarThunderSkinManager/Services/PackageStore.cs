@@ -98,6 +98,34 @@ public static class PackageStore
         return copy;
     }
 
+    /// <summary>
+    /// 新建**空白涂装包**（功能设计 §3.4）：只有 meta.json——没有 source.blk、没有贴图引用，
+    /// 部件贴图在属性界面从库内其他包选择（含跨载具 / 多源复用候选）。
+    /// 排在该载具现有包之后（Order = 现有最大值 + 1）。
+    /// </summary>
+    public static PackageMeta CreateBlank(string resourceDir, string vehicleId, string name)
+    {
+        if (string.IsNullOrWhiteSpace(vehicleId))
+            throw new ArgumentException("载具标识不能为空", nameof(vehicleId));
+
+        var order = LoadAll(resourceDir)
+            .Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.Order)
+            .DefaultIfEmpty(-1)
+            .Max();
+
+        var meta = new PackageMeta
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            VehicleId = vehicleId,
+            Name = name,
+            Order = order + 1
+        };
+
+        SaveMeta(resourceDir, meta);
+        return meta;
+    }
+
     /// <summary>删除涂装包目录（其引用的 blob 交由后续 GC 处理）。</summary>
     public static void Delete(string resourceDir, string id)
     {

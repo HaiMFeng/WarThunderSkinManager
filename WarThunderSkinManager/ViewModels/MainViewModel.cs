@@ -73,6 +73,13 @@ public partial class MainViewModel : ObservableObject
     /// <summary>操作反馈（保存结果等），短暂显示后自动清空</summary>
     [ObservableProperty] private string _statusMessage = "";
 
+    /// <summary>
+    /// 状态强调信号：**连续相同**的状态消息不重新赋值（值相等不播报），
+    /// 改为**翻转**此标记（true⇄false 交替，每次必播报）驱动标题栏一次主色光晕脉冲
+    /// （动画自带回弹，标记状态本身无含义）。
+    /// </summary>
+    [ObservableProperty] private bool _statusFlash;
+
     private readonly DispatcherTimer _statusTimer;
 
     /// <summary>涂装管理页视图模型（导入入口 + 涂装包卡片）</summary>
@@ -639,7 +646,19 @@ public partial class MainViewModel : ObservableObject
 
     private void ShowStatus(string message)
     {
-        StatusMessage = message;
+        // 连续相同消息：值相等 setter 不播报（文本本就在显示），改为**主色高亮一瞬**表达强调；
+        // 相异消息正常显示。高亮由 _flashTimer 自动回落（见下）
+        var repeat = string.Equals(StatusMessage, message, StringComparison.Ordinal);
+
+        if (!repeat)
+        {
+            StatusMessage = message;
+        }
+        else
+        {
+            StatusFlash = !StatusFlash; // 每次翻转必播报 → 标题栏脉冲一次光晕
+        }
+
         _statusTimer.Stop();
         _statusTimer.Start();
     }

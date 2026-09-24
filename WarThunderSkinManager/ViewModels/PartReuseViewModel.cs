@@ -322,5 +322,13 @@ public partial class PartReuseViewModel : ObservableObject
         return true;
     }
 
-    private void ShowStatus(string message) => StatusMessage = message;
+    private void ShowStatus(string message)
+    {
+        // 相同消息连续第二次时 setter 因值相等不播报 → 手动补一次通知，
+        // 由主窗口以闪烁提示「又发生了一次」（文本本就在显示，无需重新赋值）
+        if (string.Equals(StatusMessage, message, StringComparison.Ordinal))
+            OnPropertyChanged(nameof(StatusMessage));
+        else
+            StatusMessage = message;
+    }
 }

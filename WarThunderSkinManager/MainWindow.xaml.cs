@@ -1,9 +1,12 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.ViewModels;
 
@@ -19,10 +22,41 @@ public partial class MainWindow : Window
     private Point _titleBarMouseDownPos;
     private bool _titleBarDragStarted;
 
+    /// <summary>状态文字的光晕效果（连续相同消息的强调脉冲，见 <see cref="PulseStatusGlow"/>）。</summary>
+    private DropShadowEffect? _statusGlow;
+
     public MainWindow(AppConfig config)
     {
         InitializeComponent();
         DataContext = new MainViewModel(config);
+
+        if (DataContext is INotifyPropertyChanged notify)
+            notify.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.StatusFlash)) PulseStatusGlow();
+    }
+
+    /// <summary>
+    /// 状态强调脉冲：连续相同消息不重新赋值（值相等不播报），由 <c>StatusFlash</c> 触发
+    /// 文字周围一圈**同色光晕**撑开再收回——主题同色、不依赖具体颜色值。
+    /// </summary>
+    private void PulseStatusGlow()
+    {
+        if (_statusGlow == null)
+        {
+            _statusGlow = new DropShadowEffect { ShadowDepth = 0, BlurRadius = 0 };
+            StatusText.Effect = _statusGlow;
+        }
+
+        // 光晕颜色跟随当前主题的文字主色（每次脉冲时取，主题切换后也正确）
+        if (StatusText.Foreground is SolidColorBrush brush)
+            _statusGlow.Color = brush.Color;
+
+        var pulse = new DoubleAnimation(0, 14, TimeSpan.FromMilliseconds(160)) { AutoReverse = true };
+        _statusGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, pulse);
     }
 
     // ---------- 标题栏：双击切换最大化；过拖动阈值才真正开始拖 ----------
