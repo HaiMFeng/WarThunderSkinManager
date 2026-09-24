@@ -824,9 +824,12 @@ public partial class SkinsViewModel : ObservableObject
             // 从 UserSkins / 用户选中的文件夹导入时，提供「导入后清理源文件夹」（§3.1）
             var sourceExists = !string.IsNullOrWhiteSpace(sourcePath) && Directory.Exists(sourcePath);
 
-            var preview = new ImportPreviewViewModel(candidates, sourceType, sourceExists, canDeleteArchive,
+            // 预览 VM（分组 + 行模型）在**后台**构建：几千个候选时这是可感知的 UI 冻结源（§3.1 大批量）
+            var preview = Task.Run(() => new ImportPreviewViewModel(candidates, sourceType, sourceExists,
+                canDeleteArchive,
                 deleteSourceDefault: RememberedDeleteSource(sourceType),
-                deleteArchiveDefault: _config.ImportDeleteArchive);
+                deleteArchiveDefault: _config.ImportDeleteArchive)).Result;
+
             var window = new ImportPreviewWindow
             {
                 DataContext = preview,
@@ -932,7 +935,7 @@ public partial class SkinsViewModel : ObservableObject
     /// 压缩包先解压到资源目录下的暂存区，再走同一套「扫描 → 预览 → 解构」流程，
     /// 暂存目录在流程结束后清理（解压产物只是中间物）。
     /// </summary>
-    public void ImportDropped(IReadOnlyList<string> droppedPaths)
+    public async void ImportDropped(IReadOnlyList<string> droppedPaths)
     {
         if (droppedPaths.Count == 0 || !EnsureResourceDir()) return;
 
@@ -956,9 +959,7 @@ public partial class SkinsViewModel : ObservableObject
 
         try
         {
-            var candidates = new List<ImportCandidate>();
-
-            // 压缩包：解压（可能要密码）→ 扫描；建议包名 = 压缩包名 / 包内唯一顶层文件夹名
+            // 压缩包解压（可能要密码 → 留在 UI 线程弹框）；建议包名 = 压缩包名 / 包内唯一顶层文件夹名
             foreach (var archive in archives)
             {
                 var extracted = ExtractArchiveWithPrompt(archive, resourceDir);
@@ -969,13 +970,27 @@ public partial class SkinsViewModel : ObservableObject
                 }
 
                 staging.Add(extracted);
-                candidates.AddRange(ImportService.Scan(
-                    extracted, ImportSourceType.Archive, ArchivePackName(archive, extracted)));
             }
 
-            // 涂装文件夹：直接扫描
-            foreach (var folder in folders)
-                candidates.AddRange(ImportService.Scan(folder, ImportSourceType.Folder));
+            // 扫描在**后台**执行（大量 blk 文本读取是秒级，§3.1）；解压根此时已就绪
+            var scanStaging = staging.ToList();
+            var scanArchives = archives.ToList();
+            var scanFolders = folders.ToList();
+
+            var candidates = await Task.Run(() =>
+            {
+                var list = new List<ImportCandidate>();
+
+                // staging 与 scanArchives 一一对应（skipped 的两边都不进）
+                for (var i = 0; i < scanStaging.Count; i++)
+                    list.AddRange(ImportService.Scan(scanStaging[i], ImportSourceType.Archive,
+                        ArchivePackName(scanArchives[i], scanStaging[i])));
+
+                foreach (var folder in scanFolders)
+                    list.AddRange(ImportService.Scan(folder, ImportSourceType.Folder));
+
+                return list;
+            });
 
             // 只拖入一个文件夹 → 沿用「导入文件夹」语义（可勾选删除该文件夹）
             var singleFolder = folders.Count == 1 && archives.Count == 0;

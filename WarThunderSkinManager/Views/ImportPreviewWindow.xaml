@@ -71,9 +71,15 @@
                 </StackPanel>
             </StackPanel>
 
-            <!-- 列表：表头与行放在同一滚动区，保证列对齐；按同名来源分组 -->
-            <ScrollViewer Grid.Row="3" Margin="16,0" VerticalScrollBarVisibility="Auto">
-                <StackPanel>
+            <!-- 列表：表头固定不随行滚动；行区 ListBox 虚拟化（数千行也秒开，§3.1 大批量）。
+                 列宽必须与行模板**完全一致**（固定像素，除名称列 *）——Auto 列会按各自内容算宽导致错位 -->
+            <Grid Grid.Row="3" Margin="16,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
 
                     <!-- 分组改名提示（存在多条目分组时显示） -->
                     <TextBlock Text="{loc:Loc import.group.hint}" TextWrapping="Wrap" Margin="0,0,0,10">
@@ -94,10 +100,9 @@
                             <ColumnDefinition Width="150"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="200"/>
-                            <!-- 数字列 Auto：表头随文案自适应（英文 "Missing"/"Warnings" 比中文长） -->
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="70"/>
+                            <ColumnDefinition Width="90"/>
+                            <ColumnDefinition Width="90"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{loc:Loc import.col.vehicle}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                         <TextBlock Grid.Column="1" Text="{loc:Loc import.col.name}" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Margin="8,0"/>
@@ -108,9 +113,19 @@
                         <TextBlock Grid.Column="5" Text="{loc:Loc import.col.warnings}" Style="{StaticResource FieldLabel}"
                                    FontWeight="SemiBold" TextAlignment="Right"/>
                     </Grid>
+                </StackPanel>
 
-                    <ItemsControl ItemsSource="{Binding Groups}">
-                        <ItemsControl.ItemTemplate>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding Groups}"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel/>
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,14">
 
@@ -151,9 +166,9 @@
                                                         <ColumnDefinition Width="150"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="200"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="70"/>
+                                                        <ColumnDefinition Width="90"/>
+                                                        <ColumnDefinition Width="90"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="{Binding VehicleId}" VerticalAlignment="Center"
                                                                TextTrimming="CharacterEllipsis"/>
@@ -216,10 +231,22 @@
                                     </ItemsControl>
                                 </StackPanel>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </ScrollViewer>
+                        </ListBox.ItemTemplate>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Focusable" Value="False"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </Grid>
 
             <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,14,16,16">
                 <Button Content="{loc:Loc import.cancel}" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>
