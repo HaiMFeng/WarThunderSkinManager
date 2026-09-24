@@ -8,62 +8,8 @@
             <TextBlock Text="{loc:Loc settings.title}" Style="{StaticResource PageTitle}"/>
             <TextBlock Text="{loc:Loc settings.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
 
-            <!-- 界面语言（功能设计 §3.9）：切换立即生效，载具自动译名按新语言重新检索 -->
+            <!-- 目录配置（必须设置在前：三个目录决定程序能否工作） -->
             <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.language}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{loc:Loc settings.language.hint}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" Margin="0,0,0,14"/>
-                    <ComboBox Style="{StaticResource BaseComboBox}" Width="260" HorizontalAlignment="Left"
-                              ItemsSource="{Binding AvailableLanguages}"
-                              SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding DisplayName}"/>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
-            </Border>
-
-            <!-- 主题（界面设计规范 §3）：内置四套配色，重启生效 -->
-            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.theme}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{loc:Loc settings.theme.hint}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" Margin="0,0,0,14"/>
-                    <StackPanel Orientation="Horizontal">
-                        <ComboBox Style="{StaticResource BaseComboBox}" Width="220"
-                                  ItemsSource="{Binding Themes}"
-                                  SelectedItem="{Binding SelectedTheme, Mode=TwoWay}">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding DisplayName}"/>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <Button Content="{loc:Loc settings.theme.restart}" Style="{StaticResource SecondaryButton}"
-                                Margin="10,0,0,0" Command="{Binding RestartCommand}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- 多源复用（§3.13）：开启后左侧导航出现「多源复用」页；关闭只停用，组数据保留 -->
-            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.partReuse}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{loc:Loc settings.partReuse.hint}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" Margin="0,0,0,14"/>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{loc:Loc settings.partReuse.toggle}" VerticalAlignment="Center"/>
-                        <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
-                                  IsChecked="{Binding Config.PartReuseEnabled}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- 目录配置 -->
-            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.directories}" Style="{StaticResource SectionTitle}" Margin="0,0,0,16"/>
 
@@ -125,6 +71,60 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock Text="{loc:Loc settings.config.hint}" Style="{StaticResource PageSubtitle}" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 界面语言（功能设计 §3.9）：切换立即生效，载具自动译名按新语言重新检索 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.language}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.language.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <ComboBox Style="{StaticResource BaseComboBox}" Width="260" HorizontalAlignment="Left"
+                              ItemsSource="{Binding AvailableLanguages}"
+                              SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Border>
+
+            <!-- 主题（界面设计规范 §3）：内置四套配色，重启生效 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.theme}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.theme.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox Style="{StaticResource BaseComboBox}" Width="220"
+                                  ItemsSource="{Binding Themes}"
+                                  SelectedItem="{Binding SelectedTheme, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Content="{loc:Loc settings.theme.restart}" Style="{StaticResource SecondaryButton}"
+                                Margin="10,0,0,0" Command="{Binding RestartCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 多源复用（§3.13）：开启后左侧导航出现「多源复用」页；关闭只停用，组数据保留 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.partReuse}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.partReuse.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{loc:Loc settings.partReuse.toggle}" VerticalAlignment="Center"/>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
+                                  IsChecked="{Binding Config.PartReuseEnabled}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
