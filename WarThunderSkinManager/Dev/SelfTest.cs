@@ -116,13 +116,32 @@ internal static class SelfTest
                 var copyMeta = copy == null ? null : PackageStore.Load(resourceDir, copy.Id);
 
                 var exportDir = Path.Combine(workDir, "export", sample.VehicleId);
-                PackageExporter.Export(resourceDir, sample.Id, exportDir);
+                PackageExporter.Export(resourceDir, sample.Id, exportDir,
+                    createFolder: false, folderName: "", TextureNaming.Original);
                 var exportedBlk = File.Exists(Path.Combine(exportDir, sample.VehicleId + ".blk"));
                 var exportedTextures = Directory.Exists(exportDir)
                     ? Directory.EnumerateFiles(exportDir, "*", SearchOption.AllDirectories)
                         .Count(f => f.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) ||
                                     f.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
                     : 0;
+
+                // 命名规则区分度：原名 = 源 blk 的 to 名；部件名 = 该贴图对应部件的归一化 from + 原扩展名
+                var exportPartDir = Path.Combine(workDir, "export-part");
+                PackageExporter.Export(resourceDir, sample.Id, exportPartDir,
+                    createFolder: false, folderName: "", TextureNaming.PartName);
+                var sampleTo = sample.Textures[0].To;
+                var samplePart = VehicleAggregator.BuildVehicle(resourceDir, sample.VehicleId)
+                    ?.SkinPackages.FirstOrDefault(
+                        p => string.Equals(p.Id, sample.Id, StringComparison.Ordinal))
+                    ?.Mappings.FirstOrDefault(
+                        m => string.Equals(m.ToFile, sampleTo, StringComparison.OrdinalIgnoreCase))
+                    ?.FromModule ?? "";
+                var expectedPartFile = VehicleAggregator.NormalizeFrom(samplePart)
+                    + Path.GetExtension(sampleTo).ToLowerInvariant();
+                var originalKept = File.Exists(Path.Combine(exportDir, sampleTo));
+                var partNamed = File.Exists(Path.Combine(exportPartDir, expectedPartFile));
+                var partBlkRewritten = File.ReadAllText(Path.Combine(exportPartDir, sample.VehicleId + ".blk"))
+                    .Contains(expectedPartFile);
 
                 var deleted = false;
                 if (copy != null)
@@ -137,6 +156,9 @@ internal static class SelfTest
                 log.AppendLine($"duplicate : {(copyMeta != null ? "OK" : "失败")}，textures={copyMeta?.Textures.Count ?? 0}");
                 log.AppendLine($"blobs     : 复制前 {blobBefore} -> 复制后 {blobAfter}（相等 = 零字节增量）");
                 log.AppendLine($"export    : blk={exportedBlk}，贴图={exportedTextures}/{sample.Textures.Count}");
+                log.AppendLine($"命名规则  : 原名保留 to（{sampleTo}）= {originalKept}"
+                             + $"，部件名改名（{expectedPartFile}）= {partNamed}"
+                             + $"，blk 引用同步重写 = {partBlkRewritten}");
                 log.AppendLine($"delete    : 目录已移除={deleted}");
             }
 
@@ -506,7 +528,12 @@ internal static class SelfTest
                          + $"，映射 {blankPackage?.Mappings.Count ?? -1} 条（应为 0）"
                          + $"，Order = {blank.Order}");
             var blankExports = !File.Exists(PackageStore.SourceBlkPath(resourceDir, blank.Id));
-            log.AppendLine($"无 source.blk = {blankExports}（导出原始模组应明确拒绝）");
+            var blankExportDir = Path.Combine(workDir, "blank-export");
+            var blankTarget = PackageExporter.Export(resourceDir, blank.Id, blankExportDir,
+                createFolder: false, folderName: "", TextureNaming.Original);
+            var blankBlk = File.ReadAllText(Path.Combine(blankTarget, firstVehicleId + ".blk")).Trim();
+            log.AppendLine($"空白导出 : 导出前无 source.blk = {blankExports}（导出时现场创建）"
+                         + $"，导出 blk 内容 = 「{blankBlk}」（应为一行 name）");
             PackageStore.Delete(resourceDir, blank.Id);
             PartCatalog.Invalidate();
             log.AppendLine("清理     : 已删除");
@@ -693,7 +720,8 @@ internal static class SelfTest
             var exportZip = Path.Combine(workDir, "export-out", "pkg.zip");
             Directory.CreateDirectory(Path.GetDirectoryName(exportZip)!);
             var exportPkg = PackageStore.LoadAll(resourceDir).First();
-            PackageExporter.ExportToArchive(resourceDir, exportPkg.Id, exportZip);
+            PackageExporter.ExportToArchive(resourceDir, exportPkg.Id, Path.GetDirectoryName(exportZip)!,
+                "pkg", TextureNaming.Original, "zip");
 
             using (var exported = System.IO.Compression.ZipFile.OpenRead(exportZip))
             {

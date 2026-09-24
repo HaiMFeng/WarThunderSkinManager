@@ -411,59 +411,73 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        // 空白涂装包没有 source.blk，原始模组无从恢复
-        if (!File.Exists(PackageStore.SourceBlkPath(_config.ResourceDirectory, SelectedPackage.Id)))
-        {
-            ShowStatus(Loc["pkg.exportBlank"]);
-            return;
-        }
+        // 导出配置窗口（§3.11）：位置 / 是否创建文件夹 / 文件夹名 / 贴图命名规则
+        var options = new ExportOptionsViewModel(isFolderMode: true, SelectedPackage.Name,
+            _config.UserSkinsDirectory);
+        var window = new ExportOptionsWindow(options) { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true) return;
 
-        var dialog = new OpenFolderDialog { Title = Loc["pkg.exportTitle"], Multiselect = false };
-        if (dialog.ShowDialog() != true) return;
+        // 拷贝大贴图可能耗时 → **后台执行**，不阻塞界面
+        var resourceDir = _config.ResourceDirectory;
+        var packageId = SelectedPackage.Id;
+        var location = options.Location;
+        var createFolder = options.CreateFolder;
+        var folderName = options.FolderName;
+        var naming = options.SelectedNaming.Value;
 
-        try
-        {
-            PackageExporter.Export(_config.ResourceDirectory, SelectedPackage.Id, dialog.FolderName);
-            ShowStatus(Loc.Format("pkg.exported", dialog.FolderName));
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(Loc.Format("pkg.exportFailed", ex.Message));
-        }
+        ShowStatus(Loc["export.running"]);
+
+        Task.Run(() => PackageExporter.Export(resourceDir, packageId, location, createFolder, folderName, naming))
+            .ContinueWith(t => Application.Current?.Dispatcher.Invoke(() =>
+            {
+                if (t.IsFaulted)
+                {
+                    ShowStatus(Loc.Format("pkg.exportFailed",
+                        t.Exception?.GetBaseException().Message ?? "?"));
+                    return;
+                }
+
+                ShowStatus(Loc.Format("pkg.exported", t.Result));
+            }));
     }
 
     /// <summary>
-    /// 导出为压缩包（§3.11）：恢复原始模组结构后打包为 zip，
-    /// zip 内有以包名命名的顶层文件夹（解压不散落，重新导入时即建议包名）。
+    /// 导出为压缩包（§3.11）：恢复模组结构后打包（格式可选），压缩包内有以压缩包名命名的
+    /// 顶层文件夹——解压不散落，重新拖入导入时该名即建议包名。
     /// </summary>
     [RelayCommand]
     private void ExportPackageArchive()
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        if (!File.Exists(PackageStore.SourceBlkPath(_config.ResourceDirectory, SelectedPackage.Id)))
-        {
-            ShowStatus(Loc["pkg.exportBlank"]);
-            return;
-        }
+        // 导出配置窗口（§3.11）：位置 / 压缩包名 / 贴图命名规则 / 格式
+        var options = new ExportOptionsViewModel(isFolderMode: false, SelectedPackage.Name,
+            _config.UserSkinsDirectory);
+        var window = new ExportOptionsWindow(options) { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true) return;
 
-        var dialog = new SaveFileDialog
-        {
-            Title = Loc["pkg.exportZipTitle"],
-            Filter = Loc["pkg.exportZipFilter"],
-            FileName = PackageExporter.ArchiveFolderName(SelectedPackage.Name, SelectedPackage.Id) + ".zip"
-        };
-        if (dialog.ShowDialog() != true) return;
+        // 压缩大贴图很耗时 → **后台执行**，不阻塞界面
+        var resourceDir = _config.ResourceDirectory;
+        var packageId = SelectedPackage.Id;
+        var location = options.Location;
+        var archiveName = options.ArchiveName;
+        var naming = options.SelectedNaming.Value;
+        var format = options.SelectedFormat.Id;
 
-        try
-        {
-            PackageExporter.ExportToArchive(_config.ResourceDirectory, SelectedPackage.Id, dialog.FileName);
-            ShowStatus(Loc.Format("pkg.exportedZip", dialog.FileName));
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(Loc.Format("pkg.exportFailed", ex.Message));
-        }
+        ShowStatus(Loc["export.running"]);
+
+        Task.Run(() => PackageExporter.ExportToArchive(resourceDir, packageId, location, archiveName, naming, format))
+            .ContinueWith(t => Application.Current?.Dispatcher.Invoke(() =>
+            {
+                if (t.IsFaulted)
+                {
+                    ShowStatus(Loc.Format("pkg.exportFailed",
+                        t.Exception?.GetBaseException().Message ?? "?"));
+                    return;
+                }
+
+                ShowStatus(Loc.Format("pkg.exportedZip", t.Result));
+            }));
     }
 
     [RelayCommand]
