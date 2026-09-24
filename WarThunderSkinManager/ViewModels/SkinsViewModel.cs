@@ -166,6 +166,7 @@ public partial class SkinsViewModel : ObservableObject
 
         var dialog = new OpenFolderDialog { Title = Loc["skins.importFolder"], Multiselect = false };
         if (dialog.ShowDialog() != true) return;
+        if (!IsSafeImportRoot(dialog.FolderName, folderMode: true)) return;
 
         RunImport(() => ImportService.Scan(dialog.FolderName, ImportSourceType.Folder),
                   ImportSourceType.Folder, dialog.FolderName);
@@ -182,6 +183,8 @@ public partial class SkinsViewModel : ObservableObject
             ShowStatus(Loc["import.needUserSkins"]);
             return;
         }
+
+        if (!IsSafeImportRoot(userSkins, folderMode: false)) return;
 
         RunImport(() => ImportService.Scan(userSkins, ImportSourceType.UserSkins),
                   ImportSourceType.UserSkins, userSkins);
@@ -901,11 +904,16 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (droppedPaths.Count == 0 || !EnsureResourceDir()) return;
 
-        var folders = droppedPaths.Where(Directory.Exists).ToList();
-        var archives = droppedPaths.Where(path => File.Exists(path) && ArchiveService.IsArchive(path)).ToList();
+        var folders = droppedPaths.Where(Directory.Exists)
+            .Where(f => IsSafeImportRoot(f, folderMode: true)).ToList();
+        var archives = droppedPaths.Where(path => File.Exists(path) && ArchiveService.IsArchive(path))
+            .Where(f => IsSafeImportRoot(f, folderMode: false)).ToList();
 
         if (folders.Count == 0 && archives.Count == 0)
         {
+            // 拖入过内容但全部被安全检查拒绝 → 危险提示已在 IsSafeImportRoot 中显示
+            if (droppedPaths.Count > 0) return;
+
             ShowStatus(Loc["import.drop.none"]);
             return;
         }
@@ -1030,11 +1038,42 @@ public partial class SkinsViewModel : ObservableObject
     /// 「一键导入 UserSkins」只删贡献了导入的顶层子文件夹；「导入文件夹」删整个源文件夹。
     /// 有导入失败的 blk 时自动跳过对应位置；`WTSM` 永不删除。
     /// </summary>
-    private static string CleanupImportedSource(string sourceRoot, IReadOnlyList<ImportCandidate> candidates,
+    /// <summary>
+    /// 导入源安全检查（§3.1 安全）：来源不得位于**程序数据目录**（资源库 / 配置目录）内，
+    /// 「导入文件夹」模式还不得是 UserSkins 根——否则「导入 + 删除源」会清掉整库 / 整个 UserSkins。
+    /// 危险时显示状态提示并返回 false。
+    /// </summary>
+    private bool IsSafeImportRoot(string root, bool folderMode)
+    {
+        var full = Path.GetFullPath(root);
+
+        string? UnderOrEqual(string? dir)
+        {
+            if (string.IsNullOrWhiteSpace(dir)) return null;
+
+            var fullDir = Path.GetFullPath(dir);
+            return full.Equals(fullDir, StringComparison.OrdinalIgnoreCase)
+                || full.StartsWith(fullDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                ? dir
+                : null;
+        }
+
+        var hit = UnderOrEqual(_config.ResourceDirectory)
+                  ?? UnderOrEqual(_config.ConfigDirectory)
+                  ?? (folderMode ? UnderOrEqual(_config.UserSkinsDirectory) : null);
+
+        if (hit == null) return true;
+
+        ShowStatus(Loc.Format("import.dangerRoot", full));
+        return false;
+    }
+
+    private string CleanupImportedSource(string sourceRoot, IReadOnlyList<ImportCandidate> candidates,
         ImportResult result, bool deleteWholeRoot)
     {
         var cleanup = ImportService.CleanupSource(
-            sourceRoot, candidates, result.ImportedBlkPaths, deleteWholeRoot);
+            sourceRoot, candidates, result.ImportedBlkPaths, deleteWholeRoot,
+            new[] { _config.ResourceDirectory, _config.ConfigDirectory, _config.UserSkinsDirectory });
 
         var text = Loc.Format("import.cleaned", cleanup.RemovedFolders + cleanup.RemovedFiles);
         if (cleanup.Skipped.Count > 0) text += Loc.Format("import.cleanupSkipped", cleanup.Skipped.Count);

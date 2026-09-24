@@ -135,6 +135,8 @@ public static class PackageExporter
                 : BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8))
                     .Mappings.Select(m => (From: m.FromModule, ToFile: m.ToFile, Mode: m.Mode, Param: m.Param)))
             .Where(e => !string.IsNullOrWhiteSpace(e.ToFile))
+            // to 携带非法相对路径（§3.8 安全）→ 不导出该条
+            .Where(e => OutputService.IsSafeRelativeTexturePath(e.ToFile))
             // 手动删除的部件（§3.10）不导出——导出与激活输出的组合保持一致
             .Where(e => !PartExclusionService.IsExcluded(meta.VehicleId, VehicleAggregator.NormalizeFrom(e.From)))
             .ToList();
@@ -209,7 +211,7 @@ public static class PackageExporter
     public static string ArchiveFolderName(string packageName, string fallbackId)
     {
         var name = string.Join("_", (packageName ?? string.Empty)
-            .Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+            .Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim().Trim('.');
         return name.Length > 0 ? name : fallbackId;
     }
 }

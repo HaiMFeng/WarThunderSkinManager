@@ -143,6 +143,7 @@
   "import.needUserSkins": "Please set the game UserSkins directory in 'Settings' first",
   "import.drop.hint": "Drag skin folders or archives here to import",
   "import.drop.none": "The dragged content contains no importable skin folders or archives",
+  "import.dangerRoot": "The import source is inside a program data directory and was rejected: {0}",
   "import.archive.title": "Archive Password",
   "import.archive.prompt": "'{0}' is password protected. Please enter the password.",
   "import.archive.needPassword": "This archive is password protected and requires a password to extract.",

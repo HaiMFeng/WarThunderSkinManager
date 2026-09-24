@@ -22,13 +22,23 @@ public static class ConfigService
     };
 
     // ---- AppConfig：config.json ----
+    /// <summary>
+    /// 读取配置；文件损坏 / 被占用时**兜底为默认值**（与全项目「读失败不崩」模式一致，§4）。
+    /// </summary>
     public static AppConfig Load(string configDir)
     {
         var path = Path.Combine(configDir, "config.json");
         if (File.Exists(path))
         {
-            var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path));
-            if (cfg != null) return cfg;
+            try
+            {
+                var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path));
+                if (cfg != null) return cfg;
+            }
+            catch
+            {
+                // 损坏 → 用默认值继续；下次保存会覆盖
+            }
         }
         return new AppConfig { ConfigDirectory = configDir };
     }
@@ -36,7 +46,7 @@ public static class ConfigService
     public static void Save(string configDir, AppConfig cfg)
     {
         Directory.CreateDirectory(configDir);
-        File.WriteAllText(Path.Combine(configDir, "config.json"),
+        AtomicFile.WriteAllText(Path.Combine(configDir, "config.json"),
             JsonSerializer.Serialize(cfg, JsonOpts));
     }
 
@@ -48,8 +58,15 @@ public static class ConfigService
         var path = MappingFile(configDir);
         if (File.Exists(path))
         {
-            var d = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
-            if (d != null) return d;
+            try
+            {
+                var d = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
+                if (d != null) return d;
+            }
+            catch
+            {
+                // 损坏 → 视为无映射（显示名回落译名表 / 标识）
+            }
         }
         return new Dictionary<string, string>();
     }
@@ -71,8 +88,15 @@ public static class ConfigService
         var path = VehicleCountriesFile(configDir);
         if (File.Exists(path))
         {
-            var d = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
-            if (d != null) return d;
+            try
+            {
+                var d = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
+                if (d != null) return d;
+            }
+            catch
+            {
+                // 损坏 → 视为无归类（前缀推断兜底）
+            }
         }
         return new Dictionary<string, string>();
     }
@@ -92,9 +116,17 @@ public static class ConfigService
     public static VehicleActivation? LoadActivation(string configDir, string vehicleId)
     {
         var path = ActivationFile(configDir, vehicleId);
-        return File.Exists(path)
-            ? JsonSerializer.Deserialize<VehicleActivation>(File.ReadAllText(path))
-            : null;
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<VehicleActivation>(File.ReadAllText(path));
+        }
+        catch
+        {
+            // 损坏 → 视为未激活（该载具无输出），避免切载具即崩
+            return null;
+        }
     }
 
     public static void SaveActivation(string configDir, string vehicleId, VehicleActivation activation)

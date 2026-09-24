@@ -166,8 +166,13 @@ public static class ImportService
     /// <param name="candidates">本次扫描到的全部候选。</param>
     /// <param name="importedBlkPaths">**成功导入**的 blk 路径。</param>
     /// <param name="deleteRootItself"><c>true</c> = 删除 <paramref name="root"/> 本身（「导入文件夹」模式）。</param>
+    /// <param name="protectedRoots">
+    /// **程序数据目录**（资源库 / 配置目录等）：其本身与子目录绝不允许被清理——
+    /// 防止把资源库选成导入源后「导入 + 删除源」清空整库（§3.1 安全）。
+    /// </param>
     public static CleanupResult CleanupSource(string root, IReadOnlyList<ImportCandidate> candidates,
-        IReadOnlyCollection<string> importedBlkPaths, bool deleteRootItself)
+        IReadOnlyCollection<string> importedBlkPaths, bool deleteRootItself,
+        IReadOnlyCollection<string>? protectedRoots = null)
     {
         var result = new CleanupResult();
         var fullRoot = Path.GetFullPath(root);
@@ -178,6 +183,24 @@ public static class ImportService
         {
             result.Skipped.Add(fullRoot);
             return result;
+        }
+
+        // 程序数据目录（及其子目录）绝不允许被清理
+        if (protectedRoots != null)
+        {
+            foreach (var protectedRoot in protectedRoots)
+            {
+                if (string.IsNullOrWhiteSpace(protectedRoot)) continue;
+
+                var fullProtected = Path.GetFullPath(protectedRoot);
+                if (fullRoot.Equals(fullProtected, StringComparison.OrdinalIgnoreCase)
+                    || fullRoot.StartsWith(fullProtected + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Errors.Add($"拒绝清理程序数据目录：{fullRoot}");
+                    return result;
+                }
+            }
         }
 
         var imported = new HashSet<string>(

@@ -143,6 +143,7 @@
   "import.needUserSkins": "请先在「设置」中指定游戏 UserSkins 目录",
   "import.drop.hint": "将涂装文件夹或压缩包拖到此处导入",
   "import.drop.none": "拖入的内容中没有可导入的涂装文件夹或压缩包",
+  "import.dangerRoot": "导入源位于程序数据目录内，已拒绝：{0}",
   "import.archive.title": "压缩包密码",
   "import.archive.prompt": "「{0}」受密码保护，请输入密码。",
   "import.archive.needPassword": "该压缩包受密码保护，需要密码才能解压。",

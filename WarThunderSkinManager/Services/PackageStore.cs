@@ -31,7 +31,7 @@ public static class PackageStore
     public static string MetaPath(string resourceDir, string id)
         => Path.Combine(PackageDirectory(resourceDir, id), "meta.json");
 
-    /// <summary>写入包的 source.blk 与 meta.json（已存在则覆盖）。</summary>
+    /// <summary>写入包的 source.blk 与 meta.json（已存在则覆盖；meta 原子写入，见 <see cref="AtomicFile"/>）。</summary>
     public static void Save(string resourceDir, PackageMeta meta, string sourceBlkPath)
     {
         if (string.IsNullOrWhiteSpace(meta.Id))
@@ -41,19 +41,19 @@ public static class PackageStore
         Directory.CreateDirectory(dir);
 
         File.Copy(sourceBlkPath, SourceBlkPath(resourceDir, meta.Id), overwrite: true);
-        File.WriteAllText(MetaPath(resourceDir, meta.Id),
-            JsonSerializer.Serialize(meta, JsonOpts), new UTF8Encoding(false));
+        AtomicFile.WriteAllText(MetaPath(resourceDir, meta.Id),
+            JsonSerializer.Serialize(meta, JsonOpts));
     }
 
-    /// <summary>只更新 meta.json（改名 / 预览图等元数据变更）。</summary>
+    /// <summary>只更新 meta.json（改名 / 预览图等元数据变更；原子写入，断电不留半截文件）。</summary>
     public static void SaveMeta(string resourceDir, PackageMeta meta)
     {
         if (string.IsNullOrWhiteSpace(meta.Id))
             throw new ArgumentException("包 Id 不能为空", nameof(meta));
 
         Directory.CreateDirectory(PackageDirectory(resourceDir, meta.Id));
-        File.WriteAllText(MetaPath(resourceDir, meta.Id),
-            JsonSerializer.Serialize(meta, JsonOpts), new UTF8Encoding(false));
+        AtomicFile.WriteAllText(MetaPath(resourceDir, meta.Id),
+            JsonSerializer.Serialize(meta, JsonOpts));
     }
 
     /// <summary>

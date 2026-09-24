@@ -40,6 +40,9 @@ public static class LoadoutService
             var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
             if (key.Length == 0) continue;
 
+            // 手动删除的部件（§3.10）不参与输出——与导出同一规则
+            if (PartExclusionService.IsExcluded(package.VehicleId, key)) continue;
+
             loadout.Selections[key] = new SelectedMapping
             {
                 PackageId = package.Id,

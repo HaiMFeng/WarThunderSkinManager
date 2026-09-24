@@ -802,6 +802,11 @@ internal static class SelfTest
             log.AppendLine($"② 有失败项   : 删除 {r2.RemovedFolders} 个，跳过 {r2.Skipped.Count} 个");
             log.AppendLine($"③ 整个根模式 : 删除 {r3.RemovedFolders} 个，根已删除={!Directory.Exists(r3Root)}");
 
+            // ④ 安全防护：程序数据目录绝不允许被清理（§3.1 安全）
+            var r4 = ImportService.CleanupSource(resourceDir, new List<ImportCandidate>(),
+                new List<string>(), deleteRootItself: true, protectedRoots: new[] { resourceDir });
+            log.AppendLine($"④ 数据目录防护: 拒绝 = {r4.Errors.Count > 0}，资源库仍在 = {Directory.Exists(resourceDir)}");
+
             // ---- 语言文件补齐验证（旧语言文件缺 key 时应以内置默认补齐并回写）----
             var langRoot = Path.Combine(workDir, "langtest");
             Directory.CreateDirectory(Path.Combine(langRoot, "lang"));

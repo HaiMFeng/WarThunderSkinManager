@@ -82,12 +82,31 @@ public static class OutputService
         }
     }
 
+    /// <summary>
+    /// to 必须是**安全的相对路径**：不允许绝对路径 / 盘符 / <c>..</c> 段 / 空段——
+    /// to 来自第三方 blk 内容，可能携带恶意路径（§3.8 安全）。
+    /// </summary>
+    internal static bool IsSafeRelativeTexturePath(string to)
+    {
+        if (string.IsNullOrWhiteSpace(to)) return false;
+        if (Path.IsPathRooted(to) || to.Contains(':')) return false;
+
+        return to.Split('/', '\\').All(segment => segment.Length > 0 && segment != "." && segment != "..");
+    }
+
     /// <summary>同步一个载具的激活组合到 WTSM。</summary>
     public static SyncReport SyncVehicle(string userSkinsDir, string resourceDir,
         string vehicleId, ActiveLoadout loadout)
     {
         var report = new SyncReport();
         var outDir = VehicleOutputDir(userSkinsDir, vehicleId);
+
+        // 与 ClearVehicle 同一安全边界：输出目标必须在 WTSM 目录内（§3.8 安全）
+        var wtsmRoot = Path.GetFullPath(WtsmRoot(userSkinsDir));
+        var fullOutDir = Path.GetFullPath(outDir);
+        if (!fullOutDir.StartsWith(wtsmRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"输出目标不在 WTSM 目录内，已拒绝写入（{fullOutDir}）");
+
         Directory.CreateDirectory(outDir);
 
         // 写之前没有 blk = 首次生成 → 游戏里需要用户手动选中一次这套涂装（§3.8）
@@ -102,6 +121,13 @@ public static class OutputService
             var selection = pair.Value;
             var mapping = selection?.Mapping;
             if (mapping == null) continue;
+
+            // to 携带非法相对路径（第三方 blk 误写 / 恶意构造）→ 不写入也不调度（§3.8 安全）
+            if (!IsSafeRelativeTexturePath(mapping.ToFile))
+            {
+                report.Warnings.Add($"{pair.Key}：to 含非法路径（{mapping.ToFile}），已跳过该部件");
+                continue;
+            }
 
             // 贴图不可用的部件**不写入 blk**：游戏不会报错，但会静默失败（§3.8）
             if (string.IsNullOrWhiteSpace(mapping.TextureRef))
