@@ -2,49 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
-    <UserControl.Resources>
-        <!-- 部件标签胶囊：与涂装包属性页同款（§3.6 / 界面设计规范 §5.10），组内成员与搜索结果共用 -->
-        <DataTemplate x:Key="PartTagTemplate">
-            <Border Margin="0,0,4,0">
-                <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource Tag}">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Tone}" Value="Texture">
-                                <Setter Property="Background" Value="{StaticResource BrushTagTextureBg}"/>
-                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagTextureBorder}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding Tone}" Value="Normal">
-                                <Setter Property="Background" Value="{StaticResource BrushTagNormalBg}"/>
-                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagNormalBorder}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding Tone}" Value="Weapon">
-                                <Setter Property="Background" Value="{StaticResource BrushTagWeaponBg}"/>
-                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagWeaponBorder}"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <TextBlock Text="{Binding Text}" FontSize="11">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="{StaticResource BrushTagDefaultText}"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Tone}" Value="Texture">
-                                    <Setter Property="Foreground" Value="{StaticResource BrushTagTextureText}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Tone}" Value="Normal">
-                                    <Setter Property="Foreground" Value="{StaticResource BrushTagNormalText}"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Tone}" Value="Weapon">
-                                    <Setter Property="Foreground" Value="{StaticResource BrushTagWeaponText}"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </Border>
-        </DataTemplate>
-    </UserControl.Resources>
+    <!-- 部件标签胶囊使用应用级资源 PartTagTemplate（Themes/ThemeResources.xaml），与属性对话框共用 -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

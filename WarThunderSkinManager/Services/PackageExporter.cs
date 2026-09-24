@@ -135,6 +135,8 @@ public static class PackageExporter
                 : BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8))
                     .Mappings.Select(m => (From: m.FromModule, ToFile: m.ToFile, Mode: m.Mode, Param: m.Param)))
             .Where(e => !string.IsNullOrWhiteSpace(e.ToFile))
+            // 手动删除的部件（§3.10）不导出——导出与激活输出的组合保持一致
+            .Where(e => !PartExclusionService.IsExcluded(meta.VehicleId, VehicleAggregator.NormalizeFrom(e.From)))
             .ToList();
 
         // to → blob（meta.textures；属性页的配置选择会更新同名条目的 blob，即当前配置）

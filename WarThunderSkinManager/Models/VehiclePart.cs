@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,6 +13,9 @@ public partial class VehiclePart : ObservableObject
 
     /// <summary>暂 = From 原值，不做部位翻译（呼应格式文档 §6 命名不统一）</summary>
     [ObservableProperty] private string _displayName = "";
+
+    /// <summary>按命名规律推测的标签（部位 / 功能 / 贴图类型，§3.6；仅供识别参考）</summary>
+    [ObservableProperty] private IReadOnlyList<PartTag> _tags = Array.Empty<PartTag>();
 
     /// <summary>各涂装包里 from 命中本部件的候选贴图</summary>
     [ObservableProperty] private List<TexMapping> _candidates = new();

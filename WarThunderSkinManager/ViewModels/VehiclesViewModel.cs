@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.Services;
+using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.ViewModels;
 
@@ -393,6 +394,40 @@ public partial class VehiclesViewModel : ObservableObject
         {
             ShowStatus(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 手动删除载具部件（§3.10）：剔除写错的 from 对列表 / 候选 / 激活输出生效，
+    /// 排除记录持久化到 <c>mappings/vehicle_excluded_parts.json</c>；source.blk 不动。
+    /// </summary>
+    [RelayCommand]
+    private void DeletePart(VehiclePart? part)
+    {
+        if (part == null || SelectedVehicle == null) return;
+        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        var confirmed = MessageDialog.Confirm(
+            Loc.Format("vehicles.part.deleteConfirm", part.From),
+            Loc["vehicles.part.deleteTitle"],
+            Loc["common.continue"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
+        if (!confirmed) return;
+
+        PartExclusionService.Add(_config.ConfigDirectory, SelectedVehicle.Id, part.From);
+        PartCatalog.Invalidate(); // 部件表一并重建：属性页候选 / 多源复用搜索同步生效
+
+        // 本地剔除：部件列表 + 该载具各包的同 from 映射（与聚合规则一致，无需全量重扫）
+        SelectedVehicle.Parts = SelectedVehicle.Parts.Where(p => p != part).ToList();
+        foreach (var package in SelectedVehicle.SkinPackages)
+            package.Mappings.RemoveAll(
+                m => string.Equals(VehicleAggregator.NormalizeFrom(m.FromModule), part.From,
+                    StringComparison.OrdinalIgnoreCase));
+
+        ShowStatus(Loc.Format("vehicles.part.deleted", part.From));
     }
 
     private void ShowStatus(string message)

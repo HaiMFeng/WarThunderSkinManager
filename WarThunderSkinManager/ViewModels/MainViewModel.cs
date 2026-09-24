@@ -106,6 +106,9 @@ public partial class MainViewModel : ObservableObject
     {
         Config = config;
 
+        // 部件排除清单跟随配置目录（载具管理页手动删除部件，§3.10）
+        PartExclusionService.Configure(config.ConfigDirectory);
+
         // 语言下拉：内置支持 + 用户放进 lang/ 的语言文件；当前语言直接写字段，避免 ctor 里触发切换
         AvailableLanguages = ScanLanguages(config.ConfigDirectory);
         _selectedLanguageOption = AvailableLanguages.FirstOrDefault(
@@ -162,6 +165,7 @@ public partial class MainViewModel : ObservableObject
         switch (e.PropertyName)
         {
             case nameof(AppConfig.ConfigDirectory):
+                PartExclusionService.Configure(Config.ConfigDirectory);
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 break;
 

@@ -85,7 +85,37 @@ public static class PartTagResolver
     /// 载具标识（blk 文件名）。仅用于判定**主体贴图**：必须「前缀 = 载具标识 + 中间无部件词」；
     /// 传空则不做该判定。
     /// </param>
+    private static readonly object CacheGate = new();
+    private static readonly Dictionary<string, IReadOnlyList<PartTag>> ResolveCache = new(StringComparer.Ordinal);
+    private static string _cacheStamp = "\0";
+
+    /// <summary>
+    /// 推测标签（**带缓存**：按 载具|from 缓存，投影 / 列表重建时零重复计算；
+    /// 武器表被替换时自动失效，见 <see cref="DataTables.Stamp"/>）。
+    /// </summary>
     public static IReadOnlyList<PartTag> Resolve(string from, string? vehicleId = null)
+    {
+        var key = (vehicleId ?? "") + "|" + from;
+
+        lock (CacheGate)
+        {
+            var stamp = DataTables.Stamp(DataTables.Weaponry);
+            if (!string.Equals(stamp, _cacheStamp, StringComparison.Ordinal))
+            {
+                ResolveCache.Clear();
+                _cacheStamp = stamp;
+            }
+
+            if (ResolveCache.TryGetValue(key, out var cached)) return cached;
+        }
+
+        var tags = ResolveCore(from, vehicleId);
+
+        lock (CacheGate) ResolveCache[key] = tags;
+        return tags;
+    }
+
+    private static IReadOnlyList<PartTag> ResolveCore(string from, string? vehicleId)
     {
         var tags = new List<PartTag>(3);
         if (string.IsNullOrWhiteSpace(from)) return tags;

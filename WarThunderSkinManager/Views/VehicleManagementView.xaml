@@ -123,8 +123,14 @@
                             </StackPanel>
                         </Grid>
 
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0">
                                 <!-- 显示名（自动保存） -->
                                 <TextBlock Text="{loc:Loc vehicles.displayName}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
                                 <TextBox Style="{StaticResource BaseTextBox}" MaxWidth="380" HorizontalAlignment="Left"
@@ -142,7 +148,9 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
+                            </StackPanel>
 
+                            <StackPanel Grid.Row="1">
                                 <!-- 部件（按 from 聚合，只读展示；贴图适配在涂装管理页，见 §3.5 / §3.10） -->
                                 <TextBlock Text="{loc:Loc vehicles.parts}" Style="{StaticResource SectionTitle}" Margin="0,24,0,8"/>
                                 <TextBlock Text="{loc:Loc vehicles.parts.hint}" Style="{StaticResource PageSubtitle}"
@@ -156,8 +164,27 @@
                                     <TextBlock Grid.Column="1" Text="{loc:Loc vehicles.col.candidates}"
                                                Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                                 </Grid>
-                                <ItemsControl ItemsSource="{Binding Vehicles.SelectedVehicle.Parts}">
-                                    <ItemsControl.ItemTemplate>
+                            </StackPanel>
+
+                            <!-- 部件列表：ListBox 自带 VirtualizingStackPanel，只渲染可见行 -->
+                            <ListBox Grid.Row="2"
+                                     Background="Transparent" BorderThickness="0" Padding="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                     ItemsSource="{Binding Vehicles.SelectedVehicle.Parts}">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,9">
                                                 <Grid>
@@ -165,30 +192,50 @@
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="{Binding From}" TextTrimming="CharacterEllipsis"
-                                                               VerticalAlignment="Center"/>
-                                                    <!-- 只统计有可用贴图的候选；为 0 时显示「无」（贴图缺失，见 §3.2） -->
-                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                                               Foreground="{StaticResource BrushTextMuted}">
-                                                        <TextBlock.Style>
-                                                            <Style TargetType="TextBlock">
-                                                                <Setter Property="Text" Value="{Binding TextureCandidateCount}"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding TextureCandidateCount}" Value="0">
-                                                                        <Setter Property="Text" Value="{loc:Loc vehicles.none}"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </TextBlock.Style>
-                                                    </TextBlock>
+                                                    <StackPanel Grid.Column="0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"
+                                                                       VerticalAlignment="Center"/>
+                                                            <!-- 部件标签胶囊：应用级共享模板 PartTagTemplate（§3.6） -->
+                                                            <ItemsControl ItemsSource="{Binding Tags}"
+                                                                          ItemTemplate="{StaticResource PartTagTemplate}"
+                                                                          Margin="6,0,0,0" VerticalAlignment="Center" IsTabStop="False">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <StackPanel Orientation="Horizontal"/>
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <!-- 只统计有可用贴图的候选；为 0 时显示「无」（贴图缺失，见 §3.2） -->
+                                                        <TextBlock VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource BrushTextMuted}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Text" Value="{Binding TextureCandidateCount}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding TextureCandidateCount}" Value="0">
+                                                                            <Setter Property="Text" Value="{loc:Loc vehicles.none}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <!-- 手动删除部件（§3.10）：剔除写错的 from，对列表 / 候选 / 输出生效 -->
+                                                        <Button Content="{loc:Loc vehicles.part.delete}"
+                                                                Style="{StaticResource SecondaryButton}" Margin="12,0,0,0"
+                                                                Command="{Binding DataContext.Vehicles.DeletePartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </DockPanel>
+                                        </ListBox.ItemTemplate>
+                                        </ListBox>
+                                        </Grid>
+                                        </DockPanel>
                 </Grid>
             </Border>
         </Grid>

@@ -36,14 +36,27 @@ public static class VehicleAggregator
         {
             vehicle.SkinPackages.Add(package);
 
-            foreach (var mapping in package.Mappings)
+            // 手动删除的部件（§3.10）：从聚合视图与包映射中一并剔除——
+            // 部件列表 / 属性页候选 / 激活输出由此保持一致；source.blk 与 meta.parts 不动
+            foreach (var mapping in package.Mappings.ToList())
             {
                 var key = NormalizeFrom(mapping.FromModule);
                 if (key.Length == 0) continue;
 
+                if (PartExclusionService.IsExcluded(vehicleId, key))
+                {
+                    package.Mappings.Remove(mapping);
+                    continue;
+                }
+
                 if (!parts.TryGetValue(key, out var part))
                 {
-                    part = new VehiclePart { From = key, DisplayName = key };
+                    part = new VehiclePart
+                    {
+                        From = key,
+                        DisplayName = key,
+                        Tags = PartTagResolver.Resolve(key, vehicleId) // 推测标签（§3.6），列表展示用
+                    };
                     parts[key] = part;
                 }
 

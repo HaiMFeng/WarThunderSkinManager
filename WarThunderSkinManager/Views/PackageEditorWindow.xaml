@@ -133,47 +133,8 @@
                                                         </ItemsPanelTemplate>
                                                     </ItemsControl.ItemsPanel>
                                                     <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <!-- 胶囊：部位标签白底蓝边；贴图类型按色调区分（纹理 = 绿 / 法线 = 黄，§5.10） -->
-                                                            <Border Margin="0,0,4,0">
-                                                                <Border.Style>
-                                                                    <Style TargetType="Border" BasedOn="{StaticResource Tag}">
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding Tone}" Value="Texture">
-                                                                                <Setter Property="Background" Value="{StaticResource BrushTagTextureBg}"/>
-                                                                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagTextureBorder}"/>
-                                                                            </DataTrigger>
-                                                                            <DataTrigger Binding="{Binding Tone}" Value="Normal">
-                                                                                <Setter Property="Background" Value="{StaticResource BrushTagNormalBg}"/>
-                                                                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagNormalBorder}"/>
-                                                                            </DataTrigger>
-                                                                            <DataTrigger Binding="{Binding Tone}" Value="Weapon">
-                                                                                <Setter Property="Background" Value="{StaticResource BrushTagWeaponBg}"/>
-                                                                                <Setter Property="BorderBrush" Value="{StaticResource BrushTagWeaponBorder}"/>
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </Border.Style>
-                                                                <TextBlock Text="{Binding Text}" FontSize="11">
-                                                                    <TextBlock.Style>
-                                                                        <Style TargetType="TextBlock">
-                                                                            <Setter Property="Foreground" Value="{StaticResource BrushTagDefaultText}"/>
-                                                                            <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding Tone}" Value="Texture">
-                                                                                    <Setter Property="Foreground" Value="{StaticResource BrushTagTextureText}"/>
-                                                                                </DataTrigger>
-                                                                                <DataTrigger Binding="{Binding Tone}" Value="Normal">
-                                                                                    <Setter Property="Foreground" Value="{StaticResource BrushTagNormalText}"/>
-                                                                                </DataTrigger>
-                                                                                <DataTrigger Binding="{Binding Tone}" Value="Weapon">
-                                                                                    <Setter Property="Foreground" Value="{StaticResource BrushTagWeaponText}"/>
-                                                                                </DataTrigger>
-                                                                            </Style.Triggers>
-                                                                        </Style>
-                                                                    </TextBlock.Style>
-                                                                </TextBlock>
-                                                            </Border>
-                                                        </DataTemplate>
+                                                        <!-- 部件标签胶囊：应用级共享模板（ThemeResources.PartTagTemplate），与多源复用 / 载具管理一致 -->
+                                                        <StaticResource ResourceKey="PartTagTemplate"/>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </Grid>

@@ -248,11 +248,22 @@ public static class LibraryService
         });
     }
 
-    /// <summary>快照 → 载具视图（**纯内存**，不读任何文件）。</summary>
+    // 投影缓存：同一快照 + 同一国家归类 → 直接复用上次构建的载具视图
+    // （页面导航 / 语言切换的重投影零重算；跨页面共享同一组实例，改动天然一致）
+    private static LibrarySnapshot? _projectedFrom;
+    private static IReadOnlyDictionary<string, string>? _projectedOverrides;
+    private static List<Vehicle>? _projectedVehicles;
+
+    /// <summary>快照 → 载具视图（**纯内存**，不读任何文件；带投影缓存，§4）。</summary>
     public static List<Vehicle> ToVehicles(LibrarySnapshot snapshot,
         IReadOnlyDictionary<string, string>? countryOverrides = null)
     {
-        return snapshot.Packages
+        if (ReferenceEquals(_projectedFrom, snapshot)
+            && SameOverrides(_projectedOverrides, countryOverrides)
+            && _projectedVehicles != null)
+            return _projectedVehicles;
+
+        var vehicles = snapshot.Packages
             .GroupBy(p => p.Meta.VehicleId, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Key.Length > 0)
             .Select(group => VehicleAggregator.Build(group.Key,
@@ -263,6 +274,24 @@ public static class LibraryService
                 countryOverrides))
             .OrderBy(v => v.Id, StringComparer.Ordinal)
             .ToList();
+
+        _projectedFrom = snapshot;
+        _projectedOverrides = countryOverrides;
+        _projectedVehicles = vehicles;
+        return vehicles;
+    }
+
+    private static bool SameOverrides(IReadOnlyDictionary<string, string>? a,
+        IReadOnlyDictionary<string, string>? b)
+    {
+        if (a == null && b == null) return true;
+        if (a == null || b == null || a.Count != b.Count) return false;
+
+        foreach (var (key, value) in a)
+            if (!b.TryGetValue(key, out var other) || !string.Equals(other, value, StringComparison.Ordinal))
+                return false;
+
+        return true;
     }
 
     /// <summary>快照里的包 → <see cref="SkinPackage"/>（与 <see cref="VehicleAggregator.BuildPackage"/> 等价）。</summary>
