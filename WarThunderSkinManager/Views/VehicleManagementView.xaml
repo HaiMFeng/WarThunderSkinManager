@@ -44,6 +44,25 @@
                     <TextBlock DockPanel.Dock="Top" Text="{Binding Vehicles.VehicleCountText}"
                                Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Margin="8,6,0,8"/>
 
+                    <!-- 载具搜索：匹配内部标识 / 显示名（§3.10） -->
+                    <Grid DockPanel.Dock="Top" Margin="8,0,8,8">
+                        <TextBox Style="{StaticResource BaseTextBox}"
+                                 Text="{Binding Vehicles.VehicleSearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="{loc:Loc vehicles.search}" Margin="22,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{StaticResource BrushTextMuted}" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Vehicles.VehicleSearchText}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+
                     <TextBlock DockPanel.Dock="Top" Text="{loc:Loc vehicles.empty.desc}"
                                Margin="8,0,8,8" TextWrapping="Wrap">
                         <TextBlock.Style>

@@ -49,6 +49,30 @@ public partial class VehiclesViewModel : ObservableObject
 
     [ObservableProperty] private ObservableCollection<Vehicle> _vehicles = new();
     [ObservableProperty] private Vehicle? _selectedVehicle;
+
+    /// <summary>排序后的完整载具列表（搜索过滤的数据源）。</summary>
+    private List<Vehicle> _sortedVehicles = new();
+
+    /// <summary>载具搜索关键字：匹配**内部标识或显示名**，不区分大小写（§3.10）。</summary>
+    [ObservableProperty] private string _vehicleSearchText = "";
+
+    partial void OnVehicleSearchTextChanged(string value) => ApplyVehicleFilter();
+
+    /// <summary>按关键字过滤载具列表；保持选中（选中项被过滤掉时回退到第一个）。</summary>
+    private void ApplyVehicleFilter()
+    {
+        var query = VehicleSearchText.Trim();
+
+        var filtered = query.Length == 0
+            ? _sortedVehicles
+            : _sortedVehicles.Where(v =>
+                v.Id.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                || v.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+
+        var previousId = SelectedVehicle?.Id;
+        Vehicles = new ObservableCollection<Vehicle>(filtered);
+        SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousId) ?? Vehicles.FirstOrDefault();
+    }
     [ObservableProperty] private ObservableCollection<CountryOption> _countryOptions = new();
     [ObservableProperty] private CountryOption? _selectedCountryOption;
     [ObservableProperty] private string _editDisplayName = "";
@@ -277,11 +301,9 @@ public partial class VehiclesViewModel : ObservableObject
         foreach (var vehicle in Vehicles)
             vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, _displayNames);
 
-        var previousId = SelectedVehicle?.Id;
-        Vehicles = new ObservableCollection<Vehicle>(
-            Vehicles.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(v => v.DisplayName, StringComparer.Ordinal));
-        SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousId) ?? SelectedVehicle;
+        _sortedVehicles = Vehicles.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
+                                  .ThenBy(v => v.DisplayName, StringComparer.Ordinal).ToList();
+        ApplyVehicleFilter();
     }
 
     /// <summary>
@@ -341,11 +363,9 @@ public partial class VehiclesViewModel : ObservableObject
             vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, _displayNames);
 
         var previousId = SelectedVehicle?.Id;
-        Vehicles = new ObservableCollection<Vehicle>(
-            list.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(v => v.DisplayName, StringComparer.Ordinal));
-
-        SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousId) ?? Vehicles.FirstOrDefault();
+        _sortedVehicles = list.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(v => v.DisplayName, StringComparer.Ordinal).ToList();
+        ApplyVehicleFilter();
     }
 
     /// <summary>把选中载具的值同步到界面字段（期间不触发落盘）。</summary>

@@ -283,6 +283,7 @@
   "vehicles.title": "载具管理",
   "vehicles.subtitle": "载具显示数据：显示名 / 国家 / 结构",
   "vehicles.count": "共 {0} 个载具",
+  "vehicles.search": "搜索载具：内部标识 / 显示名",
   "vehicles.displayName": "显示名",
   "vehicles.country": "国家",
   "vehicles.packageCount": "涂装包 {0}",

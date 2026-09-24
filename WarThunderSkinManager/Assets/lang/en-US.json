@@ -282,6 +282,7 @@
   "vehicles.title": "Vehicle Management",
   "vehicles.subtitle": "Vehicle Display Data: Display Name / Country / Structure",
   "vehicles.count": "Total {0} vehicle(s)",
+  "vehicles.search": "Search vehicles: ID / display name",
   "vehicles.displayName": "Display Name",
   "vehicles.country": "Country",
   "vehicles.packageCount": "Skin Package {0}",
