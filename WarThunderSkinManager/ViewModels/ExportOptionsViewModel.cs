@@ -53,6 +53,15 @@ public partial class ExportOptionsViewModel : ObservableObject
 
     public string PackageName { get; }
 
+    /// <summary>所属载具标识（文件夹导出的 blk 文件名 = 载具Id.blk，覆盖检查用）。</summary>
+    public string VehicleId { get; }
+
+    /// <summary>
+    /// 覆盖确认回调（由调用方注入，弹统一确认框）：参数为将被覆盖的目标路径，
+    /// 返回 <c>true</c> = 允许覆盖；为 null 时视为允许。**取消覆盖应留在本窗口**改路径 / 改名。
+    /// </summary>
+    public Func<string, bool>? ConfirmOverwrite { get; set; }
+
     [ObservableProperty] private string _location = "";
 
     [ObservableProperty] private bool _createFolder = true;
@@ -73,10 +82,12 @@ public partial class ExportOptionsViewModel : ObservableObject
 
     public bool ShowFolderName => IsFolderMode && CreateFolder;
 
-    public ExportOptionsViewModel(bool isFolderMode, string packageName, string defaultLocation = "")
+    public ExportOptionsViewModel(bool isFolderMode, string packageName, string vehicleId,
+        string defaultLocation = "")
     {
         IsFolderMode = isFolderMode;
         PackageName = packageName;
+        VehicleId = vehicleId;
 
         _location = defaultLocation ?? "";
         _folderName = packageName;
@@ -141,5 +152,30 @@ public partial class ExportOptionsViewModel : ObservableObject
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 覆盖检查：目标位置已存在本次将写出的文件（文件夹 = blk 或任一贴图；压缩包 = 文件本身）
+    /// 时弹确认；**用户取消 → 返回 false，留在本窗口**改路径 / 改名，而不是关闭窗口后才发现。
+    /// </summary>
+    public bool ConfirmTargetOverwrite()
+    {
+        var overwrite = ConfirmOverwrite;
+        if (overwrite == null) return true;
+
+        if (IsFolderMode)
+        {
+            var target = PackageExporter.PreviewFolderTarget(PackageName, VehicleId, Location, CreateFolder, FolderName);
+
+            var hasContent = File.Exists(Path.Combine(target, VehicleId + ".blk"))
+                || (Directory.Exists(target) && Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories).Any(
+                    f => f.EndsWith(".dds", StringComparison.OrdinalIgnoreCase)
+                      || f.EndsWith(".tga", StringComparison.OrdinalIgnoreCase)));
+
+            return !hasContent || overwrite(target);
+        }
+
+        var archivePath = PackageExporter.PreviewArchivePath(PackageName, VehicleId, Location, ArchiveName, SelectedFormat.Id);
+        return !File.Exists(archivePath) || overwrite(archivePath);
     }
 }

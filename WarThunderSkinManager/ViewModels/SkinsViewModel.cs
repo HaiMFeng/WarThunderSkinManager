@@ -411,9 +411,16 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        // 导出配置窗口（§3.11）：位置 / 是否创建文件夹 / 文件夹名 / 贴图命名规则
+        // 导出配置窗口（§3.11）：位置 / 是否创建文件夹 / 文件夹名 / 贴图命名规则；
+        // 覆盖确认在窗口内进行（取消覆盖 → 留在窗口改路径 / 改名）
         var options = new ExportOptionsViewModel(isFolderMode: true, SelectedPackage.Name,
-            _config.UserSkinsDirectory);
+            SelectedPackage.VehicleId, _config.UserSkinsDirectory)
+        {
+            ConfirmOverwrite = path => MessageDialog.Confirm(
+                Loc.Format("export.overwriteFolder", path),
+                Loc["export.overwriteTitle"], Loc["common.continue"], Loc["common.cancel"],
+                icon: DialogIcon.Warning)
+        };
         var window = new ExportOptionsWindow(options) { Owner = Application.Current?.MainWindow };
         if (window.ShowDialog() != true) return;
 
@@ -450,9 +457,16 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        // 导出配置窗口（§3.11）：位置 / 压缩包名 / 贴图命名规则 / 格式
+        // 导出配置窗口（§3.11）：位置 / 压缩包名 / 贴图命名规则 / 格式；
+        // 覆盖确认在窗口内进行（取消覆盖 → 留在窗口改路径 / 改名）
         var options = new ExportOptionsViewModel(isFolderMode: false, SelectedPackage.Name,
-            _config.UserSkinsDirectory);
+            SelectedPackage.VehicleId, _config.UserSkinsDirectory)
+        {
+            ConfirmOverwrite = path => MessageDialog.Confirm(
+                Loc.Format("export.overwriteArchive", path),
+                Loc["export.overwriteTitle"], Loc["common.continue"], Loc["common.cancel"],
+                icon: DialogIcon.Warning)
+        };
         var window = new ExportOptionsWindow(options) { Owner = Application.Current?.MainWindow };
         if (window.ShowDialog() != true) return;
 
@@ -682,10 +696,14 @@ public partial class SkinsViewModel : ObservableObject
             vehicle.DisplayName = VehicleNameTable.ResolveDisplayName(vehicle.Id, map);
     }
 
+    /// <summary>预览图解码会话标记：切换载具后旧解码结果直接丢弃（避免回写过期载具的图）。</summary>
+    private object? _previewDecodeToken;
+
     /// <summary>
     /// 预览图**按需加载**（§3.6）：只解码**当前载具**的包，切走时释放上一个载具的图，
     /// 并按卡片需要的宽度**降采样解码** —— 否则几百个包一次性全解码会同时拖慢启动、吃掉大量内存。
-    /// 缺失 / 解码失败则留空 → 界面显示占位。
+    /// 解码较重（每张数毫秒到数十毫秒）→ **后台线程逐张解码、逐张回 UI 线程填充**，
+    /// 卡片渐进显示；切走载具后旧解码会话作废。缺失 / 解码失败则留空 → 界面显示占位。
     /// </summary>
     private void LoadPreviews(Vehicle? vehicle)
     {
@@ -698,15 +716,30 @@ public partial class SkinsViewModel : ObservableObject
 
         if (vehicle == null || string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return;
 
-        foreach (var package in vehicle.SkinPackages)
-        {
-            if (package.PreviewImage != null) continue; // 同一载具反复选中不重复解码
+        var configDir = _config.ConfigDirectory;
+        var decodeToken = new object();
+        _previewDecodeToken = decodeToken;
 
-            var full = PreviewStore.FullPath(_config.ConfigDirectory, package.Id);
-            var image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth);
-            package.PreviewPath = image == null ? "" : full;
-            package.PreviewImage = image;
-        }
+        var packages = vehicle.SkinPackages.ToList();
+
+        Task.Run(() =>
+        {
+            foreach (var package in packages)
+            {
+                if (!ReferenceEquals(_previewDecodeToken, decodeToken)) return; // 已切走 → 放弃剩余解码
+
+                var full = PreviewStore.FullPath(configDir, package.Id);
+                var image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth); // Freeze 过 → 跨线程安全
+
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    if (!ReferenceEquals(_previewDecodeToken, decodeToken)) return;
+
+                    package.PreviewPath = image == null ? "" : full;
+                    package.PreviewImage = image;
+                });
+            }
+        });
     }
 
     private void RebuildCountries()

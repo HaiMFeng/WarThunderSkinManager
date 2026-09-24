@@ -27,7 +27,8 @@ public partial class ExportOptionsWindow : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        if (!_options.Validate()) return;
+        if (!_options.Validate()) return;          // 校验失败 → 留在本窗口显示错误
+        if (!_options.ConfirmTargetOverwrite()) return; // 取消覆盖 → 留在本窗口改路径 / 改名
         DialogResult = true;
     }
 

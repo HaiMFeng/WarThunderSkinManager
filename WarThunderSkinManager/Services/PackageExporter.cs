@@ -25,16 +25,33 @@ public static class PackageExporter
     /// 导出到文件夹：`location` 为目标位置；`createFolder` 时在其下创建 `folderName`
     /// （空则回退包名）。返回**实际写出**的目标目录（状态栏展示用）。
     /// </summary>
+    /// <summary>文件夹导出的最终目标目录（覆盖确认与实际导出共用同一计算）。</summary>
+    public static string PreviewFolderTarget(string packageName, string fallbackId, string location,
+        bool createFolder, string folderName)
+    {
+        var target = location;
+        if (createFolder)
+            target = Path.Combine(location,
+                ArchiveFolderName(string.IsNullOrWhiteSpace(folderName) ? packageName : folderName, fallbackId));
+        return target;
+    }
+
+    /// <summary>压缩包导出的最终文件路径（覆盖确认与实际导出共用同一计算）。</summary>
+    public static string PreviewArchivePath(string packageName, string fallbackId, string location,
+        string archiveName, string format)
+    {
+        var name = ArchiveFolderName(string.IsNullOrWhiteSpace(archiveName) ? packageName : archiveName, fallbackId);
+        var isTar = string.Equals(format, "tar", StringComparison.OrdinalIgnoreCase);
+        return Path.Combine(location, name + (isTar ? ".tar" : ".zip"));
+    }
+
     public static string Export(string resourceDir, string packageId, string location,
         bool createFolder, string folderName, TextureNaming naming)
     {
         var meta = PackageStore.Load(resourceDir, packageId)
                    ?? throw new InvalidOperationException($"涂装包不存在：{packageId}");
 
-        var targetDir = location;
-        if (createFolder)
-            targetDir = Path.Combine(location,
-                ArchiveFolderName(string.IsNullOrWhiteSpace(folderName) ? meta.Name : folderName, meta.Id));
+        var targetDir = PreviewFolderTarget(meta.Name, meta.Id, location, createFolder, folderName);
 
         Directory.CreateDirectory(targetDir);
         var sourceBlk = EnsureSourceBlk(resourceDir, packageId);
@@ -53,8 +70,9 @@ public static class PackageExporter
         var meta = PackageStore.Load(resourceDir, packageId)
                    ?? throw new InvalidOperationException($"涂装包不存在：{packageId}");
 
-        var name = ArchiveFolderName(string.IsNullOrWhiteSpace(archiveName) ? meta.Name : archiveName, meta.Id);
-        var isTar = string.Equals(format, "tar", StringComparison.OrdinalIgnoreCase);
+        var archivePath = PreviewArchivePath(meta.Name, meta.Id, location, archiveName, format);
+        var name = Path.GetFileNameWithoutExtension(archivePath);
+        var isTar = archivePath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase);
 
         var root = Path.Combine(Path.GetTempPath(), "wtsm-export-" + Guid.NewGuid().ToString("N"));
         var staging = Path.Combine(root, name);
@@ -65,7 +83,6 @@ public static class PackageExporter
             var sourceBlk = EnsureSourceBlk(resourceDir, packageId);
             WriteBlkAndTextures(resourceDir, meta, sourceBlk, staging, naming);
 
-            var archivePath = Path.Combine(location, name + (isTar ? ".tar" : ".zip"));
             using (var stream = File.Create(archivePath))
             {
                 if (isTar)
