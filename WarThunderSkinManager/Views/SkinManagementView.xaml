@@ -231,6 +231,7 @@
                                     <MenuItem Header="{loc:Loc pkg.duplicate}"
                                               Command="{Binding PlacementTarget.DataContext.Skins.DuplicatePackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                               IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    <Separator/>
                                     <MenuItem Header="{loc:Loc pkg.export}"
                                               Command="{Binding PlacementTarget.DataContext.Skins.ExportPackageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                               IsEnabled="{Binding PlacementTarget.DataContext.Skins.HasSelectedPackage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
