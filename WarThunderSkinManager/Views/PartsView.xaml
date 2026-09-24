@@ -120,20 +120,25 @@
                                    TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"/>
                     </StackPanel>
 
-                    <!-- 已选择 -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding PartReuse.HasSelection}" Value="False">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
+                    <!-- 已选择（结果列表用 ListBox 虚拟化：搜索结果可能上百条，避免一次性渲染挤爆 UI） -->
+                    <Grid>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PartReuse.HasSelection}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-                            <Grid>
+                        <Grid Grid.Row="0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -149,6 +154,7 @@
                                         CommandParameter="{Binding PartReuse.SelectedGroup}"/>
                             </Grid>
 
+                            <StackPanel Grid.Row="1">
                             <!-- 组内成员 -->
                             <TextBlock Text="{loc:Loc parts.members}" Style="{StaticResource SectionTitle}" Margin="0,20,0,8"/>
                             <ItemsControl ItemsSource="{Binding PartReuse.SelectedGroup.Members}">
@@ -200,7 +206,9 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
+                            </StackPanel>
 
+                            <StackPanel Grid.Row="2">
                             <!-- 搜索添加 -->
                             <TextBlock Text="{loc:Loc parts.search.label}" Style="{StaticResource SectionTitle}" Margin="0,24,0,8"/>
                             <TextBlock Text="{loc:Loc parts.search.hint}" Style="{StaticResource PageSubtitle}"
@@ -208,21 +216,70 @@
                             <TextBox Style="{StaticResource BaseTextBox}" Width="420" HorizontalAlignment="Left"
                                      Text="{Binding PartReuse.SearchText, UpdateSourceTrigger=PropertyChanged}"/>
 
+                            <!-- 加载动画：部件表后台构建期间显示，就绪后一次性显示结果列表（§4） -->
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PartReuse.IsCatalogLoading}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <ProgressBar Width="14" Height="14" IsIndeterminate="True" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc parts.search.loading}" Margin="8,0,0,0"
+                                           VerticalAlignment="Center" Style="{StaticResource PageSubtitle}"/>
+                            </StackPanel>
+
                             <TextBlock Text="{loc:Loc parts.search.empty}" Margin="0,8,0,0">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding PartReuse.SearchResults.Count}" Value="0">
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding PartReuse.SearchResults.Count}" Value="0"/>
+                                                    <Condition Binding="{Binding PartReuse.IsCatalogLoading}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
                                                 <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
+                                            </MultiDataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
+                            </StackPanel>
 
-                            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding PartReuse.SearchResults}">
-                                <ItemsControl.ItemTemplate>
+                            <!-- 结果列表：ListBox 自带 VirtualizingStackPanel，只渲染可见行 -->
+                            <ListBox Grid.Row="3" Margin="0,10,0,0"
+                                     Background="Transparent" BorderThickness="0" Padding="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                     ItemsSource="{Binding PartReuse.SearchResults}">
+                                <ListBox.Style>
+                                    <Style TargetType="ListBox">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PartReuse.IsCatalogLoading}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ListBox.Style>
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,8">
                                             <Grid>
@@ -268,10 +325,9 @@
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </ScrollViewer>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

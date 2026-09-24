@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WarThunderSkinManager.Models;
@@ -119,6 +122,12 @@ public partial class PartReuseViewModel : ObservableObject
 
     [ObservableProperty] private string _statusMessage = "";
 
+    /// <summary>
+    /// 部件表是否正在后台加载（进入本页 / 库变动后首次构建较重，§4）：
+    /// 为 true 时搜索结果显示**加载动画**，就绪后一次性显示列表。
+    /// </summary>
+    [ObservableProperty] private bool _isCatalogLoading;
+
     public bool HasGroups => Groups.Count > 0;
 
     public bool HasSelection => SelectedGroup != null;
@@ -127,12 +136,48 @@ public partial class PartReuseViewModel : ObservableObject
 
     partial void OnSelectedGroupChanged(PartGroupVm? value) => OnPropertyChanged(nameof(HasSelection));
 
-    /// <summary>导航进入本页时调用：重读组数据与部件表（库可能已变化）。</summary>
+    /// <summary>
+    /// 导航进入本页时调用：组数据（小 JSON，快）先出；搜索列表显示**加载动画**，
+    /// 部件表（首次构建较重，全库扫描 + 逐贴图检查，§4）后台就绪后一次性显示。
+    /// </summary>
     public void Refresh()
     {
         LoadEntries();
-        LoadCatalog();
-        RebuildSearch();
+
+        var resourceDir = _config.ResourceDirectory;
+
+        if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
+        {
+            _catalog = new List<KeyValuePair<string, List<string>>>();
+            IsCatalogLoading = false;
+            RebuildSearch();
+            return;
+        }
+
+        // 先进入加载态：列表区域显示动画，避免同步渲染大列表造成进入卡顿
+        IsCatalogLoading = true;
+        SearchResults = new ObservableCollection<PartSearchResultVm>();
+
+        Task.Run(() => PartCatalog.AllFroms(resourceDir)).ContinueWith(t =>
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                IsCatalogLoading = false;
+
+                if (t.IsFaulted)
+                {
+                    _catalog = new List<KeyValuePair<string, List<string>>>();
+                    ShowStatus(Loc.Format("parts.catalogFailed",
+                        t.Exception?.GetBaseException().Message ?? "?"));
+                }
+                else
+                {
+                    LoadCatalog();
+                }
+
+                RebuildSearch();
+            });
+        });
     }
 
     [RelayCommand]

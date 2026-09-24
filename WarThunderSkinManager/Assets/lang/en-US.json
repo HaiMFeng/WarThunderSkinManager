@@ -327,10 +327,12 @@
   "parts.needGroup": "Please select a group on the left first",
   "parts.added": "Added '{0}' to '{1}'",
   "parts.saveFailed": "Failed to save groups: {0}",
+  "parts.catalogFailed": "Failed to load the part catalog: {0}",
   "parts.search.label": "Add Parts",
   "parts.search.hint": "Filter part positions in the library by name and add them to the selected group on the left; a part position belongs to at most one group and is moved automatically.",
   "parts.search.add": "Add",
   "parts.search.empty": "No matching part positions",
+  "parts.search.loading": "Loading the part catalog…",
   "parts.groupedIn": "In group: {0}",
   "parts.vehiclesNone": "No usable textures in the library",
   "parts.vehiclesMulti": "{0} and {1} vehicles in total"

@@ -328,10 +328,12 @@
   "parts.needGroup": "请先在左侧选择一个组",
   "parts.added": "已把「{0}」加入「{1}」",
   "parts.saveFailed": "保存分组失败：{0}",
+  "parts.catalogFailed": "部件表加载失败：{0}",
   "parts.search.label": "添加部件",
   "parts.search.hint": "按名称筛选库中的部件位置，加入左侧所选组；同一部件位置至多属于一个组，已在其他组时自动移出。",
   "parts.search.add": "加入",
   "parts.search.empty": "没有匹配的部件位置",
+  "parts.search.loading": "正在加载部件表…",
   "parts.groupedIn": "已属于：{0}",
   "parts.vehiclesNone": "库中没有可用贴图",
   "parts.vehiclesMulti": "{0} 等 {1} 台载具"

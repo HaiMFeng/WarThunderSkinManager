@@ -38,6 +38,9 @@ public static class PartCatalog
     private static string _resourceDir = "";
     private static bool _built;
 
+    /// <summary>构建本表所用的快照实例；与 <see cref="LibraryService.Cached"/> 不一致 = 快照已刷新 → 重建。</summary>
+    private static LibrarySnapshot? _builtFrom;
+
     /// <summary>某个部件位置（<c>from</c>，自动归一化去 <c>*</c>）在库中**全部可用贴图**。</summary>
     public static IReadOnlyList<Entry> ForFrom(string resourceDir, string from)
     {
@@ -67,7 +70,11 @@ public static class PartCatalog
         }
     }
 
-    /// <summary>库变化后调用：丢弃缓存，下次访问重建。</summary>
+    /// <summary>
+    /// 库变化后调用：丢弃部件表缓存，**同时丢弃内存索引快照**——
+    /// 快照反映的是变化前的库，若保留会被快照化构建误当最新数据（过期读）。
+    /// 应用内的调用点随后都会重建快照（RefreshLibrary / 全量重建），期间无渲染发生。
+    /// </summary>
     public static void Invalidate()
     {
         lock (Gate)
@@ -75,6 +82,8 @@ public static class PartCatalog
             _table = new Dictionary<string, List<Entry>>(StringComparer.OrdinalIgnoreCase);
             _resourceDir = "";
             _built = false;
+            _builtFrom = null;
+            LibraryService.PutCached(string.Empty, string.Empty, null);
         }
     }
 
@@ -84,22 +93,32 @@ public static class PartCatalog
 
         lock (Gate)
         {
-            if (_built && string.Equals(_resourceDir, dir, StringComparison.OrdinalIgnoreCase)) return _table;
+            // 与内存快照实例绑定：快照被重建（导入 / 全量重建等）→ 旧表自动失效
+            if (_built && string.Equals(_resourceDir, dir, StringComparison.OrdinalIgnoreCase)
+                && ReferenceEquals(_builtFrom, LibraryService.Cached)) return _table;
 
             _table = Build(dir);
             _resourceDir = dir;
             _built = true;
+            _builtFrom = LibraryService.Cached;
             return _table;
         }
     }
 
-    /// <summary>遍历库中所有载具的包，按 <c>from</c> 建索引。</summary>
+    /// <summary>
+    /// 按 <c>from</c> 建索引。数据源优先**内存索引快照**（§4：包与映射已解析好 → 纯内存、毫秒级）；
+    /// 没有内存快照才回退扫库。
+    /// </summary>
     private static Dictionary<string, List<Entry>> Build(string resourceDir)
     {
         var table = new Dictionary<string, List<Entry>>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir)) return table;
 
-        foreach (var vehicle in VehicleAggregator.BuildAll(resourceDir))
+        var snapshot = LibraryService.TryGetCachedFor(resourceDir);
+        var vehicles = snapshot != null
+            ? LibraryService.ToVehicles(snapshot)
+            : VehicleAggregator.BuildAll(resourceDir);
+
+        foreach (var vehicle in vehicles)
             foreach (var package in vehicle.SkinPackages)
             {
                 var blobs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

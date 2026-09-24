@@ -88,6 +88,15 @@ public static class LibraryService
     public static LibrarySnapshot? TakeCached(string configDir, string resourceDir)
         => Cached != null && _cachedKey == Key(configDir, resourceDir) ? Cached : null;
 
+    /// <summary>
+    /// 仅按**资源目录**取内存快照（<see cref="PartCatalog"/> 复用，§4）：
+    /// 部件表构建由此直接用已解析好的包结构，免去重复扫库。配置目录不参与匹配——部件表只关心库内容。
+    /// </summary>
+    public static LibrarySnapshot? TryGetCachedFor(string resourceDir)
+        => Cached != null && _cachedKey.EndsWith("|" + resourceDir, StringComparison.OrdinalIgnoreCase)
+            ? Cached
+            : null;
+
     public static void PutCached(string configDir, string resourceDir, LibrarySnapshot? snapshot)
     {
         Cached = snapshot;
