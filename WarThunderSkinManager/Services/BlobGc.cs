@@ -98,6 +98,8 @@ public static class BlobGc
     /// </summary>
     public static void CollectInBackground(string resourceDir, Action<BlobGcReport>? onDone = null)
     {
+        // 目录迁移等长时操作进行中 → 让路（回收会删文件，与搬家并发会造成访问冲突，见 AppBusy）
+        if (AppBusy.IsBusy) return;
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir)) return;
 
         Task.Run(() =>

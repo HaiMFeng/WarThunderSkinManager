@@ -240,6 +240,9 @@ public partial class MainViewModel : ObservableObject
         var window = new MigrationProgressWindow(Loc["migrate.running"]) { Owner = Application.Current?.MainWindow };
         var reporter = new Progress<MigrationProgress>(window.Update);
 
+        // 忙碌锁：迁移期间后台任务（快照核对 / blob 回收）见忙即让，防止并发读写造成访问冲突
+        using var busy = AppBusy.Enter();
+
         var task = Task.Run(() =>
         {
             var result = new MigrationResult();

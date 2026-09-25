@@ -245,6 +245,8 @@ public static class LibraryService
     public static void VerifyInBackground(string configDir, string resourceDir,
         LibrarySnapshot? current, Action<LibrarySnapshot>? onRebuilt = null)
     {
+        // 目录迁移等长时操作进行中 → 让路（并发读写会造成访问冲突与脏快照，见 AppBusy）
+        if (AppBusy.IsBusy) return;
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir)) return;
 
         System.Threading.Tasks.Task.Run(() =>
