@@ -226,6 +226,32 @@ public partial class MainViewModel : ObservableObject
         if (resourceChanged && !resourceRepointOnly) changes.Add(("resource", _initialResourceDir, Config.ResourceDirectory));
         if (userSkinsChanged) changes.Add(("userSkins", _initialUserSkinsDir, Config.UserSkinsDirectory));
 
+        // 无实际搬迁（如"目标已是程序库且源为空"的直接改指）→ 不弹迁移提醒，直接刷新
+        if (changes.Count == 0)
+        {
+            PartCatalog.Invalidate();
+            Skins.Reproject();
+            Vehicles.Reproject();
+            ShowStatus(Loc["migrate.reuse"]);
+            return true;
+        }
+
+        // 迁移提醒（已有数据）：列明迁移范围与耗时特性，取消则终止（调用方回滚目录变更）
+        var scope = string.Join("\n", changes.Select(c => c.Kind switch
+        {
+            "config" => Loc["migrate.scope.config"],
+            "resource" => Loc["migrate.scope.resource"],
+            _ => Loc["migrate.scope.userSkins"]
+        }));
+
+        var confirmed = MessageDialog.Confirm(
+            Loc.Format("migrate.confirm", scope),
+            Loc["migrate.confirmTitle"],
+            Loc["common.continue"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
+
+        if (!confirmed) return false;
+
         var window = new MigrationProgressWindow(Loc["migrate.running"]) { Owner = Application.Current?.MainWindow };
         var reporter = new Progress<MigrationProgress>(window.Update);
 
