@@ -207,6 +207,10 @@
                     </Rectangle>
                 </Grid>
 
+                <!-- 使用声明（一句话版；完整声明见项目 README） -->
+                <TextBlock Text="{loc:Loc settings.about.disclaimer}" Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap" Margin="0,0,0,14"/>
+
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>

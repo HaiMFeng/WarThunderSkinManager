@@ -391,5 +391,6 @@
   "output.warn.textureMissing": "{0}：贴图文件缺失（{1}），已跳过该部件",
   "output.warn.deleteFailed": "删除旧贴图失败 {0}：{1}",
   "datatables.source.user": "用户表（{0}）",
-  "datatables.source.builtin": "内置表（嵌入资源）"
+  "datatables.source.builtin": "内置表（嵌入资源）",
+  "settings.about.disclaimer": "本工具仅供个人管理游戏涂装，涂装作品版权归原作者所有；公开分享导出内容前须取得原作者授权。完整声明见项目主页 README。"
 }

@@ -391,5 +391,6 @@
   "output.warn.textureMissing": "{0}: texture file missing ({1}), the part was skipped",
   "output.warn.deleteFailed": "Failed to delete old texture {0}: {1}",
   "datatables.source.user": "User table ({0})",
-  "datatables.source.builtin": "Built-in table (embedded resource)"
+  "datatables.source.builtin": "Built-in table (embedded resource)",
+  "settings.about.disclaimer": "This tool is for personal skin management only; all skin copyrights belong to their original authors. Obtain the original authors' permission before publicly sharing exported content. See the project README for the full disclaimer."
 }
