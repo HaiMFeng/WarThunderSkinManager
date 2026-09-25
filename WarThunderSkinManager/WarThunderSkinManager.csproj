@@ -10,6 +10,8 @@
              发布新构建只需改这里（Version 生成 InformationalVersion，界面显示时加 v 前缀）。 -->
         <Version>0.1.0-dev</Version>
         <Authors>HaiMFeng</Authors>
+        <!-- exe / 窗口图标（多尺寸 ico，16–256） -->
+        <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>
@@ -25,6 +27,9 @@
       <!-- 内置语言文件（zh-CN 默认 / en-US；界面语言切换见 docs/软件功能设计.md §3.9） -->
       <EmbeddedResource Include="Assets\lang\zh-CN.json" />
       <EmbeddedResource Include="Assets\lang\en-US.json" />
+      <!-- 品牌资源：窗口图标（多尺寸 ico）与应用内灰轮廓镂空 Logo（经 OpacityMask 按主题染色） -->
+      <Resource Include="Assets\app.ico" />
+      <Resource Include="Assets\logo-outline.png" />
     </ItemGroup>
 
 </Project>

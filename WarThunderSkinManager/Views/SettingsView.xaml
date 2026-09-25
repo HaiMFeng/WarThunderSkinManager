@@ -183,10 +183,19 @@
                 <Button Content="{loc:Loc settings.save}" Style="{StaticResource PrimaryButton}"
                         Command="{Binding SaveCommand}"/>
             </StackPanel>
-            <!-- 关于：作者与版本（来源 csproj，经程序集特性读取，编译进 exe 便于区分构建） -->
+            <!-- 关于：Logo + 作者与版本（来源 csproj，经程序集特性读取，编译进 exe 便于区分构建） -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+
+                    <!-- 大尺寸镂空 Logo：OpacityMask 以主题色染色（灰轮廓图随亮暗主题适配） -->
+                    <Grid Width="96" Height="96" HorizontalAlignment="Center" Margin="0,0,0,14">
+                        <Rectangle Fill="{StaticResource BrushTextSecondary}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="/Assets/logo-outline.png" Stretch="Uniform"/>
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Grid>
 
                     <Grid>
                         <Grid.ColumnDefinitions>

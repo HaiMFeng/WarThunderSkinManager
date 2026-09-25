@@ -5,6 +5,7 @@
         xmlns:vm="clr-namespace:WarThunderSkinManager.ViewModels"
         xmlns:views="clr-namespace:WarThunderSkinManager.Views"
         Title="{loc:Loc app.title}"
+        Icon="Assets/app.ico"
         Height="720" Width="1120"
         MinWidth="900" MinHeight="560"
         Opacity="0"
@@ -48,9 +49,19 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
-                           VerticalAlignment="Center" Margin="14,0"
-                           FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <!-- 应用 Logo：灰轮廓镂空图经 OpacityMask 以主题主色染色（随主题切换） -->
+                    <Grid Width="16" Height="16">
+                        <Rectangle Fill="{StaticResource BrushPrimary}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="/Assets/logo-outline.png" Stretch="Uniform"/>
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Grid>
+                    <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                               VerticalAlignment="Center" Margin="8,0,0,0"
+                               FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}"/>
+                </StackPanel>
                 <!-- 全局状态提示：统一放在应用名右侧（所有页面的操作反馈都来这里）；
                      连续相同消息不重新赋值，改由 StatusFlash 驱动一次主色光晕脉冲（见 MainWindow.xaml.cs） -->
                 <TextBlock x:Name="StatusText" Grid.Column="1"
