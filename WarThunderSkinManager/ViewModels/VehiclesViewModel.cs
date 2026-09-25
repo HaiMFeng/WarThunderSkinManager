@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -312,41 +313,61 @@ public partial class VehiclesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 启动加载：与涂装管理页共用同一份索引快照（§4）——快就先出界面，
-    /// 没有快照时交给后台构建，不在 UI 线程扫库。
+    /// 启动加载：与涂装管理页共用同一份索引快照（§4）——先取**内存快照**（命中即零成本），
+    /// 缺失时磁盘反序列化 / 全量构建都在**后台**执行（140 包的索引 JSON 反序列化是百毫秒级，UI 线程会卡），
+    /// 完成后回 UI 应用；随后后台核对外部变化。
     /// </summary>
     private void InitializeLibrary()
     {
-        var snapshot = LibraryService.TakeCached(_config.ConfigDirectory, _config.ResourceDirectory)
-                       ?? LibraryService.LoadSnapshot(_config.ConfigDirectory, _config.ResourceDirectory);
+        LoadSnapshotThen(snapshot =>
+        {
+            ApplySnapshot(snapshot);
 
-        if (snapshot != null) ApplySnapshot(snapshot);
-
-        LibraryService.VerifyInBackground(_config.ConfigDirectory, _config.ResourceDirectory, snapshot, fresh =>
-            System.Windows.Application.Current?.Dispatcher.Invoke(() => ApplySnapshot(fresh)));
+            LibraryService.VerifyInBackground(_config.ConfigDirectory, _config.ResourceDirectory, snapshot, fresh =>
+                System.Windows.Application.Current?.Dispatcher.Invoke(() => ApplySnapshot(fresh)));
+        });
     }
 
     /// <summary>
-    /// 刷新载具列表：优先用**内存/磁盘快照**（导航到本页不再扫库，§4），
-    /// 只在两者都没有时才全量重建；随后后台核对外部变化。
+    /// 刷新载具列表：优先用**内存快照**（导航到本页零成本，§4）；内存快照缺失
+    /// （如改包后被 <c>PartCatalog.Invalidate</c> 清掉）时，磁盘反序列化 / 全量构建也一律放**后台**，
+    /// 完成后回 UI 应用——**任何情况下不在 UI 线程读库**。
     /// </summary>
     private void RefreshLibrary()
     {
-        try
-        {
-            var configDir = _config.ConfigDirectory;
-            var resourceDir = _config.ResourceDirectory;
+        LoadSnapshotThen(ApplySnapshot);
+    }
 
-            var snapshot = LibraryService.TakeCached(configDir, resourceDir)
-                           ?? LibraryService.LoadSnapshot(configDir, resourceDir)
-                           ?? LibraryService.Build(configDir, resourceDir);
+    /// <summary>内存快照 → 直接应用；否则后台取（磁盘反序列化 / 全量构建）后回 UI 线程应用。</summary>
+    private void LoadSnapshotThen(Action<LibrarySnapshot> apply)
+    {
+        var configDir = _config.ConfigDirectory;
+        var resourceDir = _config.ResourceDirectory;
 
-            ApplySnapshot(snapshot);
-        }
-        catch (Exception ex)
+        var cached = LibraryService.TakeCached(configDir, resourceDir);
+        if (cached != null)
         {
-            ShowStatus(ex.Message);
+            apply(cached);
+            return;
         }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+
+        Task.Run(() => LibraryService.LoadSnapshot(configDir, resourceDir)
+                      ?? LibraryService.Build(configDir, resourceDir))
+            .ContinueWith(t =>
+            {
+                dispatcher?.Invoke(() =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        ShowStatus(t.Exception?.GetBaseException().Message ?? "?");
+                        return;
+                    }
+
+                    if (t.Result != null) apply(t.Result);
+                });
+            });
     }
 
     /// <summary>快照 → 界面（显示名 → 排序 → 列表，尽量保持选中）。</summary>
