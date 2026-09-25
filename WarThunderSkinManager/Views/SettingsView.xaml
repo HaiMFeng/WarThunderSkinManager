@@ -192,9 +192,9 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- 关于：固定在右侧空白区，不随设置内容滚动；Logo + 作者与版本（来源 csproj，经程序集特性读取） -->
+        <!-- 关于：固定在右侧空白区，占满整列高度，不随设置内容滚动；Logo + 作者与版本（来源 csproj） -->
         <Border Grid.Column="1" Style="{StaticResource Card}" Width="250"
-                VerticalAlignment="Top" Margin="0,20,16,0">
+                VerticalAlignment="Stretch" Margin="16,20,16,20">
             <StackPanel>
                 <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
 
