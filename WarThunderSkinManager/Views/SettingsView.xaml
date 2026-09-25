@@ -8,7 +8,7 @@
             <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
-        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Hidden">
             <StackPanel MaxWidth="620" HorizontalAlignment="Left">
 
             <TextBlock Text="{loc:Loc settings.title}" Style="{StaticResource PageTitle}"/>
