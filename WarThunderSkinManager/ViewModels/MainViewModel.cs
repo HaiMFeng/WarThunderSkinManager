@@ -571,19 +571,25 @@ public partial class MainViewModel : ObservableObject
         SelectedTab = tab;
 
         // 切页只做**零扫描**的重新投影（§4）：在另一页做的改动（如国家归类、导入 / 删除）
-        // 借此反映；库本身的变化由启动后台核对与设置页「资源库维护」负责
-        switch (tab)
-        {
-            case TabKey.Skins:
-                Skins.Reproject();
-                break;
-            case TabKey.Vehicles:
-                Vehicles.Reproject();
-                break;
-            case TabKey.PartReuse:
-                PartReuse.Refresh(); // 重读组数据与部件表（库可能已变化）
-                break;
-        }
+        // 借此反映；库本身的变化由启动后台核对与设置页「资源库维护」负责。
+        // 重投影排到 **Background 优先级**：入场动画（约 0.25s）先播完，列表重建不再打断动画
+        Application.Current?.Dispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Background,
+            new Action(() =>
+            {
+                switch (tab)
+                {
+                    case TabKey.Skins:
+                        Skins.Reproject();
+                        break;
+                    case TabKey.Vehicles:
+                        Vehicles.Reproject();
+                        break;
+                    case TabKey.PartReuse:
+                        PartReuse.Refresh(); // 重读组数据与部件表（库可能已变化）
+                        break;
+                }
+            }));
     }
 
     [RelayCommand]

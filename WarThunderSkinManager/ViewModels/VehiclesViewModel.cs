@@ -357,7 +357,8 @@ public partial class VehiclesViewModel : ObservableObject
                       ?? LibraryService.Build(configDir, resourceDir))
             .ContinueWith(t =>
             {
-                dispatcher?.Invoke(() =>
+                // Background 优先级：应用快照不与入场动画 / 渲染抢 UI 线程
+                dispatcher?.BeginInvoke(() =>
                 {
                     if (t.IsFaulted)
                     {
@@ -366,7 +367,7 @@ public partial class VehiclesViewModel : ObservableObject
                     }
 
                     if (t.Result != null) apply(t.Result);
-                });
+                }, System.Windows.Threading.DispatcherPriority.Background);
             });
     }
 
