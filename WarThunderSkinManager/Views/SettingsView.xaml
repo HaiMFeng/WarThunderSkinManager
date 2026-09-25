@@ -189,7 +189,7 @@
                     <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
 
                     <!-- 大尺寸镂空 Logo：OpacityMask 以主题色染色（灰轮廓图随亮暗主题适配） -->
-                    <Grid Width="96" Height="96" HorizontalAlignment="Center" Margin="0,0,0,14">
+                    <Grid Width="96" Height="96" HorizontalAlignment="Left" Margin="0,0,0,14">
                         <Rectangle Fill="{StaticResource BrushTextSecondary}">
                             <Rectangle.OpacityMask>
                                 <ImageBrush ImageSource="/Assets/logo-outline.png" Stretch="Uniform"/>
