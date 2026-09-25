@@ -47,7 +47,7 @@
   "wizard.done": "Directories configured; you can start importing skins",
   "migrate.running": "Migrating directory data…",
   "migrate.confirmTitle": "Migrate Directory Data",
-  "migrate.confirm": "A directory change was detected; the following data will be migrated from the old directory to the new one:\n\n{0}\n\nThis is instant within the same disk; across disks the duration depends on the data size, and it can be canceled at any time — the source data is kept and the directory change is not saved. Migrate now?",
+  "migrate.confirm": "When changing this directory, the following data will be migrated to the new location:\n\n{0}\n\nThis is instant within the same disk; across disks the duration depends on the data size, and it can be canceled at any time — the source data is kept. After confirming, choose the new location.",
   "migrate.scope.config": "Configuration data (language, mappings, index)",
   "migrate.scope.resource": "Resource library (skin packages and textures, may be large)",
   "migrate.scope.userSkins": "UserSkins output (WTSM)",

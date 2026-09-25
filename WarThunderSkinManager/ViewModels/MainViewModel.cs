@@ -237,22 +237,6 @@ public partial class MainViewModel : ObservableObject
             return true;
         }
 
-        // 迁移提醒（已有数据）：列明迁移范围与耗时特性，取消则终止（调用方回滚目录变更）
-        var scope = string.Join("\n", changes.Select(c => c.Kind switch
-        {
-            "config" => Loc["migrate.scope.config"],
-            "resource" => Loc["migrate.scope.resource"],
-            _ => Loc["migrate.scope.userSkins"]
-        }));
-
-        var confirmed = MessageDialog.Confirm(
-            Loc.Format("migrate.confirm", scope),
-            Loc["migrate.confirmTitle"],
-            Loc["common.continue"], Loc["common.cancel"],
-            icon: DialogIcon.Warning);
-
-        if (!confirmed) return false;
-
         var window = new MigrationProgressWindow(Loc["migrate.running"]) { Owner = Application.Current?.MainWindow };
         var reporter = new Progress<MigrationProgress>(window.Update);
 
@@ -554,7 +538,7 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void BrowseUserSkins() => ChangeDirectory(Config.UserSkinsDirectory,
-        picked => Config.UserSkinsDirectory = picked);
+        "migrate.scope.userSkins", picked => Config.UserSkinsDirectory = picked);
 
     /// <summary>在资源管理器中打开该目录（设置页各目录右侧的「打开」，便于直接查看/整理文件）。</summary>
     [RelayCommand]
@@ -622,18 +606,34 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void BrowseResource() => ChangeDirectory(Config.ResourceDirectory,
-        picked => Config.ResourceDirectory = picked);
+        "migrate.scope.resource", picked => Config.ResourceDirectory = picked);
 
     [RelayCommand]
     private void BrowseConfig() => ChangeDirectory(Config.ConfigDirectory,
-        picked => Config.ConfigDirectory = picked);
+        "migrate.scope.config", picked => Config.ConfigDirectory = picked);
 
     /// <summary>
-    /// 选择目录 → **先迁移数据**（后台 + 进度窗，可取消）→ 再自动保存；取消 / 失败**回滚**到原目录。
+    /// 更换目录：**迁移提醒在选择位置之前**（旧目录有数据时先告知范围与耗时特性，用户确认后才弹选择框）→
+    /// 选定后迁移（后台 + 进度窗，可取消）→ 自动保存；取消 / 失败**回滚**到原目录。
     /// 迁移必须挂在变更瞬间：目录一经保存，页面与静态服务就会读新目录——挂在「保存」按钮上会被绕过。
     /// </summary>
-    private void ChangeDirectory(string current, Action<string> apply)
+    private void ChangeDirectory(string current, string scopeKey, Action<string> apply)
     {
+        // 旧目录有数据 → 先提醒（选择位置之前）；空目录无需迁移，直接选择
+        var hasData = !string.IsNullOrWhiteSpace(current) && Directory.Exists(current)
+                      && Directory.EnumerateFileSystemEntries(current).Any();
+
+        if (hasData)
+        {
+            var warn = MessageDialog.Confirm(
+                Loc.Format("migrate.confirm", Loc[scopeKey]),
+                Loc["migrate.confirmTitle"],
+                Loc["common.continue"], Loc["common.cancel"],
+                icon: DialogIcon.Warning);
+
+            if (!warn) return;
+        }
+
         var dialog = new OpenFolderDialog
         {
             Title = Loc["settings.chooseFolder"],

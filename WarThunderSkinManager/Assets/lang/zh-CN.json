@@ -47,7 +47,7 @@
   "wizard.done": "目录已配置，可以开始导入涂装",
   "migrate.running": "正在迁移目录数据…",
   "migrate.confirmTitle": "迁移目录数据",
-  "migrate.confirm": "检测到目录变更，以下数据将从旧目录迁移到新目录：\n\n{0}\n\n同一磁盘内瞬时完成；跨磁盘时耗时与数据量相关，期间可随时取消——取消后源数据保留，本次目录变更不保存。确认迁移？",
+  "migrate.confirm": "更换该目录时，以下数据将迁移到新位置：\n\n{0}\n\n同一磁盘内瞬时完成；跨磁盘时耗时与数据量相关，期间可随时取消——取消后源数据保留。确认后请选择新位置。",
   "migrate.scope.config": "配置数据（语言、映射、索引）",
   "migrate.scope.resource": "资源库（涂装包与贴图，可能较大）",
   "migrate.scope.userSkins": "UserSkins 输出（WTSM）",
