@@ -2,8 +2,14 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="620" HorizontalAlignment="Left">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="620" HorizontalAlignment="Left">
 
             <TextBlock Text="{loc:Loc settings.title}" Style="{StaticResource PageTitle}"/>
             <TextBlock Text="{loc:Loc settings.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
@@ -183,58 +189,61 @@
                 <Button Content="{loc:Loc settings.save}" Style="{StaticResource PrimaryButton}"
                         Command="{Binding SaveCommand}"/>
             </StackPanel>
-            <!-- 关于：Logo + 作者与版本（来源 csproj，经程序集特性读取，编译进 exe 便于区分构建） -->
-            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+            </StackPanel>
+        </ScrollViewer>
 
-                    <!-- 大尺寸镂空 Logo：OpacityMask 以主题色染色（灰轮廓图随亮暗主题适配） -->
-                    <Grid Width="96" Height="96" HorizontalAlignment="Left" Margin="0,0,0,14">
-                        <Rectangle Fill="{StaticResource BrushTextSecondary}">
-                            <Rectangle.OpacityMask>
-                                <ImageBrush ImageSource="/Assets/logo-outline.png" Stretch="Uniform"/>
-                            </Rectangle.OpacityMask>
-                        </Rectangle>
-                    </Grid>
+        <!-- 关于：固定在右侧空白区，不随设置内容滚动；Logo + 作者与版本（来源 csproj，经程序集特性读取） -->
+        <Border Grid.Column="1" Style="{StaticResource Card}" Width="250"
+                VerticalAlignment="Top" Margin="0,20,16,0">
+            <StackPanel>
+                <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
 
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" SharedSizeGroup="AboutLabel"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{loc:Loc settings.about.author}" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Margin="24,0,0,0">
-                            <Hyperlink Command="{Binding OpenLinkCommand}" CommandParameter="{Binding AuthorUrl}"
-                                       Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
-                                <Run Text="{Binding AboutAuthor, Mode=OneWay}"/>
-                            </Hyperlink>
-                        </TextBlock>
-                    </Grid>
-                    <Grid Margin="0,6,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" SharedSizeGroup="AboutLabel"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{loc:Loc settings.about.version}" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Margin="24,0,0,0"
-                                   ToolTip="{loc:Loc settings.about.versionTip}">
-                            <Hyperlink Command="{Binding CopyVersionCommand}"
-                                       Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
-                                <Run Text="{Binding AboutVersion, Mode=OneWay}"/>
-                            </Hyperlink>
-                        </TextBlock>
-                    </Grid>
+                <!-- 大尺寸镂空 Logo：OpacityMask 以主题色染色（灰轮廓图随亮暗主题适配） -->
+                <Grid Width="96" Height="96" HorizontalAlignment="Left" Margin="0,0,0,14">
+                    <Rectangle Fill="{StaticResource BrushTextSecondary}">
+                        <Rectangle.OpacityMask>
+                            <ImageBrush ImageSource="/Assets/logo-outline.png" Stretch="Uniform"/>
+                        </Rectangle.OpacityMask>
+                    </Rectangle>
+                </Grid>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <Button Content="{loc:Loc settings.about.openProject}" Style="{StaticResource SecondaryButton}"
-                                Command="{Binding OpenLinkCommand}"
-                                CommandParameter="{Binding ProjectUrl}"/>
-                        <Button Content="{loc:Loc settings.about.releases}" Style="{StaticResource SecondaryButton}"
-                                Margin="8,0,0,0" Command="{Binding OpenLinkCommand}"
-                                CommandParameter="{Binding ReleasesUrl}"/>
-                    </StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{loc:Loc settings.about.author}" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="1" Margin="12,0,0,0">
+                        <Hyperlink Command="{Binding OpenLinkCommand}" CommandParameter="{Binding AuthorUrl}"
+                                   Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
+                            <Run Text="{Binding AboutAuthor, Mode=OneWay}"/>
+                        </Hyperlink>
+                    </TextBlock>
+                </Grid>
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{loc:Loc settings.about.version}" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="1" Margin="12,0,0,0"
+                               ToolTip="{loc:Loc settings.about.versionTip}">
+                        <Hyperlink Command="{Binding CopyVersionCommand}"
+                                   Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
+                            <Run Text="{Binding AboutVersion, Mode=OneWay}"/>
+                        </Hyperlink>
+                    </TextBlock>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <Button Content="{loc:Loc settings.about.openProject}" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding OpenLinkCommand}"
+                            CommandParameter="{Binding ProjectUrl}"/>
+                    <Button Content="{loc:Loc settings.about.releases}" Style="{StaticResource SecondaryButton}"
+                            Margin="8,0,0,0" Command="{Binding OpenLinkCommand}"
+                            CommandParameter="{Binding ReleasesUrl}"/>
                 </StackPanel>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>
