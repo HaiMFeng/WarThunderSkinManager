@@ -725,12 +725,13 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            // 迁移意外失败 → 回滚目录并提示；**不能让异常上抛**（命令处理器抛出会崩溃整个程序）
             apply(current);
             PartExclusionService.Configure(Config.ConfigDirectory);
             DataTables.Configure(Config.ConfigDirectory);
-            throw;
+            ShowStatus(Loc.Format("migrate.failed", ex.Message));
         }
 
         AutoSave();

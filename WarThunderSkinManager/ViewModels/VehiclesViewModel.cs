@@ -359,6 +359,11 @@ public partial class VehiclesViewModel : ObservableObject
                       ?? LibraryService.Build(configDir, resourceDir))
             .ContinueWith(t =>
             {
+                // 迁移防护：加载期间目录被更换 → 丢弃过期快照（防止旧库数据覆盖新目录视图）
+                if (!SameDirectory(configDir, _config.ConfigDirectory)
+                    || !SameDirectory(resourceDir, _config.ResourceDirectory))
+                    return;
+
                 // Background 优先级：应用快照不与入场动画 / 渲染抢 UI 线程
                 dispatcher?.BeginInvoke(() =>
                 {
@@ -372,6 +377,11 @@ public partial class VehiclesViewModel : ObservableObject
                 }, System.Windows.Threading.DispatcherPriority.Background);
             });
     }
+
+    /// <summary>路径相同判断（含大小写不敏感与规范化；迁移防护用）。</summary>
+    private static bool SameDirectory(string a, string b)
+        => !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
+           && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>快照 → 界面（显示名 → 排序 → 列表，尽量保持选中）。</summary>
     public void ApplySnapshot(LibrarySnapshot snapshot)

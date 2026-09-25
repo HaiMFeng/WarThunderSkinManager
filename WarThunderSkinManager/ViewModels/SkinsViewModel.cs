@@ -607,10 +607,22 @@ public partial class SkinsViewModel : ObservableObject
             {
                 var snapshot = t.IsFaulted ? null : t.Result;
 
-                if (snapshot != null)
-                    ApplySnapshot(snapshot);
-                else
-                    ShowStatus(Loc["library.scanning"]); // 首次启动无快照：先说明，再后台建
+                // 迁移防护：加载期间目录被更换 → 这份快照已过期，丢弃（防止旧库数据覆盖新目录视图）
+                if (!SameDirectory(configDir, _config.ConfigDirectory)
+                    || !SameDirectory(resourceDir, _config.ResourceDirectory))
+                    return;
+
+                // **必须回 UI 线程**：ApplySnapshot 重建 ObservableCollection（跨线程变更会崩），
+                // ShowStatus 触发 DispatcherTimer（跨线程抛异常）
+                Application.Current?.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Background,
+                    new Action(() =>
+                    {
+                        if (snapshot != null)
+                            ApplySnapshot(snapshot);
+                        else
+                            ShowStatus(Loc["library.scanning"]); // 首次启动无快照：先说明，再后台建
+                    }));
 
                 // 回调在后台线程 → 切回 UI 线程更新界面（Background 优先级：不与入场动画 / 渲染抢线程）
                 LibraryService.VerifyInBackground(configDir, resourceDir, snapshot, fresh =>
@@ -618,11 +630,17 @@ public partial class SkinsViewModel : ObservableObject
                         System.Windows.Threading.DispatcherPriority.Background,
                         new Action(() =>
                         {
+                            if (!SameDirectory(resourceDir, _config.ResourceDirectory)) return; // 迁移防护
                             ApplySnapshot(fresh);
                             ShowStatus(Loc["library.refreshed"]);
                         })));
             });
     }
+
+    /// <summary>路径相同判断（含大小写不敏感与规范化；迁移防护用）。</summary>
+    private static bool SameDirectory(string a, string b)
+        => !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
+           && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// 全量重建库（**同步**，慢）：由本程序自己改了库之后调用（导入 / 删除 / 复制 / 改部件配置 / 清除数据），
@@ -1012,6 +1030,11 @@ public partial class SkinsViewModel : ObservableObject
                 canDeleteArchive: archives.Count > 0,
                 archives: archives,
                 extraStatus: skipped > 0 ? Loc.Format("import.archive.skipped", skipped) : "");
+        }
+        catch (Exception ex)
+        {
+            // async void 的未捕获异常会直接崩掉进程 → 兜底提示
+            ShowStatus(Loc.Format("import.failed", ex.Message));
         }
         finally
         {
