@@ -80,56 +80,85 @@ public static class DirectoryMigrator
 
         var total = plan.Sum(p => p.Bytes);
         var done = 0L;
+        var movedTargets = new List<string>();  // 同卷改名完成（源已不在，数据完整地在目标）
+        var copiedTargets = new List<string>(); // 跨卷复制产生（取消时清理半成品，允许之后重试）
 
-        foreach (var (source, target, bytes, isDir) in plan)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = Path.GetFileName(source) });
-
-            if (sameVolume)
-            {
-                if (isDir) Directory.Move(source, target);
-                else File.Move(source, target);
-                done += bytes;
-                result.MovedBytes += bytes;
-                progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = Path.GetFileName(source) });
-                continue;
-            }
-
-            if (!isDir)
-            {
-                File.Copy(source, target, overwrite: false);
-                done += bytes;
-                result.MovedBytes += bytes;
-                continue;
-            }
-
-            Directory.CreateDirectory(target);
-
-            var files = EnumerateFiles(source).ToList();
-            var prefix = Path.GetFullPath(source);
-
-            foreach (var file in files)
+            foreach (var (source, target, bytes, isDir) in plan)
             {
                 ct.ThrowIfCancellationRequested();
+                progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = Path.GetFileName(source) });
 
-                var relative = Path.GetRelativePath(prefix, file);
-                var destination = Path.Combine(target, relative);
-                var destinationDir = Path.GetDirectoryName(destination);
-                if (!string.IsNullOrEmpty(destinationDir)) Directory.CreateDirectory(destinationDir);
+                if (sameVolume)
+                {
+                    if (isDir) Directory.Move(source, target);
+                    else File.Move(source, target);
+                    movedTargets.Add(target);
+                    done += bytes;
+                    result.MovedBytes += bytes;
+                    progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = Path.GetFileName(source) });
+                    continue;
+                }
 
-                progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = relative });
+                if (!isDir)
+                {
+                    File.Copy(source, target, overwrite: false);
+                    copiedTargets.Add(target);
+                    done += bytes;
+                    result.MovedBytes += bytes;
+                    continue;
+                }
 
-                CopyWithProgress(file, destination, offset =>
-                    progress?.Report(new MigrationProgress { DoneBytes = done + offset, TotalBytes = total, Current = relative }));
+                Directory.CreateDirectory(target);
 
-                done += new FileInfo(file).Length;
+                var files = EnumerateFiles(source).ToList();
+                var prefix = Path.GetFullPath(source);
+
+                foreach (var file in files)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var relative = Path.GetRelativePath(prefix, file);
+                    var destination = Path.Combine(target, relative);
+                    var destinationDir = Path.GetDirectoryName(destination);
+                    if (!string.IsNullOrEmpty(destinationDir)) Directory.CreateDirectory(destinationDir);
+
+                    progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = relative });
+
+                    CopyWithProgress(file, destination, offset =>
+                        progress?.Report(new MigrationProgress { DoneBytes = done + offset, TotalBytes = total, Current = relative }));
+
+                    done += new FileInfo(file).Length;
+                }
+
+                copiedTargets.Add(target);
+                result.MovedBytes += bytes;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            result.Canceled = true;
+
+            // 清理本次**复制**产生的半成品（目标此前无同名条目，删除安全，之后可重试）；
+            // 同卷已改名条目**保留**——源已不在，数据完整地在目标
+            foreach (var target in copiedTargets)
+            {
+                try
+                {
+                    if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+                    else if (File.Exists(target)) File.Delete(target);
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"{Path.GetFileName(target)}：{ex.Message}");
+                }
             }
 
-            result.MovedBytes += bytes;
+            return result;
         }
 
-        // 全部成功（取消以异常抛出，不会走到这里）→ 删除源（跨卷时；同卷 Move 已自带）。
+        // 全部成功（取消在上面的 catch 收尾，不会走到这里）→ 删除源（跨卷时；同卷 Move 已自带）。
         // 删除失败只记警告：数据已双份，源留待用户手动清理
         foreach (var (source, _, _, isDir) in plan)
         {

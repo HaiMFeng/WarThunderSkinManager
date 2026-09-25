@@ -203,16 +203,27 @@ public partial class MainViewModel : ObservableObject
             ShowStatus(Loc["migrate.error.inUserSkins"]);
             return false;
         }
-        if (resourceChanged && (Directory.Exists(Path.Combine(Config.ResourceDirectory, "packages"))
-                                || Directory.Exists(Path.Combine(Config.ResourceDirectory, "blobs"))))
+        // 资源目录特殊情形：目标已是程序库而源为空 → 数据本来就在目标，**直接改指**（也覆盖“改回去”的恢复路径）；
+        // 两边都有数据 → 拒绝（无法合并）
+        var resourceRepointOnly = false;
+        if (resourceChanged)
         {
-            ShowStatus(Loc["migrate.error.targetDirty"]);
-            return false;
+            var sourceHasData = Directory.Exists(Path.Combine(_initialResourceDir, "packages"))
+                                || Directory.Exists(Path.Combine(_initialResourceDir, "blobs"));
+            var targetHasData = Directory.Exists(Path.Combine(Config.ResourceDirectory, "packages"))
+                                || Directory.Exists(Path.Combine(Config.ResourceDirectory, "blobs"));
+
+            if (targetHasData && sourceHasData)
+            {
+                ShowStatus(Loc["migrate.error.targetDirty"]);
+                return false;
+            }
+            if (targetHasData) resourceRepointOnly = true;
         }
 
         var changes = new List<(string Kind, string OldDir, string NewDir)>();
         if (configChanged) changes.Add(("config", _initialConfigDir, Config.ConfigDirectory));
-        if (resourceChanged) changes.Add(("resource", _initialResourceDir, Config.ResourceDirectory));
+        if (resourceChanged && !resourceRepointOnly) changes.Add(("resource", _initialResourceDir, Config.ResourceDirectory));
         if (userSkinsChanged) changes.Add(("userSkins", _initialUserSkinsDir, Config.UserSkinsDirectory));
 
         var window = new MigrationProgressWindow(Loc["migrate.running"]) { Owner = Application.Current?.MainWindow };
@@ -235,16 +246,13 @@ public partial class MainViewModel : ObservableObject
                         .ToList()
                 };
 
-                try
+                var part = DirectoryMigrator.Migrate(oldDir, newDir, items, reporter, window.Cancellation.Token);
+                result.MovedBytes += part.MovedBytes;
+                result.Warnings.AddRange(part.Warnings);
+                if (part.Canceled)
                 {
-                    var part = DirectoryMigrator.Migrate(oldDir, newDir, items, reporter, window.Cancellation.Token);
-                    result.MovedBytes += part.MovedBytes;
-                    result.Warnings.AddRange(part.Warnings);
-                }
-                catch (OperationCanceledException)
-                {
-                    result.Canceled = true; // 已复制内容留在目标，源不删
-                    return result;
+                    result.Canceled = true; // 已复制半成品已清理，源完好（同卷已改名条目保留在目标）
+                    break;
                 }
             }
 
@@ -254,7 +262,17 @@ public partial class MainViewModel : ObservableObject
         task.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
         window.ShowDialog(); // 阻塞至迁移完成 / 取消
 
-        var migrated = task.Result;
+        MigrationResult migrated;
+
+        try
+        {
+            migrated = task.Result;
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("migrate.failed", ex.GetBaseException().Message));
+            return false;
+        }
 
         if (migrated.Canceled)
         {
@@ -269,10 +287,12 @@ public partial class MainViewModel : ObservableObject
         Skins.Reproject();
         Vehicles.Reproject();
 
-        ShowStatus(migrated.Warnings.Count == 0
-            ? Loc.Format("migrate.done", DataResetService.FormatSize(migrated.MovedBytes))
-            : Loc.Format("migrate.doneWithWarnings",
-                DataResetService.FormatSize(migrated.MovedBytes), migrated.Warnings.Count));
+        ShowStatus(migrated.MovedBytes == 0 && resourceRepointOnly
+            ? Loc["migrate.reuse"]
+            : migrated.Warnings.Count == 0
+                ? Loc.Format("migrate.done", DataResetService.FormatSize(migrated.MovedBytes))
+                : Loc.Format("migrate.doneWithWarnings",
+                    DataResetService.FormatSize(migrated.MovedBytes), migrated.Warnings.Count));
 
         return true;
     }
@@ -507,7 +527,8 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void BrowseUserSkins() => Browse(Config.UserSkinsDirectory, p => Config.UserSkinsDirectory = p);
+    private void BrowseUserSkins() => ChangeDirectory(Config.UserSkinsDirectory,
+        picked => Config.UserSkinsDirectory = picked);
 
     /// <summary>在资源管理器中打开该目录（设置页各目录右侧的「打开」，便于直接查看/整理文件）。</summary>
     [RelayCommand]
@@ -574,10 +595,56 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void BrowseResource() => Browse(Config.ResourceDirectory, p => Config.ResourceDirectory = p);
+    private void BrowseResource() => ChangeDirectory(Config.ResourceDirectory,
+        picked => Config.ResourceDirectory = picked);
 
     [RelayCommand]
-    private void BrowseConfig() => Browse(Config.ConfigDirectory, p => Config.ConfigDirectory = p);
+    private void BrowseConfig() => ChangeDirectory(Config.ConfigDirectory,
+        picked => Config.ConfigDirectory = picked);
+
+    /// <summary>
+    /// 选择目录 → **先迁移数据**（后台 + 进度窗，可取消）→ 再自动保存；取消 / 失败**回滚**到原目录。
+    /// 迁移必须挂在变更瞬间：目录一经保存，页面与静态服务就会读新目录——挂在「保存」按钮上会被绕过。
+    /// </summary>
+    private void ChangeDirectory(string current, Action<string> apply)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = Loc["settings.chooseFolder"],
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+            dialog.InitialDirectory = current;
+
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName)) return;
+
+        var picked = dialog.FolderName;
+        if (SamePath(picked, current)) return;
+
+        apply(picked); // 先变更（迁移预检与静态刷新要用新值）
+
+        try
+        {
+            if (!MigrateChangedDirectories())
+            {
+                apply(current); // 取消 / 失败 → 回滚，旧配置依旧可用
+                PartExclusionService.Configure(Config.ConfigDirectory);
+                DataTables.Configure(Config.ConfigDirectory);
+                return;
+            }
+        }
+        catch
+        {
+            apply(current);
+            PartExclusionService.Configure(Config.ConfigDirectory);
+            DataTables.Configure(Config.ConfigDirectory);
+            throw;
+        }
+
+        SnapshotDirectories();
+        AutoSave();
+    }
 
     [RelayCommand]
     private void Save()
@@ -776,26 +843,7 @@ public partial class MainViewModel : ObservableObject
         ApplyRebuiltSnapshot(snapshot);
     }
 
-    /// <summary>原生文件夹选择（Microsoft.Win32.OpenFolderDialog，.NET 8+ WPF 内置）。</summary>
-    private void Browse(string current, Action<string> apply)
-    {
-        var dialog = new OpenFolderDialog
-        {
-            Title = Loc["settings.chooseFolder"],
-            Multiselect = false
-        };
-
-        if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
-            dialog.InitialDirectory = current;
-
-        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
-        {
-            apply(dialog.FolderName);
-            // 选完目录立即自动保存，无需再手动点“保存配置”
-            AutoSave();
-        }
-    }
-
+    /// <summary>选完目录立即自动保存，无需再手动点“保存配置”。</summary>
     private void AutoSave()
     {
         if (string.IsNullOrWhiteSpace(Config.ConfigDirectory))
