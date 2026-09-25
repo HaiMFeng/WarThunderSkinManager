@@ -42,7 +42,9 @@
             <!-- 自定义标题栏（拖动阈值后才进 DragMove，保证双击切换最大化可用）；底部分隔线与导航栏顶线相连 -->
             <Border Grid.Row="0" Background="{StaticResource BrushBackground}"
                     BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1">
-            <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+            <!-- Background=Transparent：让整个标题栏区域参与命中测试（空白处不补会点击穿透，只有文字那块能拖） -->
+            <Grid Background="Transparent"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
                   MouseMove="TitleBar_MouseMove">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
