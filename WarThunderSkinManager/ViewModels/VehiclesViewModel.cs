@@ -173,6 +173,7 @@ public partial class VehiclesViewModel : ObservableObject
     [RelayCommand]
     private void ExportMappings()
     {
+        if (!DirectoryGate.EnsureReady(_config)) return; // 目录未就绪 → 引导到设置页（新用户向导）
         if (_config.ConfigDirectory.Length == 0)
         {
             ShowStatus(Loc["settings.configDirRequired"]);
@@ -204,6 +205,8 @@ public partial class VehiclesViewModel : ObservableObject
     [RelayCommand]
     private void ImportMappings()
     {
+        if (!DirectoryGate.EnsureReady(_config)) return; // 目录未就绪 → 引导到设置页
+
         var incoming = ReadMappingsFromFile("vehicles.mappings.importTitle");
         if (incoming == null) return;
 
@@ -225,6 +228,8 @@ public partial class VehiclesViewModel : ObservableObject
     [RelayCommand]
     private void MergeMappings()
     {
+        if (!DirectoryGate.EnsureReady(_config)) return; // 目录未就绪 → 引导到设置页
+
         var incoming = ReadMappingsFromFile("vehicles.mappings.mergeTitle");
         if (incoming == null) return;
 
@@ -424,6 +429,7 @@ public partial class VehiclesViewModel : ObservableObject
     private void DeletePart(VehiclePart? part)
     {
         if (part == null || SelectedVehicle == null) return;
+        if (!DirectoryGate.EnsureReady(_config)) return; // 目录未就绪 → 引导到设置页
         if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
         {
             ShowStatus(Loc["settings.configDirRequired"]);

@@ -129,6 +129,9 @@ public partial class MainViewModel : ObservableObject
         Vehicles.PropertyChanged += OnChildChanged;
         PartReuse.PropertyChanged += OnChildChanged;
 
+        // 目录就绪门槛（新用户引导）：任何库操作在目录未配置时被拦截 → 切到设置页并提示
+        DirectoryGate.Blocked += OnDirectoriesBlocked;
+
         Config.PropertyChanged += OnConfigChanged;
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
@@ -158,6 +161,33 @@ public partial class MainViewModel : ObservableObject
 
         if (message.Length > 0) ShowStatus(message);
     }
+
+    // ---------- 目录就绪门槛与首次启动向导（新用户引导） ----------
+
+    /// <summary>任何库操作在目录未就绪时被拦截 → 切到设置页并提示（提示可见即操作已完成引导）。</summary>
+    private void OnDirectoriesBlocked()
+    {
+        SelectedTab = TabKey.Settings;
+        ShowStatus(Loc["gate.hint"]);
+    }
+
+    /// <summary>
+    /// 首次启动向导：资源目录 / UserSkins 未配置时自动弹出（**每次启动至多一次**，主窗口 Loaded 调用）。
+    /// 「完成」写回并保存配置；标题栏 X = 稍后配置——此后任何库操作被 <see cref="DirectoryGate"/> 拦截。
+    /// </summary>
+    public void ShowWizardIfNeeded()
+    {
+        if (_wizardShown || DirectoryGate.IsReady(Config)) return;
+        _wizardShown = true;
+
+        var wizard = new SetupWizardWindow(Config) { Owner = Application.Current?.MainWindow };
+        wizard.ShowDialog();
+
+        if (DirectoryGate.IsReady(Config))
+            ShowStatus(Loc["wizard.done"]);
+    }
+
+    private bool _wizardShown;
 
     /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）。</summary>
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)

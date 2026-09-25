@@ -1118,9 +1118,12 @@ public partial class SkinsViewModel : ObservableObject
     private string CleanupImportedSource(string sourceRoot, IReadOnlyList<ImportCandidate> candidates,
         ImportResult result, bool deleteWholeRoot)
     {
+        // 防护名单只含**绝不能作为清理目标**的程序数据目录（资源库 / 配置目录）——
+        // UserSkins 不在内：一键导入的清理目标就是 UserSkins 里的顶层子文件夹（§3.1），
+        // 把它放进名单会让整次清理被拒绝（WTSM 子目录由 CleanupSource 单独跳过）
         var cleanup = ImportService.CleanupSource(
             sourceRoot, candidates, result.ImportedBlkPaths, deleteWholeRoot,
-            new[] { _config.ResourceDirectory, _config.ConfigDirectory, _config.UserSkinsDirectory });
+            new[] { _config.ResourceDirectory, _config.ConfigDirectory });
 
         var text = Loc.Format("import.cleaned", cleanup.RemovedFolders + cleanup.RemovedFiles);
         if (cleanup.Skipped.Count > 0) text += Loc.Format("import.cleanupSkipped", cleanup.Skipped.Count);
@@ -1130,6 +1133,8 @@ public partial class SkinsViewModel : ObservableObject
 
     private bool EnsureResourceDir()
     {
+        if (!DirectoryGate.EnsureReady(_config)) return false; // 目录未就绪 → 引导到设置页（新用户向导）
+
         var dir = _config.ResourceDirectory;
         if (string.IsNullOrWhiteSpace(dir))
         {
@@ -1143,6 +1148,8 @@ public partial class SkinsViewModel : ObservableObject
 
     private bool EnsureConfigDir()
     {
+        if (!DirectoryGate.EnsureReady(_config)) return false; // 目录未就绪 → 引导到设置页
+
         if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return true;
 
         ShowStatus(Loc["settings.configDirRequired"]);

@@ -32,6 +32,9 @@ public partial class MainWindow : Window
 
         if (DataContext is INotifyPropertyChanged notify)
             notify.PropertyChanged += OnViewModelPropertyChanged;
+
+        // 首次启动向导：目录未配置时自动弹出（Loaded 后弹，主窗口可作 Owner）
+        Loaded += (_, _) => (DataContext as MainViewModel)?.ShowWizardIfNeeded();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

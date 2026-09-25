@@ -95,7 +95,8 @@
                         </TextBlock.Style>
                     </TextBlock>
 
-                    <Grid Margin="0,0,0,6">
+                    <!-- 右侧预留滚动条宽度（主题固定 10px）——行区滚动条常驻，表头 / 行两侧同宽对齐 -->
+                    <Grid Margin="0,0,10,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="150"/>
                             <ColumnDefinition Width="*"/>
@@ -118,6 +119,7 @@
                     <ListBox Grid.Row="1" ItemsSource="{Binding Groups}"
                              Background="Transparent" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Visible"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling">
                         <ListBox.ItemsPanel>

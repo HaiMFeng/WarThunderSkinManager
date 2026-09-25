@@ -361,6 +361,7 @@ public partial class PartReuseViewModel : ObservableObject
 
     private bool RequireConfigDir()
     {
+        if (!DirectoryGate.EnsureReady(_config)) return true; // 目录未就绪 → 引导到设置页（新用户向导）
         if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return false;
 
         ShowStatus(Loc["settings.configDirRequired"]);

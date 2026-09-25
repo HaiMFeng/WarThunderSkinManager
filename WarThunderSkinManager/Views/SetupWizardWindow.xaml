@@ -1,0 +1,89 @@
+<Window x:Class="WarThunderSkinManager.Views.SetupWizardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+        Title="{loc:Loc wizard.title}"
+        Width="580" SizeToContent="Height"
+        WindowStyle="None" ShowInTaskbar="False" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
+        Background="{StaticResource BrushBackground}">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="0" CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
+
+    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}"
+            Background="{StaticResource BrushBackground}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏（可拖动；X = 稍后在设置中配置） -->
+            <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <TextBlock Text="{loc:Loc wizard.title}" Margin="14,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold"/>
+                <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                        HorizontalAlignment="Right" Click="Skip_Click"/>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="24,18,24,20">
+
+                <TextBlock Text="{loc:Loc wizard.hint}" Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap" Margin="0,0,0,18"/>
+
+                <!-- 游戏 UserSkins 目录 -->
+                <TextBlock Text="{loc:Loc settings.userSkins.label}" Style="{StaticResource FieldLabel}"/>
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Style="{StaticResource BaseTextBox}"
+                             Text="{Binding UserSkins, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Button Grid.Column="1" Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                            Margin="8,0,0,0" Click="BrowseUserSkins_Click"/>
+                </Grid>
+                <TextBlock Text="{loc:Loc settings.userSkins.hint}" Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                <!-- 程序资源存储目录 -->
+                <TextBlock Text="{loc:Loc settings.resource.label}" Style="{StaticResource FieldLabel}" Margin="0,16,0,0"/>
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Style="{StaticResource BaseTextBox}"
+                             Text="{Binding Resource, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Button Grid.Column="1" Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                            Margin="8,0,0,0" Click="BrowseResource_Click"/>
+                </Grid>
+                <TextBlock Text="{loc:Loc settings.resource.hint}" Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                <!-- 校验错误（两个目录均有效时隐藏） -->
+                <TextBlock Text="{loc:Loc wizard.error}" Foreground="{StaticResource BrushDanger}"
+                           TextWrapping="Wrap" Margin="0,14,0,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsValid}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <Button Content="{loc:Loc wizard.complete}" Style="{StaticResource PrimaryButton}"
+                        HorizontalAlignment="Right" Margin="0,20,0,0"
+                        IsEnabled="{Binding IsValid}" Click="Complete_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
