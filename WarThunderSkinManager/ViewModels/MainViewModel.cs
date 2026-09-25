@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -123,7 +125,21 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            Clipboard.SetText(AppInfo.Version);
+            // 剪贴板是系统级互斥资源：连续点击 / 其他程序占用时会打开失败（CLIPBRD_E_CANT_OPEN）——
+            // 带间隔重试（约 200ms 窗口），仍失败才报错
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    Clipboard.SetText(AppInfo.Version);
+                    break;
+                }
+                catch (ExternalException) when (attempt < 9)
+                {
+                    Thread.Sleep(20);
+                }
+            }
+
             ShowStatus(Loc["settings.about.copied"]);
         }
         catch (Exception ex)
