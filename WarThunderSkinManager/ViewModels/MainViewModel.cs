@@ -132,6 +132,8 @@ public partial class MainViewModel : ObservableObject
         // 目录就绪门槛（新用户引导）：任何库操作在目录未配置时被拦截 → 切到设置页并提示
         DirectoryGate.Blocked += OnDirectoriesBlocked;
 
+        SnapshotDirectories(); // 目录迁移的对比基线（设置页保存时检测变更）
+
         Config.PropertyChanged += OnConfigChanged;
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
@@ -162,6 +164,132 @@ public partial class MainViewModel : ObservableObject
         if (message.Length > 0) ShowStatus(message);
     }
 
+    // ---------- 目录变更迁移（§3：设置页更换目录时把数据带走） ----------
+
+    /// <summary>目录迁移的对比基线（构造时与向导完成后各设一次；保存时与当前值比较）。</summary>
+    private string _initialConfigDir = "";
+    private string _initialResourceDir = "";
+    private string _initialUserSkinsDir = "";
+
+    private void SnapshotDirectories()
+    {
+        _initialConfigDir = Config.ConfigDirectory;
+        _initialResourceDir = Config.ResourceDirectory;
+        _initialUserSkinsDir = Config.UserSkinsDirectory;
+    }
+
+    /// <summary>
+    /// 设置页保存时检测目录变更并**迁移数据**：配置目录带走 config.json / lang / mappings / index / ref
+    /// （previews 缓存不迁，按需重建）；资源目录带走**全部**顶层内容（packages / blobs / imports，大库按字节报进度）；
+    /// UserSkins 带走 WTSM 输出。同卷 = 瞬时改名；跨卷 = 复制完成后才删源，取消时源完好。
+    /// 迁移在后台执行 + 进度窗可取消；取消 / 失败返回 <c>false</c>（**不保存**目录配置）。
+    /// </summary>
+    private bool MigrateChangedDirectories()
+    {
+        var configChanged = Directory.Exists(_initialConfigDir) && !SamePath(_initialConfigDir, Config.ConfigDirectory);
+        var resourceChanged = Directory.Exists(_initialResourceDir) && !SamePath(_initialResourceDir, Config.ResourceDirectory);
+        var userSkinsChanged = Directory.Exists(_initialUserSkinsDir) && !SamePath(_initialUserSkinsDir, Config.UserSkinsDirectory);
+
+        if (!configChanged && !resourceChanged && !userSkinsChanged) return true;
+
+        // 预检：目录嵌套会产生自我包含与清理事故，直接拒绝
+        if (IsUnder(Config.ResourceDirectory, Config.ConfigDirectory) || IsUnder(Config.ConfigDirectory, Config.ResourceDirectory))
+        {
+            ShowStatus(Loc["migrate.error.nested"]);
+            return false;
+        }
+        if (!string.IsNullOrWhiteSpace(Config.UserSkinsDirectory) && IsUnder(Config.ResourceDirectory, Config.UserSkinsDirectory))
+        {
+            ShowStatus(Loc["migrate.error.inUserSkins"]);
+            return false;
+        }
+        if (resourceChanged && (Directory.Exists(Path.Combine(Config.ResourceDirectory, "packages"))
+                                || Directory.Exists(Path.Combine(Config.ResourceDirectory, "blobs"))))
+        {
+            ShowStatus(Loc["migrate.error.targetDirty"]);
+            return false;
+        }
+
+        var changes = new List<(string Kind, string OldDir, string NewDir)>();
+        if (configChanged) changes.Add(("config", _initialConfigDir, Config.ConfigDirectory));
+        if (resourceChanged) changes.Add(("resource", _initialResourceDir, Config.ResourceDirectory));
+        if (userSkinsChanged) changes.Add(("userSkins", _initialUserSkinsDir, Config.UserSkinsDirectory));
+
+        var window = new MigrationProgressWindow(Loc["migrate.running"]) { Owner = Application.Current?.MainWindow };
+        var reporter = new Progress<MigrationProgress>(window.Update);
+
+        var task = Task.Run(() =>
+        {
+            var result = new MigrationResult();
+
+            foreach (var (kind, oldDir, newDir) in changes)
+            {
+                var items = kind switch
+                {
+                    // 配置目录：带走配置与用户数据；previews 缓存不迁（按需重建）
+                    "config" => (IReadOnlyList<string>)new[]
+                        { "config.json", "lang", "mappings", "index", "ref" },
+                    "userSkins" => new[] { "WTSM" },
+                    _ => Directory.GetFileSystemEntries(oldDir)
+                        .Select(entry => Path.GetFileName(entry)!)
+                        .ToList()
+                };
+
+                try
+                {
+                    var part = DirectoryMigrator.Migrate(oldDir, newDir, items, reporter, window.Cancellation.Token);
+                    result.MovedBytes += part.MovedBytes;
+                    result.Warnings.AddRange(part.Warnings);
+                }
+                catch (OperationCanceledException)
+                {
+                    result.Canceled = true; // 已复制内容留在目标，源不删
+                    return result;
+                }
+            }
+
+            return result;
+        });
+
+        task.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+        window.ShowDialog(); // 阻塞至迁移完成 / 取消
+
+        var migrated = task.Result;
+
+        if (migrated.Canceled)
+        {
+            ShowStatus(Loc["migrate.canceled"]);
+            return false;
+        }
+
+        // 静态服务跟随新目录：排除清单 / 数据表 / 部件表与快照缓存全部失效重建
+        PartExclusionService.Configure(Config.ConfigDirectory);
+        DataTables.Configure(Config.ConfigDirectory);
+        PartCatalog.Invalidate();
+        Skins.Reproject();
+        Vehicles.Reproject();
+
+        ShowStatus(migrated.Warnings.Count == 0
+            ? Loc.Format("migrate.done", DataResetService.FormatSize(migrated.MovedBytes))
+            : Loc.Format("migrate.doneWithWarnings",
+                DataResetService.FormatSize(migrated.MovedBytes), migrated.Warnings.Count));
+
+        return true;
+    }
+
+    private static bool SamePath(string a, string b)
+        => string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)
+           || string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary><paramref name="path"/> 等于或位于 <paramref name="baseDir"/> 之内。</summary>
+    private static bool IsUnder(string path, string baseDir)
+    {
+        var full = Path.GetFullPath(path);
+        var baseFull = Path.GetFullPath(baseDir);
+        return full.Equals(baseFull, StringComparison.OrdinalIgnoreCase)
+               || full.StartsWith(baseFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ---------- 目录就绪门槛与首次启动向导（新用户引导） ----------
 
     /// <summary>任何库操作在目录未就绪时被拦截 → 切到设置页并提示（提示可见即操作已完成引导）。</summary>
@@ -184,7 +312,10 @@ public partial class MainViewModel : ObservableObject
         wizard.ShowDialog();
 
         if (DirectoryGate.IsReady(Config))
+        {
+            SnapshotDirectories(); // 向导已完成首次配置 → 重置迁移对比基线（避免把空目录当旧库）
             ShowStatus(Loc["wizard.done"]);
+        }
     }
 
     private bool _wizardShown;
@@ -459,7 +590,11 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
+            // 目录变更 → **先迁移数据**（后台 + 进度窗，可取消）；取消 / 失败则不保存配置，旧目录依旧可用
+            if (!MigrateChangedDirectories()) return;
+
             PersistConfig();
+            SnapshotDirectories(); // 迁移后重置对比基线
             ShowStatus(Loc["settings.saved"]);
         }
         catch (Exception ex)
