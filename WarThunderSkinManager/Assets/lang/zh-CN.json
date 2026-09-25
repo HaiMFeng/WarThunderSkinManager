@@ -20,6 +20,7 @@
   "settings.about.version": "版本",
   "settings.about.versionTip": "点击复制版本号",
   "settings.about.copied": "版本号已复制到剪贴板",
+  "settings.about.busy": "剪贴板被其他程序占用，请稍后尝试",
   "settings.about.copyFailed": "复制失败：{0}",
   "settings.about.openProject": "项目主页",
   "settings.about.releases": "发行版本",

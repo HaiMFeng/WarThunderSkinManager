@@ -20,6 +20,7 @@
   "settings.about.version": "Version",
   "settings.about.versionTip": "Click to copy the version",
   "settings.about.copied": "Version copied to clipboard",
+  "settings.about.busy": "The clipboard is in use by another program; please try again later",
   "settings.about.copyFailed": "Copy failed: {0}",
   "settings.about.openProject": "Project Page",
   "settings.about.releases": "Releases",
