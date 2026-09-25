@@ -600,23 +600,28 @@ public partial class SkinsViewModel : ObservableObject
         var configDir = _config.ConfigDirectory;
         var resourceDir = _config.ResourceDirectory;
 
-        var snapshot = LibraryService.TakeCached(configDir, resourceDir)
-                       ?? LibraryService.LoadSnapshot(configDir, resourceDir);
+        // 快照反序列化（大库下数百毫秒）放**后台**：启动时不再压 UI 线程（§4）
+        Task.Run(() => LibraryService.TakeCached(configDir, resourceDir)
+                      ?? LibraryService.LoadSnapshot(configDir, resourceDir))
+            .ContinueWith(t =>
+            {
+                var snapshot = t.IsFaulted ? null : t.Result;
 
-        if (snapshot != null)
-            ApplySnapshot(snapshot);
-        else
-            ShowStatus(Loc["library.scanning"]); // 首次启动无快照：先说明，再后台建
+                if (snapshot != null)
+                    ApplySnapshot(snapshot);
+                else
+                    ShowStatus(Loc["library.scanning"]); // 首次启动无快照：先说明，再后台建
 
-        // 回调在后台线程 → 切回 UI 线程更新界面（Background 优先级：不与入场动画 / 渲染抢线程）
-        LibraryService.VerifyInBackground(configDir, resourceDir, snapshot, fresh =>
-            Application.Current?.Dispatcher.BeginInvoke(
-                System.Windows.Threading.DispatcherPriority.Background,
-                new Action(() =>
-                {
-                    ApplySnapshot(fresh);
-                    ShowStatus(Loc["library.refreshed"]);
-                })));
+                // 回调在后台线程 → 切回 UI 线程更新界面（Background 优先级：不与入场动画 / 渲染抢线程）
+                LibraryService.VerifyInBackground(configDir, resourceDir, snapshot, fresh =>
+                    Application.Current?.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() =>
+                        {
+                            ApplySnapshot(fresh);
+                            ShowStatus(Loc["library.refreshed"]);
+                        })));
+            });
     }
 
     /// <summary>

@@ -130,13 +130,20 @@ public static class LibraryService
             var path = IndexFile(configDir);
             if (!File.Exists(path)) return null;
 
-            var snapshot = JsonSerializer.Deserialize<LibrarySnapshot>(File.ReadAllText(path));
+            // 流式反序列化：index 在大库下有几 MB，ReadAllText 会把整个大字符串顶进 LOH，
+            // 反序列化时的分配风暴容易触发 GC 停顿（切页动画冻结）——直接从流上读，不落大字符串
+            LibrarySnapshot? snapshot;
+            using (var stream = File.OpenRead(path))
+                snapshot = JsonSerializer.Deserialize<LibrarySnapshot>(stream);
             if (snapshot == null || snapshot.Version != FormatVersion) return null;
 
             // 换过资源目录 → 旧快照作废，否则会显示上一个库的载具
-            return string.Equals(snapshot.ResourceDirectory, resourceDir, StringComparison.OrdinalIgnoreCase)
-                ? snapshot
-                : null;
+            if (!string.Equals(snapshot.ResourceDirectory, resourceDir, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            // 回填内存缓存：涂装 / 载具两个页面共享这一次反序列化结果（此前会各自加载一份）
+            PutCached(configDir, resourceDir, snapshot);
+            return snapshot;
         }
         catch
         {
