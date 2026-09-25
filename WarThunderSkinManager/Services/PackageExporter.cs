@@ -5,6 +5,7 @@ using System.Text;
 using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Writers;
+using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
@@ -18,6 +19,7 @@ namespace WarThunderSkinManager.Services;
 /// </summary>
 public static class PackageExporter
 {
+    private static LocalizationManager Loc => LocalizationManager.Instance;
     /// <summary>空白涂装包的占位 blk 内容：只有一行 name（§3.4）。</summary>
     private const string BlankBlk = "name:t=\"user\"";
 
@@ -49,7 +51,7 @@ public static class PackageExporter
         bool createFolder, string folderName, TextureNaming naming)
     {
         var meta = PackageStore.Load(resourceDir, packageId)
-                   ?? throw new InvalidOperationException($"涂装包不存在：{packageId}");
+                   ?? throw new InvalidOperationException(Loc.Format("pkg.notFound", packageId));
 
         var targetDir = PreviewFolderTarget(meta.Name, meta.Id, location, createFolder, folderName);
 
@@ -68,7 +70,7 @@ public static class PackageExporter
         string archiveName, TextureNaming naming, string format)
     {
         var meta = PackageStore.Load(resourceDir, packageId)
-                   ?? throw new InvalidOperationException($"涂装包不存在：{packageId}");
+                   ?? throw new InvalidOperationException(Loc.Format("pkg.notFound", packageId));
 
         var archivePath = PreviewArchivePath(meta.Name, meta.Id, location, archiveName, format);
         var name = Path.GetFileNameWithoutExtension(archivePath);

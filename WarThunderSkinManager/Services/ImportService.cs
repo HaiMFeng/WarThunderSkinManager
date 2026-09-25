@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
@@ -84,6 +85,7 @@ public sealed class ImportCandidate
 /// </summary>
 public static class ImportService
 {
+    private static LocalizationManager Loc => LocalizationManager.Instance;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         WriteIndented = true,
@@ -128,7 +130,7 @@ public static class ImportService
             }
             catch (Exception ex)
             {
-                candidate.Warnings.Add($"解析失败：{ex.Message}");
+                candidate.Warnings.Add(Loc.Format("import.warn.parseFailed", ex.Message));
             }
 
             list.Add(candidate);
@@ -187,7 +189,7 @@ public static class ImportService
                 }
                 catch (Exception ex)
                 {
-                    lock (gate) result.Warnings.Add($"{candidate.BlkPath}：解构失败：{ex.Message}");
+                    lock (gate) result.Warnings.Add(Loc.Format("import.warn.deconstructFailed", candidate.BlkPath, ex.Message));
                 }
 
                 progress?.Report(new ImportProgress
@@ -252,7 +254,7 @@ public static class ImportService
                     || fullRoot.StartsWith(fullProtected + Path.DirectorySeparatorChar,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    result.Errors.Add($"拒绝清理程序数据目录：{fullRoot}");
+                    result.Errors.Add(Loc.Format("import.warn.cleanupProtected", fullRoot));
                     return result;
                 }
             }

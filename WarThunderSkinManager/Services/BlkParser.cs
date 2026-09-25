@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
@@ -17,6 +18,7 @@ namespace WarThunderSkinManager.Services;
 /// </summary>
 public static class BlkParser
 {
+    private static LocalizationManager Loc => LocalizationManager.Instance;
     private static readonly Regex Quoted = new("t=\"([^\"]*)\"", RegexOptions.Compiled);
 
     public static BlkFile Parse(string filePath, string text)
@@ -81,7 +83,7 @@ public static class BlkParser
             f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));
 
         if (match != null)
-            warning = $"大小写不一致（实际 {Path.GetFileName(match)}）";
+            warning = Loc.Format("parser.warn.caseMismatch", Path.GetFileName(match));
 
         return match;
     }
@@ -97,20 +99,20 @@ public static class BlkParser
         var issues = new List<string>();
 
         if (!from.Contains('*'))
-            issues.Add("from 缺少通配符 *");
+            issues.Add(Loc["parser.warn.noWildcard"]);
         if (!to.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) &&
             !to.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
-            issues.Add("to 缺少 .dds/.tga 扩展名");
+            issues.Add(Loc["parser.warn.noExtension"]);
         if (mode == MappingMode.Set && param == null)
-            issues.Add("set_tex 缺少 param:t=\"camo_skin_tex\"");
+            issues.Add(Loc["parser.warn.setTexParam"]);
         if (mode == MappingMode.Replace && param != null)
-            issues.Add("replace_tex 不应包含 param");
+            issues.Add(Loc["parser.warn.replaceTexParam"]);
 
         // 贴图校验（关键）：找不到贴图的条目视为「无贴图」，不参与聚合与输出
         var resolved = ResolveTexture(blk.Directory, to, out var caseWarning);
         var missing = resolved == null;
         if (missing)
-            issues.Add($"贴图缺失：{to}");
+            issues.Add(Loc.Format("parser.warn.textureMissing", to));
         else if (caseWarning != null)
             issues.Add(caseWarning);
 

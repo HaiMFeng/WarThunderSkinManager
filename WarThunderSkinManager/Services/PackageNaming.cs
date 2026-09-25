@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using WarThunderSkinManager.Localization;
 
 namespace WarThunderSkinManager.Services;
 
@@ -12,8 +13,10 @@ namespace WarThunderSkinManager.Services;
 /// </summary>
 public static class PackageNaming
 {
-    private const string Fallback = "未命名";
+    private static string Fallback => Loc["pkg.unnamed"];
     private const int MaxLength = 80;
+
+    private static LocalizationManager Loc => LocalizationManager.Instance;
 
     /// <summary>生成建议包名。</summary>
     /// <param name="archiveName">压缩包文件名（可为空）。</param>

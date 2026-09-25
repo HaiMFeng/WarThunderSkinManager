@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using WarThunderSkinManager.Localization;
 
 namespace WarThunderSkinManager.Services;
 
@@ -21,6 +22,7 @@ namespace WarThunderSkinManager.Services;
 /// </remarks>
 public static class DataTables
 {
+    private static LocalizationManager Loc => LocalizationManager.Instance;
     /// <summary>载具译名表文件名</summary>
     public const string Vehicles = "units.csv";
 
@@ -45,7 +47,7 @@ public static class DataTables
     public static string SourceText(string fileName, string? configDir = null)
     {
         var user = UserFile(fileName, configDir);
-        return File.Exists(user) ? $"用户表（{user}）" : "内置表（嵌入资源）";
+        return File.Exists(user) ? Loc.Format("datatables.source.user", user) : Loc["datatables.source.builtin"];
     }
 
     /// <summary>

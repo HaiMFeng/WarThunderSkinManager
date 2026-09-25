@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
@@ -34,6 +35,7 @@ public sealed class SyncReport
 /// </summary>
 public static class OutputService
 {
+    private static LocalizationManager Loc => LocalizationManager.Instance;
     public static string WtsmRoot(string userSkinsDir) => Path.Combine(userSkinsDir, "WTSM");
 
     public static string VehicleOutputDir(string userSkinsDir, string vehicleId)
@@ -57,7 +59,7 @@ public static class OutputService
         var outDir = Path.GetFullPath(VehicleOutputDir(userSkinsDir, vehicleId));
 
         if (!outDir.StartsWith(wtsmRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            return (false, $"目标不在 WTSM 目录内，已跳过（{outDir}）");
+            return (false, Loc.Format("output.warn.notInWtsm", outDir));
 
         if (!Directory.Exists(outDir)) return (false, null); // 本来就没输出
 
@@ -105,7 +107,7 @@ public static class OutputService
         var wtsmRoot = Path.GetFullPath(WtsmRoot(userSkinsDir));
         var fullOutDir = Path.GetFullPath(outDir);
         if (!fullOutDir.StartsWith(wtsmRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"输出目标不在 WTSM 目录内，已拒绝写入（{fullOutDir}）");
+            throw new InvalidOperationException(Loc.Format("output.warn.rejectWrite", fullOutDir));
 
         Directory.CreateDirectory(outDir);
 
@@ -125,21 +127,21 @@ public static class OutputService
             // to 携带非法相对路径（第三方 blk 误写 / 恶意构造）→ 不写入也不调度（§3.8 安全）
             if (!IsSafeRelativeTexturePath(mapping.ToFile))
             {
-                report.Warnings.Add($"{pair.Key}：to 含非法路径（{mapping.ToFile}），已跳过该部件");
+                report.Warnings.Add(Loc.Format("output.warn.illegalPath", pair.Key, mapping.ToFile));
                 continue;
             }
 
             // 贴图不可用的部件**不写入 blk**：游戏不会报错，但会静默失败（§3.8）
             if (string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
-                report.Warnings.Add($"{pair.Key}：无可用贴图，已跳过该部件");
+                report.Warnings.Add(Loc.Format("output.warn.noTexture", pair.Key));
                 continue;
             }
 
             var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
             if (!File.Exists(blobPath))
             {
-                report.Warnings.Add($"{pair.Key}：贴图文件缺失（{mapping.TextureRef}），已跳过该部件");
+                report.Warnings.Add(Loc.Format("output.warn.textureMissing", pair.Key, mapping.TextureRef));
                 continue;
             }
 
@@ -197,7 +199,7 @@ public static class OutputService
             }
             catch (Exception ex)
             {
-                report.Warnings.Add($"删除旧贴图失败 {Path.GetFileName(file)}：{ex.Message}");
+                report.Warnings.Add(Loc.Format("output.warn.deleteFailed", Path.GetFileName(file), ex.Message));
             }
         }
 
