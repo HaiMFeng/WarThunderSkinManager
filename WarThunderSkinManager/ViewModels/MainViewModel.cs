@@ -900,7 +900,8 @@ public partial class MainViewModel : ObservableObject
 
         Task.Run(() => LibraryService.Build(configDir, resourceDir)).ContinueWith(t =>
         {
-            Application.Current?.Dispatcher.Invoke(() =>
+            // Background 优先级：全量重建结果重排两个页面，不与进行中的动画 / 渲染抢 UI 线程
+            Application.Current?.Dispatcher.BeginInvoke(() =>
             {
                 if (t.IsFaulted)
                 {

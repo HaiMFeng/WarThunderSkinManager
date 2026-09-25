@@ -324,7 +324,9 @@ public partial class VehiclesViewModel : ObservableObject
             ApplySnapshot(snapshot);
 
             LibraryService.VerifyInBackground(_config.ConfigDirectory, _config.ResourceDirectory, snapshot, fresh =>
-                System.Windows.Application.Current?.Dispatcher.Invoke(() => ApplySnapshot(fresh)));
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Background,
+                    new Action(() => ApplySnapshot(fresh))));
         });
     }
 

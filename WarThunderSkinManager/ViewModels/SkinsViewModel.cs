@@ -608,13 +608,15 @@ public partial class SkinsViewModel : ObservableObject
         else
             ShowStatus(Loc["library.scanning"]); // 首次启动无快照：先说明，再后台建
 
-        // 回调在后台线程 → 切回 UI 线程更新界面
+        // 回调在后台线程 → 切回 UI 线程更新界面（Background 优先级：不与入场动画 / 渲染抢线程）
         LibraryService.VerifyInBackground(configDir, resourceDir, snapshot, fresh =>
-            Application.Current?.Dispatcher.Invoke(() =>
-            {
-                ApplySnapshot(fresh);
-                ShowStatus(Loc["library.refreshed"]);
-            }));
+            Application.Current?.Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() =>
+                {
+                    ApplySnapshot(fresh);
+                    ShowStatus(Loc["library.refreshed"]);
+                })));
     }
 
     /// <summary>
