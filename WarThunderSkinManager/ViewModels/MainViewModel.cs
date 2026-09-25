@@ -132,8 +132,6 @@ public partial class MainViewModel : ObservableObject
         // 目录就绪门槛（新用户引导）：任何库操作在目录未配置时被拦截 → 切到设置页并提示
         DirectoryGate.Blocked += OnDirectoriesBlocked;
 
-        SnapshotDirectories(); // 目录迁移的对比基线（设置页保存时检测变更）
-
         Config.PropertyChanged += OnConfigChanged;
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
@@ -166,29 +164,18 @@ public partial class MainViewModel : ObservableObject
 
     // ---------- 目录变更迁移（§3：设置页更换目录时把数据带走） ----------
 
-    /// <summary>目录迁移的对比基线（构造时与向导完成后各设一次；保存时与当前值比较）。</summary>
-    private string _initialConfigDir = "";
-    private string _initialResourceDir = "";
-    private string _initialUserSkinsDir = "";
-
-    private void SnapshotDirectories()
-    {
-        _initialConfigDir = Config.ConfigDirectory;
-        _initialResourceDir = Config.ResourceDirectory;
-        _initialUserSkinsDir = Config.UserSkinsDirectory;
-    }
-
     /// <summary>
-    /// 设置页保存时检测目录变更并**迁移数据**：配置目录带走 config.json / lang / mappings / index / ref
-    /// （previews 缓存不迁，按需重建）；资源目录带走**全部**顶层内容（packages / blobs / imports，大库按字节报进度）；
-    /// UserSkins 带走 WTSM 输出。同卷 = 瞬时改名；跨卷 = 复制完成后才删源，取消时源完好。
+    /// 检测目录变更并**迁移数据**（以调用方传入的**变更前**目录值为基准，无快照时序问题）：
+    /// 配置目录带走 config.json / lang / mappings / index / ref（previews 缓存不迁，按需重建）；
+    /// 资源目录带走**全部**顶层内容（packages / blobs / imports，大库按字节报进度）；UserSkins 带走 WTSM 输出。
+    /// 同卷 = 瞬时改名；跨卷 = 复制完成后才删源，取消时源完好。
     /// 迁移在后台执行 + 进度窗可取消；取消 / 失败返回 <c>false</c>（**不保存**目录配置）。
     /// </summary>
-    private bool MigrateChangedDirectories()
+    private bool MigrateChangedDirectories(string oldConfigDir, string oldResourceDir, string oldUserSkinsDir)
     {
-        var configChanged = Directory.Exists(_initialConfigDir) && !SamePath(_initialConfigDir, Config.ConfigDirectory);
-        var resourceChanged = Directory.Exists(_initialResourceDir) && !SamePath(_initialResourceDir, Config.ResourceDirectory);
-        var userSkinsChanged = Directory.Exists(_initialUserSkinsDir) && !SamePath(_initialUserSkinsDir, Config.UserSkinsDirectory);
+        var configChanged = !SamePath(oldConfigDir, Config.ConfigDirectory) && Directory.Exists(oldConfigDir);
+        var resourceChanged = !SamePath(oldResourceDir, Config.ResourceDirectory) && Directory.Exists(oldResourceDir);
+        var userSkinsChanged = !SamePath(oldUserSkinsDir, Config.UserSkinsDirectory) && Directory.Exists(oldUserSkinsDir);
 
         if (!configChanged && !resourceChanged && !userSkinsChanged) return true;
 
@@ -203,13 +190,13 @@ public partial class MainViewModel : ObservableObject
             ShowStatus(Loc["migrate.error.inUserSkins"]);
             return false;
         }
-        // 资源目录特殊情形：目标已是程序库而源为空 → 数据本来就在目标，**直接改指**（也覆盖“改回去”的恢复路径）；
+        // 资源目录特殊情形：目标已是程序库而源为空 → 数据本来就在目标，**直接改指**（也覆盖"改回去"的恢复路径）；
         // 两边都有数据 → 拒绝（无法合并）
         var resourceRepointOnly = false;
         if (resourceChanged)
         {
-            var sourceHasData = Directory.Exists(Path.Combine(_initialResourceDir, "packages"))
-                                || Directory.Exists(Path.Combine(_initialResourceDir, "blobs"));
+            var sourceHasData = Directory.Exists(Path.Combine(oldResourceDir, "packages"))
+                                || Directory.Exists(Path.Combine(oldResourceDir, "blobs"));
             var targetHasData = Directory.Exists(Path.Combine(Config.ResourceDirectory, "packages"))
                                 || Directory.Exists(Path.Combine(Config.ResourceDirectory, "blobs"));
 
@@ -222,9 +209,9 @@ public partial class MainViewModel : ObservableObject
         }
 
         var changes = new List<(string Kind, string OldDir, string NewDir)>();
-        if (configChanged) changes.Add(("config", _initialConfigDir, Config.ConfigDirectory));
-        if (resourceChanged && !resourceRepointOnly) changes.Add(("resource", _initialResourceDir, Config.ResourceDirectory));
-        if (userSkinsChanged) changes.Add(("userSkins", _initialUserSkinsDir, Config.UserSkinsDirectory));
+        if (configChanged) changes.Add(("config", oldConfigDir, Config.ConfigDirectory));
+        if (resourceChanged && !resourceRepointOnly) changes.Add(("resource", oldResourceDir, Config.ResourceDirectory));
+        if (userSkinsChanged) changes.Add(("userSkins", oldUserSkinsDir, Config.UserSkinsDirectory));
 
         // 无实际搬迁：目标已是程序库且源为空 → 确认后**直接改指**（同样要告知用户，不静默）
         if (changes.Count == 0)
@@ -367,7 +354,6 @@ public partial class MainViewModel : ObservableObject
 
         if (DirectoryGate.IsReady(Config))
         {
-            SnapshotDirectories(); // 向导已完成首次配置 → 重置迁移对比基线（避免把空目录当旧库）
             ShowStatus(Loc["wizard.done"]);
         }
     }
@@ -654,13 +640,22 @@ public partial class MainViewModel : ObservableObject
         if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName)) return;
 
         var picked = dialog.FolderName;
-        if (SamePath(picked, current)) return;
+        if (SamePath(picked, current))
+        {
+            ShowStatus(Loc["migrate.sameDir"]);
+            return;
+        }
+
+        // 变更**前**捕获三个目录旧值，作为迁移对比基准（不依赖任何快照字段，杜绝时序问题）
+        var oldConfig = Config.ConfigDirectory;
+        var oldResource = Config.ResourceDirectory;
+        var oldUserSkins = Config.UserSkinsDirectory;
 
         apply(picked); // 先变更（迁移预检与静态刷新要用新值）
 
         try
         {
-            if (!MigrateChangedDirectories())
+            if (!MigrateChangedDirectories(oldConfig, oldResource, oldUserSkins))
             {
                 apply(current); // 取消 / 失败 → 回滚，旧配置依旧可用
                 PartExclusionService.Configure(Config.ConfigDirectory);
@@ -676,7 +671,6 @@ public partial class MainViewModel : ObservableObject
             throw;
         }
 
-        SnapshotDirectories();
         AutoSave();
     }
 
@@ -691,11 +685,8 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            // 目录变更 → **先迁移数据**（后台 + 进度窗，可取消）；取消 / 失败则不保存配置，旧目录依旧可用
-            if (!MigrateChangedDirectories()) return;
-
+            // 迁移已挂在目录变更瞬间（ChangeDirectory）；此处只负责落盘
             PersistConfig();
-            SnapshotDirectories(); // 迁移后重置对比基线
             ShowStatus(Loc["settings.saved"]);
         }
         catch (Exception ex)
@@ -877,7 +868,7 @@ public partial class MainViewModel : ObservableObject
         ApplyRebuiltSnapshot(snapshot);
     }
 
-    /// <summary>选完目录立即自动保存，无需再手动点“保存配置”。</summary>
+    /// <summary>选完目录立即自动保存，无需再手动点"保存配置"。</summary>
     private void AutoSave()
     {
         if (string.IsNullOrWhiteSpace(Config.ConfigDirectory))
