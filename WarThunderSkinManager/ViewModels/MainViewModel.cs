@@ -102,6 +102,12 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public string DataTablesDirectory => DataTables.UserDirectory(Config.ConfigDirectory);
 
+    /// <summary>作者（csproj Authors，设置页「关于」展示；见 <see cref="AppInfo"/>）。</summary>
+    public string AboutAuthor => AppInfo.Author;
+
+    /// <summary>版本（csproj Version，设置页「关于」展示，便于区分构建）。</summary>
+    public string AboutVersion => AppInfo.Version;
+
     public MainViewModel(AppConfig config)
     {
         Config = config;

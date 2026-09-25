@@ -183,6 +183,30 @@
                 <Button Content="{loc:Loc settings.save}" Style="{StaticResource PrimaryButton}"
                         Command="{Binding SaveCommand}"/>
             </StackPanel>
+            <!-- 关于：作者与版本（来源 csproj，经程序集特性读取，编译进 exe 便于区分构建） -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="AboutLabel"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{loc:Loc settings.about.author}" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding AboutAuthor}" Margin="24,0,0,0"/>
+                    </Grid>
+                    <Grid Margin="0,6,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="AboutLabel"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{loc:Loc settings.about.version}" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding AboutVersion}" Margin="24,0,0,0"
+                                   Foreground="{StaticResource BrushTextSecondary}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

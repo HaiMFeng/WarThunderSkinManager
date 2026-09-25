@@ -126,11 +126,13 @@ internal static class SelfTest
                     : 0;
 
                 // 命名规则区分度：原名 = 源 blk 的 to 名；部件名 = 该贴图对应部件的归一化 from + 原扩展名
+                // （sample 无贴图条目时命名规则无从对比，跳过）
                 var exportPartDir = Path.Combine(workDir, "export-part");
                 PackageExporter.Export(resourceDir, sample.Id, exportPartDir,
                     createFolder: false, folderName: "", TextureNaming.PartName);
-                var sampleTo = sample.Textures[0].To;
-                var samplePart = VehicleAggregator.BuildVehicle(resourceDir, sample.VehicleId)
+                var hasTextures = sample.Textures.Count > 0;
+                var sampleTo = hasTextures ? sample.Textures[0].To : "";
+                var samplePart = !hasTextures ? "" : VehicleAggregator.BuildVehicle(resourceDir, sample.VehicleId)
                     ?.SkinPackages.FirstOrDefault(
                         p => string.Equals(p.Id, sample.Id, StringComparison.Ordinal))
                     ?.Mappings.FirstOrDefault(
@@ -138,9 +140,9 @@ internal static class SelfTest
                     ?.FromModule ?? "";
                 var expectedPartFile = VehicleAggregator.NormalizeFrom(samplePart)
                     + Path.GetExtension(sampleTo).ToLowerInvariant();
-                var originalKept = File.Exists(Path.Combine(exportDir, sampleTo));
-                var partNamed = File.Exists(Path.Combine(exportPartDir, expectedPartFile));
-                var partBlkRewritten = File.ReadAllText(Path.Combine(exportPartDir, sample.VehicleId + ".blk"))
+                var originalKept = hasTextures && File.Exists(Path.Combine(exportDir, sampleTo));
+                var partNamed = hasTextures && File.Exists(Path.Combine(exportPartDir, expectedPartFile));
+                var partBlkRewritten = !hasTextures || File.ReadAllText(Path.Combine(exportPartDir, sample.VehicleId + ".blk"))
                     .Contains(expectedPartFile);
 
                 var deleted = false;
@@ -559,24 +561,34 @@ internal static class SelfTest
                          + $"，导出 blk 内容 = 「{blankBlk}」（应为一行 name）");
 
             // 配置过的空白包 → 导出 = **配置的组合**：blk 由 meta.parts 生成、只含被引用贴图（§3.11）
+            // （库中无 a.dds 贴图条目时无从验证，跳过）
             blank.PartsConfigured = true;
             blank.Parts = new List<PackagePartEntry>
             {
                 new() { From = "a*1_c", Mode = MappingMode.Replace, To = "a.dds" }
             };
-            var referencedBlob = PackageStore.LoadAll(resourceDir).SelectMany(m => m.Textures)
-                .First(t => string.Equals(t.To, "a.dds", StringComparison.OrdinalIgnoreCase)).Blob;
-            blank.Textures = new List<TextureEntry> { new() { To = "a.dds", Blob = referencedBlob } };
-            PackageStore.SaveMeta(resourceDir, blank);
+            var referencedTexture = PackageStore.LoadAll(resourceDir).SelectMany(m => m.Textures)
+                .FirstOrDefault(t => string.Equals(t.To, "a.dds", StringComparison.OrdinalIgnoreCase));
 
-            var blankCfgDir = Path.Combine(workDir, "blank-cfg-export");
-            PackageExporter.Export(resourceDir, blank.Id, blankCfgDir,
-                createFolder: false, folderName: "", TextureNaming.PartName);
-            var blankCfgBlk = File.ReadAllText(Path.Combine(blankCfgDir, firstVehicleId + ".blk"));
-            log.AppendLine($"配置导出 : blk 用 meta.parts 生成（from 保留）= "
-                           + $"{blankCfgBlk.Contains("from:t=\"a*1_c\"")}"
-                           + $"，部件名规则 to = a1_c.dds = {blankCfgBlk.Contains("to:t=\"a1_c.dds\"")}"
-                           + $"，仅导出被引用贴图 = {Directory.GetFiles(blankCfgDir, "*.dds").Length == 1}");
+            if (referencedTexture != null)
+            {
+                blank.Textures = new List<TextureEntry> { new() { To = "a.dds", Blob = referencedTexture.Blob } };
+                PackageStore.SaveMeta(resourceDir, blank);
+
+                var blankCfgDir = Path.Combine(workDir, "blank-cfg-export");
+                PackageExporter.Export(resourceDir, blank.Id, blankCfgDir,
+                    createFolder: false, folderName: "", TextureNaming.PartName);
+                var blankCfgBlk = File.ReadAllText(Path.Combine(blankCfgDir, firstVehicleId + ".blk"));
+                log.AppendLine($"配置导出 : blk 用 meta.parts 生成（from 保留）= "
+                               + $"{blankCfgBlk.Contains("from:t=\"a*1_c\"")}"
+                               + $"，部件名规则 to = a1_c.dds = {blankCfgBlk.Contains("to:t=\"a1_c.dds\"")}"
+                               + $"，仅导出被引用贴图 = {Directory.GetFiles(blankCfgDir, "*.dds").Length == 1}");
+            }
+            else
+            {
+                log.AppendLine("配置导出 : 库中无 a.dds 贴图条目，跳过");
+            }
+
             PackageStore.Delete(resourceDir, blank.Id);
             PartCatalog.Invalidate();
             log.AppendLine("清理     : 已删除");
