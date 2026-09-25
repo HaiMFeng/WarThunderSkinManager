@@ -203,7 +203,12 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="{loc:Loc settings.about.author}" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding AboutAuthor}" Margin="24,0,0,0"/>
+                        <TextBlock Grid.Column="1" Margin="24,0,0,0">
+                            <Hyperlink Command="{Binding OpenLinkCommand}" CommandParameter="{Binding AuthorUrl}"
+                                       Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
+                                <Run Text="{Binding AboutAuthor, Mode=OneWay}"/>
+                            </Hyperlink>
+                        </TextBlock>
                     </Grid>
                     <Grid Margin="0,6,0,0">
                         <Grid.ColumnDefinitions>
@@ -211,9 +216,23 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="{loc:Loc settings.about.version}" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding AboutVersion}" Margin="24,0,0,0"
-                                   Foreground="{StaticResource BrushTextSecondary}"/>
+                        <TextBlock Grid.Column="1" Margin="24,0,0,0"
+                                   ToolTip="{loc:Loc settings.about.versionTip}">
+                            <Hyperlink Command="{Binding CopyVersionCommand}"
+                                       Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
+                                <Run Text="{Binding AboutVersion, Mode=OneWay}"/>
+                            </Hyperlink>
+                        </TextBlock>
                     </Grid>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Content="{loc:Loc settings.about.openProject}" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding OpenLinkCommand}"
+                                CommandParameter="{Binding ProjectUrl}"/>
+                        <Button Content="{loc:Loc settings.about.releases}" Style="{StaticResource SecondaryButton}"
+                                Margin="8,0,0,0" Command="{Binding OpenLinkCommand}"
+                                CommandParameter="{Binding ReleasesUrl}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </StackPanel>

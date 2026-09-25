@@ -108,6 +108,46 @@ public partial class MainViewModel : ObservableObject
     /// <summary>版本（csproj Version，设置页「关于」展示，便于区分构建）。</summary>
     public string AboutVersion => AppInfo.Version;
 
+    /// <summary>项目主页（设置页「关于」超链接 / 按钮）。</summary>
+    public string ProjectUrl { get; } = "https://github.com/HaiMFeng/WarThunderSkinManager";
+
+    /// <summary>发行版本页（设置页「关于」按钮）。</summary>
+    public string ReleasesUrl { get; } = "https://github.com/HaiMFeng/WarThunderSkinManager/releases";
+
+    /// <summary>作者主页。</summary>
+    public string AuthorUrl { get; } = "https://github.com/HaiMFeng";
+
+    /// <summary>复制版本号到剪贴板（设置页「关于」点版本号）。</summary>
+    [RelayCommand]
+    private void CopyVersion()
+    {
+        try
+        {
+            Clipboard.SetText(AppInfo.Version);
+            ShowStatus(Loc["settings.about.copied"]);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("settings.about.copyFailed", ex.Message));
+        }
+    }
+
+    /// <summary>用系统默认浏览器打开链接（设置页「关于」的项目主页 / 发行版本 / 作者）。</summary>
+    [RelayCommand]
+    private void OpenLink(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("settings.open.failed", ex.Message));
+        }
+    }
+
     public MainViewModel(AppConfig config)
     {
         Config = config;
