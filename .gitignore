@@ -36,6 +36,9 @@ UserSkins/
 # 本地测试数据（解构/导出等临时产物），不入库
 TestData/
 
+# 发布产物（单文件 exe 与 zip），不入库
+dist/
+
 # ===================== OS / 杂项 =====================
 Thumbs.db
 Desktop.ini
