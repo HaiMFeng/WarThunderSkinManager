@@ -226,9 +226,17 @@ public partial class MainViewModel : ObservableObject
         if (resourceChanged && !resourceRepointOnly) changes.Add(("resource", _initialResourceDir, Config.ResourceDirectory));
         if (userSkinsChanged) changes.Add(("userSkins", _initialUserSkinsDir, Config.UserSkinsDirectory));
 
-        // 无实际搬迁（如"目标已是程序库且源为空"的直接改指）→ 不弹迁移提醒，直接刷新
+        // 无实际搬迁：目标已是程序库且源为空 → 确认后**直接改指**（同样要告知用户，不静默）
         if (changes.Count == 0)
         {
+            var reuse = MessageDialog.Confirm(
+                Loc["migrate.reuseConfirm"],
+                Loc["migrate.confirmTitle"],
+                Loc["common.continue"], Loc["common.cancel"],
+                icon: DialogIcon.Warning);
+
+            if (!reuse) return false;
+
             PartCatalog.Invalidate();
             Skins.Reproject();
             Vehicles.Reproject();
