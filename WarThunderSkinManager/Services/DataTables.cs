@@ -70,21 +70,48 @@ public static class DataTables
     /// 来源标记（用户表路径 + 最后写入时间）：调用方据此判断缓存是否需要重建，
     /// 因此用户替换表文件后**无需重启**即可生效。
     /// </summary>
+    /// <remarks>
+    /// **带 1 秒 TTL 缓存**：该值挂在译名解析 / 部件标签解析的热路径上被高频调用
+    /// （每次都是文件系统调用，杀软实时挂钩下单次可达亚毫秒级——140 载具 × N 部件
+    /// 累计接近 1 秒，是切页卡顿的性能剖析热点）。TTL 期间直接复用上次结果，
+    /// 替换表文件的生效延迟 ≤1 秒，用户无感。
+    /// </remarks>
     public static string Stamp(string fileName, string? configDir = null)
     {
+        var key = $"{configDir ?? string.Empty}|{fileName}";
+
+        lock (StampGate)
+        {
+            if (StampCache.TryGetValue(key, out var hit)
+                && (DateTime.UtcNow - hit.CachedAt).TotalSeconds < 1)
+                return hit.Stamp;
+        }
+
         var user = UserFile(fileName, configDir);
+        string stamp;
         try
         {
-            if (File.Exists(user))
-                return $"{user}|{File.GetLastWriteTimeUtc(user).Ticks}";
+            stamp = File.Exists(user)
+                ? $"{user}|{File.GetLastWriteTimeUtc(user).Ticks}"
+                : "embedded";
         }
         catch
         {
             // 取不到时间戳 → 按「内置表」处理
+            stamp = "embedded";
         }
 
-        return "embedded";
+        lock (StampGate)
+        {
+            StampCache[key] = (stamp, DateTime.UtcNow);
+        }
+
+        return stamp;
     }
+
+    private static readonly object StampGate = new();
+    private static readonly Dictionary<string, (string Stamp, DateTime CachedAt)> StampCache =
+        new(StringComparer.Ordinal);
 
     /// <summary>
     /// 把**内置表**导出到用户表目录（便于在此基础上更新；同名文件会被覆盖）。
