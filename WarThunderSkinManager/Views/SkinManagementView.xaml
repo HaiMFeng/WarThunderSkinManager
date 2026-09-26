@@ -295,6 +295,22 @@
                                             </Border.Style>
                                             <TextBlock Text="{loc:Loc skins.active}" Foreground="{StaticResource BrushOnAccent}" FontSize="11"/>
                                         </Border>
+                                        <!-- 资源包标记（灰）：只读素材（§3.5） -->
+                                        <Border VerticalAlignment="Top" HorizontalAlignment="Right"
+                                                Margin="8" Padding="8,3" CornerRadius="9"
+                                                Background="{StaticResource BrushSurface}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsResource}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{loc:Loc pkg.card.resource}" Foreground="{StaticResource BrushTextSecondary}" FontSize="11"/>
+                                        </Border>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>

@@ -52,6 +52,8 @@ public partial class PackageEditorViewModel : ObservableObject
         _meta = meta;
         _name = meta.Name;
         _modeNoticeSeen = config.ReplaceSetNoticeSeen;
+        _isResource = meta.IsResource;
+        _originalIsResource = meta.IsResource;
 
         RefreshPreview();
         BuildParts();
@@ -65,6 +67,52 @@ public partial class PackageEditorViewModel : ObservableObject
     public bool HasPreview => PreviewImage != null;
 
     partial void OnPreviewImageChanged(ImageSource? value) => OnPropertyChanged(nameof(HasPreview));
+
+    // ---------- 资源包开关（§3.5）----------
+
+    /// <summary>是否**资源包**（只读素材）：打开时禁用部件贴图修改，部件行 / 候选照常展示。</summary>
+    public bool CanEditTextures => !IsResource;
+
+    /// <summary>进入对话框时的资源态（解锁知会只对「原本是资源包」的解锁生效）。</summary>
+    private readonly bool _originalIsResource;
+
+    private bool _suppressResource;
+
+    /// <summary>是否资源包（滑块）：解锁（开 → 关）弹知会；切换后重建部件行（两种态的映射来源不同）。</summary>
+    public bool IsResource
+    {
+        get => _isResource;
+        set
+        {
+            if (_suppressResource || _isResource == value) return;
+
+            if (_originalIsResource && !value)
+            {
+                var accepted = MessageDialog.Confirm(
+                    Loc["pkg.editor.resource.unlockNotice"],
+                    Loc["pkg.editor.resource.unlockTitle"],
+                    Loc["pkg.editor.resource.unlockOk"], Loc["common.cancel"],
+                    icon: DialogIcon.Warning);
+
+                if (!accepted)
+                {
+                    _suppressResource = true;
+                    IsResource = true; // 取消 → 滑块回滚
+                    _suppressResource = false;
+                    return;
+                }
+            }
+
+            _isResource = value;
+            OnPropertyChanged(nameof(IsResource));
+            OnPropertyChanged(nameof(CanEditTextures));
+
+            _meta.IsResource = value;
+            BuildParts(); // 资源态 / 普通态的映射来源不同 → 重建部件行
+        }
+    }
+
+    private bool _isResource;
 
     [RelayCommand]
     private void ChoosePreview()
@@ -403,7 +451,8 @@ public partial class PackageEditorViewModel : ObservableObject
     /// </remarks>
     private void ApplyParts()
     {
-        if (!_canEditParts) return;
+        // 资源包只读：parts/textures 永不改写（§3.5）；改名 / 预览图等元数据不受限
+        if (!_canEditParts || _meta.IsResource) return;
 
         var parts = new List<PackagePartEntry>();
         var textures = new List<TextureEntry>(_meta.Textures);

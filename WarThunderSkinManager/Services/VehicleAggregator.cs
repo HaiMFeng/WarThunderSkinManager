@@ -141,8 +141,23 @@ public static class VehicleAggregator
             VehicleId = meta.VehicleId,
             Name = meta.Name,
             SourceImportId = meta.SourceImportId,
-            PreviewPath = meta.Preview
+            PreviewPath = meta.Preview,
+            IsResource = meta.IsResource
         };
+
+        // **资源包**（§3.5）：只读素材——映射恒取 source.blk 原始内容，meta.parts 被忽略
+        // （资源包的 parts/textures 永不改写；编辑请复制为普通包）
+        if (meta.IsResource)
+        {
+            var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
+            if (File.Exists(sourceBlk))
+            {
+                var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
+                package.Mappings.AddRange(blk.Mappings);
+            }
+
+            return package;
+        }
 
         if (meta.PartsConfigured || meta.Parts.Count > 0)
         {

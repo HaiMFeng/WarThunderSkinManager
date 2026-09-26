@@ -86,10 +86,49 @@
                     <TextBox Style="{StaticResource BaseTextBox}"
                              Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
 
-                    <!-- 部件贴图（该包自己的属性，§3.5 / §3.6） -->
+                    <!-- 资源包开关（§3.5）：只读素材；解锁（开→关）有知会，解锁后可修改部件贴图 -->
+                    <Grid Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="{loc:Loc pkg.editor.resource}" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Text="{loc:Loc pkg.editor.resource.hint}" Style="{StaticResource PageSubtitle}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                  IsChecked="{Binding IsResource}"/>
+                    </Grid>
+
+                    <!-- 部件贴图（该包自己的属性，§3.5 / §3.6）；资源包为只读 -->
                     <TextBlock Text="{loc:Loc pkg.editor.parts}" Style="{StaticResource SectionTitle}" Margin="0,24,0,4"/>
-                    <TextBlock Text="{loc:Loc pkg.editor.partsHint}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" Margin="0,0,0,10"/>
+                    <TextBlock Text="{loc:Loc pkg.editor.partsHint}"
+                               TextWrapping="Wrap" Margin="0,0,0,10">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CanEditTextures}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{loc:Loc pkg.editor.partsHintResource}"
+                               TextWrapping="Wrap" Margin="0,0,0,10">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CanEditTextures}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
                     <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
@@ -105,7 +144,7 @@
                                    Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                     </Grid>
 
-                    <ItemsControl ItemsSource="{Binding Parts}">
+                    <ItemsControl ItemsSource="{Binding Parts}" IsEnabled="{Binding CanEditTextures}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,8">

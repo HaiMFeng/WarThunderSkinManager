@@ -40,7 +40,8 @@ public static class DeconstructionService
             Id = package.Id,
             VehicleId = package.VehicleId,
             Name = package.Name,
-            SourceImportId = sourceImportId
+            SourceImportId = sourceImportId,
+            IsResource = true // 导入包 = 只读资源（§3.5）：编辑请复制，防止污染候选来源
         };
 
         var seenTo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

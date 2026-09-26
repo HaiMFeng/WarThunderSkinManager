@@ -392,5 +392,12 @@
   "output.warn.deleteFailed": "Failed to delete old texture {0}: {1}",
   "datatables.source.user": "User table ({0})",
   "datatables.source.builtin": "Built-in table (embedded resource)",
+  "pkg.card.resource": "Source",
+  "pkg.editor.resource": "Resource Package",
+  "pkg.editor.resource.hint": "A resource package is read-only material created on import: part textures and names are never rewritten, and regular packages reference textures from it. Turn the switch off (unlock) to edit part textures.",
+  "pkg.editor.resource.unlockTitle": "Unlock Resource Package",
+  "pkg.editor.resource.unlockOk": "Unlock",
+  "pkg.editor.resource.unlockNotice": "Unlocking turns this package into a regular package whose part textures can be edited; candidate provenance will prefer resource packages, and textures unique to this package will be shown under its own name. This cannot be undone. Unlock?",
+  "pkg.editor.partsHintResource": "A resource package is read-only; part textures cannot be edited. Turn off 'Resource Package' above to unlock, or duplicate it into a regular package.",
   "settings.about.disclaimer": "This tool is for personal skin management only; all skin copyrights belong to their original authors. Obtain the original authors' permission before publicly sharing exported content. See the project README for the full disclaimer."
 }

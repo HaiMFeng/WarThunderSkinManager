@@ -338,7 +338,8 @@ public static class LibraryService
             VehicleId = snapshot.Meta.VehicleId,
             Name = snapshot.Meta.Name,
             SourceImportId = snapshot.Meta.SourceImportId,
-            PreviewPath = snapshot.Meta.Preview
+            PreviewPath = snapshot.Meta.Preview,
+            IsResource = snapshot.Meta.IsResource
         };
 
         foreach (var mapping in snapshot.Mappings)

@@ -20,6 +20,12 @@ public sealed class PackageMeta
     /// <summary>溯源：来源导入记录 Id（仅标签，不参与删除/回滚）</summary>
     public string SourceImportId { get; set; } = "";
 
+    /// <summary>
+    /// 是否为**资源包**（§3.5）：导入产生的只读素材——部件贴图与名字永不改写，
+    /// 普通包（复制 / 新建）只从资源包引用贴图。解锁（改为 false）后可编辑，不可逆操作有知会。
+    /// </summary>
+    public bool IsResource { get; set; }
+
     /// <summary>预览图（png，可选），键跟随包</summary>
     public string Preview { get; set; } = "";
 

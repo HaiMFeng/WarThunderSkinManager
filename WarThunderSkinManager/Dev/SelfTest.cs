@@ -184,6 +184,7 @@ internal static class SelfTest
 
                 if (meta != null)
                 {
+                    meta.IsResource = false; // 解锁为普通包（资源包不可改写 parts，§3.5）
                     meta.Parts = entries;
                     meta.PartsConfigured = true;
                     PackageStore.SaveMeta(resourceDir, meta);
@@ -479,6 +480,10 @@ internal static class SelfTest
 
                 if (reusePackage != null)
                 {
+                    // 导入包默认是资源包（只读）→ 解锁为普通包才能修改部件贴图（§3.5）
+                    reusePackage.IsResource = false;
+                    PackageStore.SaveMeta(resourceDir, reusePackage);
+
                     var reuseConfig = new AppConfig
                     {
                         ConfigDirectory = reuseConfigDir,

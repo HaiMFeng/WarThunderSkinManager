@@ -80,6 +80,7 @@ public static class PackageStore
             VehicleId = source.VehicleId,
             Name = newName,
             SourceImportId = source.SourceImportId,
+            IsResource = false, // 复制产物 = 普通包（可编辑；来源资源包不受影响，§3.5）
             Preview = "", // 预览图缓存键跟随包，不自动继承
             Order = source.Order + 1,
             Textures = new List<TextureEntry>(source.Textures),

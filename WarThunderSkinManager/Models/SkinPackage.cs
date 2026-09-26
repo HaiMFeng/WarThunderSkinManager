@@ -14,6 +14,9 @@ public partial class SkinPackage : ObservableObject
     /// </summary>
     public List<TexMapping> OriginalMappings { get; set; } = new();
 
+    /// <summary>是否资源包（只读素材，卡片角标与属性页只读态用）。</summary>
+    public bool IsResource { get; set; }
+
     /// <summary>程序内稳定标识（GUID）</summary>
     [ObservableProperty] private string _id = "";
 
