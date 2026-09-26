@@ -7,8 +7,11 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
+using WarThunderSkinManager.Services;
 using WarThunderSkinManager.ViewModels;
+using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager;
 
@@ -35,6 +38,33 @@ public partial class MainWindow : Window
 
         // 首次启动向导：目录未配置时自动弹出（Loaded 后弹，主窗口可作 Owner）
         Loaded += (_, _) => (DataContext as MainViewModel)?.ShowWizardIfNeeded();
+
+        // 关窗守卫：WT Live 下载进行中 → 确认；确认后取消下载并清理暂存（§3.15）
+        Closing += OnWindowClosing;
+    }
+
+    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel) return;
+
+        if (viewModel.Skins.HasActiveDownloads)
+        {
+            var proceed = MessageDialog.Confirm(
+                LocalizationManager.Instance["wtlive.exitConfirm"],
+                LocalizationManager.Instance["wtlive.exitConfirmTitle"],
+                LocalizationManager.Instance["common.continue"],
+                LocalizationManager.Instance["common.cancel"],
+                icon: DialogIcon.Warning,
+                owner: this);
+
+            if (!proceed)
+            {
+                e.Cancel = true;
+                return;
+            }
+        }
+
+        viewModel.Skins.CleanupOnExit();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

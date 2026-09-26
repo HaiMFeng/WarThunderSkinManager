@@ -81,6 +81,22 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>WT Live 下载列表（「下载列表」浮窗展示状态）。</summary>
     public ObservableCollection<WtLiveDownloadItem> WtLiveDownloads { get; } = new();
 
+    /// <summary>WT Live 下载的总取消源（程序退出时统一取消）。</summary>
+    private readonly CancellationTokenSource _downloadsCts = new();
+
+    /// <summary>是否有进行中的 WT Live 下载 / 导入（退出前须确认）。</summary>
+    public bool HasActiveDownloads
+        => WtLiveDownloads.Any(d => d.State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Importing);
+
+    /// <summary>退出清理（主窗口 Closing 确认退出后调用）：取消下载 + 清空暂存区不留残留。</summary>
+    public void CleanupOnExit()
+    {
+        _downloadsCts.Cancel();
+
+        try { ArchiveService.CleanupStagingRoot(_config.ResourceDirectory); }
+        catch { /* 收尾失败不影响退出 */ }
+    }
+
     /// <summary>打开「从 WT Live 下载」窗口（网址输入 + 校验 + 信息确认）。</summary>
     [RelayCommand]
     private void OpenWtLiveImport()
@@ -114,7 +130,7 @@ public partial class SkinsViewModel : ObservableObject
             var zipPath = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive",
                 $"{post.LangGroup}-{Path.GetFileName(post.File.Name)}");
 
-            // 下载（后台，按字节报比例）
+            // 下载（后台，按字节报比例；随程序退出统一取消）
             item.StateText = Loc["wtlive.state.downloading0"];
             var reporter = new Progress<ImportProgress>(p =>
             {
@@ -123,7 +139,7 @@ public partial class SkinsViewModel : ObservableObject
             });
 
             await Task.Run(() => WTLiveService.DownloadFileAsync(
-                post.File.Link, zipPath, post.File.Size, reporter, CancellationToken.None));
+                post.File.Link, zipPath, post.File.Size, reporter, _downloadsCts.Token));
 
             // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
             item.State = WtLiveDownloadState.Importing;
@@ -152,6 +168,11 @@ public partial class SkinsViewModel : ObservableObject
                 item.StateText = Loc["wtlive.state.nothing"];
             }
         }
+        catch (OperationCanceledException)
+        {
+            item.State = WtLiveDownloadState.Failed;
+            item.StateText = Loc["wtlive.state.canceled"];
+        }
         catch (Exception ex)
         {
             item.State = WtLiveDownloadState.Failed;
@@ -174,7 +195,7 @@ public partial class SkinsViewModel : ObservableObject
             var imagePath = Path.Combine(ArchiveService.StagingRoot(_config.ResourceDirectory), "wtlive",
                 $"preview-{item.PostId}{Path.GetExtension(item.PreviewUrl)}");
 
-            await Task.Run(() => WTLiveService.DownloadFileAsync(item.PreviewUrl!, imagePath, null, null, CancellationToken.None));
+            await Task.Run(() => WTLiveService.DownloadFileAsync(item.PreviewUrl!, imagePath, null, null, _downloadsCts.Token));
 
             if (File.Exists(imagePath))
             {
