@@ -537,6 +537,24 @@ public partial class MainViewModel : ObservableObject
         await RunGameSyncAsync(overwriteForeign: true, silent: false);
     }
 
+    /// <summary>浏览选择 Saves 目录（§3.14）：不参与目录迁移（游戏数据非程序所有）；选定即保存并重扫账户。</summary>
+    [RelayCommand]
+    private void BrowseSaves()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = Loc["settings.saves.label"],
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(Config.SavesDirectory) && Directory.Exists(Config.SavesDirectory))
+            dialog.InitialDirectory = Config.SavesDirectory;
+
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName)) return;
+
+        Config.SavesDirectory = dialog.FolderName; // OnConfigChanged → 重扫账户 + 落盘
+    }
+
     /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）；
     /// Saves 目录 / 游戏内同步选项（§3.14）变化即落盘并刷新账户。</summary>
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
