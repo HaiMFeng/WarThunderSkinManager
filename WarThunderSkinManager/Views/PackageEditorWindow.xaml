@@ -132,14 +132,18 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <StackPanel Orientation="Horizontal">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
                             <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                       Foreground="{StaticResource BrushDanger}" VerticalAlignment="Center"
-                                       Margin="0,0,10,0"/>
-                            <TextBlock Text="{loc:Loc pkg.editor.partsHintResource}"
+                                       Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
+                                       Margin="0,1,10,0"/>
+                            <TextBlock Grid.Column="1" Text="{loc:Loc pkg.editor.partsHintResource}"
                                        Foreground="{StaticResource BrushDangerSoftText}" FontWeight="SemiBold"
-                                       TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="520"/>
-                        </StackPanel>
+                                       TextWrapping="Wrap"/>
+                        </Grid>
                     </Border>
 
                     <Grid Margin="0,0,0,4">
