@@ -157,6 +157,7 @@
   "skins.syncWarnings": "({0} warning(s))",
   "skins.syncFailed": "Output failed: {0}",
   "skins.firstOutput.title": "First Output of This Vehicle's Skin",
+  "skins.firstOutput.gameRunning": "The game is running, so the in-game skin selection sync could not write this time.\n\nSkin output for '{0}' is complete. Please select it once in the game: open the vehicle's 'Appearance → User Skins' and choose this skin ({1}).\n\nAfter closing the game, activating again in the program will write the in-game selection automatically.",
   "skins.firstOutput.noMore": "Don't remind again next time",
   "skins.firstOutput": "Completed skin output for '{0}'.\n\nThis is the first time a user skin has been generated for this vehicle and it must be selected once in the game: open the vehicle's 'Appearance → User Skins' and select this skin ({1}).\n\nAfter that, switching skins in the program takes effect automatically; when deactivating, the program keeps an empty blk so no reselection is needed.",
   "skins.col.candidates": "Candidate Textures",

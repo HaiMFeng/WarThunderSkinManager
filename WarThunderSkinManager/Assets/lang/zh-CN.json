@@ -157,6 +157,7 @@
   "skins.syncWarnings": "（{0} 条告警）",
   "skins.syncFailed": "输出失败：{0}",
   "skins.firstOutput.title": "首次输出该载具涂装",
+  "skins.firstOutput.gameRunning": "游戏正在运行，「游戏内同步涂装选择」本次无法写入。\n\n已完成「{0}」的涂装输出，请在游戏中手动选中一次：打开该载具的「外观 → 用户涂装」，选择这套涂装（{1}）。\n\n关闭游戏后在程序内再次激活，将自动写入游戏内的涂装选择。",
   "skins.firstOutput.noMore": "下次不再提醒",
   "skins.firstOutput": "已完成「{0}」的涂装输出。\n\n这是该载具第一次生成用户涂装，需要在游戏内手动选中一次：请打开该载具的「外观 → 用户涂装」，选择这套涂装（{1}）。\n\n此后在程序内切换涂装将自动生效；取消激活时程序会保留空 blk，因此无需重新选择。",
   "skins.col.candidates": "候选贴图",

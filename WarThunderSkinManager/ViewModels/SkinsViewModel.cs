@@ -462,19 +462,25 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 首次生成某载具的 blk 后提示：用户涂装必须**在游戏里手动选中一次**才会生效
     /// （取消激活会保留空 blk，正是为了之后切换不必重选，见 §3.8）。
-    /// 「游戏内同步涂装选择」开启时不再提示——选择已由 §3.14 自动写入存档（§3.14）。
+    /// 「游戏内同步涂装选择」开启时：游戏未运行 → 选择已自动写入，不再提示；
+    /// **游戏运行中**（本次没写进去）→ 仍提示手动选择，但文案不同（说明原因，§3.14 / §3.15）。
     /// </summary>
     private void PromptFirstOutput(string vehicleId)
     {
         if (_config.FirstOutputNoticeSeen) return; // 用户已勾过「下次不再提醒」
 
-        // 自动同步就绪（开关开 + Saves 目录 + 账户齐备）→ 游戏内选择已自动写入，无需手动选
-        if (_config.GameSyncEnabled
-            && !string.IsNullOrWhiteSpace(_config.SavesDirectory)
-            && !string.IsNullOrWhiteSpace(_config.ManagedAccountId)) return;
+        // 自动同步就绪（开关开 + Saves 目录 + 账户齐备）
+        var syncReady = _config.GameSyncEnabled
+                        && !string.IsNullOrWhiteSpace(_config.SavesDirectory)
+                        && !string.IsNullOrWhiteSpace(_config.ManagedAccountId);
+
+        if (syncReady && !GameSaveSyncService.IsGameRunning()) return; // 选择已自动写入存档，无需手动选
+
+        // 游戏运行中 → 本次无法自动写入，须手动选择（文案说明原因）
+        var bodyKey = syncReady ? "skins.firstOutput.gameRunning" : "skins.firstOutput";
 
         var noMore = MessageDialog.InfoWithCheck(
-            Loc.Format("skins.firstOutput", SelectedVehicle?.DisplayName ?? vehicleId, vehicleId + ".blk"),
+            Loc.Format(bodyKey, SelectedVehicle?.DisplayName ?? vehicleId, vehicleId + ".blk"),
             Loc["skins.firstOutput.noMore"],
             Loc["skins.firstOutput.title"],
             Application.Current?.MainWindow);

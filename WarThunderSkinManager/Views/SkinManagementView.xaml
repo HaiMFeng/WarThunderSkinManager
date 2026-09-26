@@ -63,14 +63,14 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
-                <Button Content="{loc:Loc skins.wtlive}" Style="{StaticResource SecondaryButton}"
-                        Command="{Binding Skins.OpenWtLiveImportCommand}"/>
-                <Button Content="{loc:Loc skins.importArchives}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                <Button Content="{loc:Loc skins.importArchives}" Style="{StaticResource SecondaryButton}"
                         Command="{Binding Skins.ImportArchivesCommand}"/>
-                <Button Content="{loc:Loc skins.importFolder}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+                <Button Content="{loc:Loc skins.importFolder}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportFolderCommand}"/>
                 <Button Content="{loc:Loc skins.importUserSkins}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportUserSkinsCommand}"/>
+                <Button Content="{loc:Loc skins.wtlive}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+                        Command="{Binding Skins.OpenWtLiveImportCommand}"/>
 
                 <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停展开浮窗，移出关闭 -->
                 <Button x:Name="WtLiveListButton" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"
