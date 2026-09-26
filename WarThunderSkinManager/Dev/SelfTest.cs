@@ -705,13 +705,22 @@ internal static class SelfTest
                          + $"，普通包输出 = {surviveSync.BlkEntries} 条映射、{surviveSync.WrittenTextures} 张贴图");
 
             // ⑦ 解锁资源包（IsResource → false）：以 source.blk 为映射来源
-            var suMeta = PackageStore.LoadAll(resourceDir).First(
+            // （精简自检数据可能没有 su_30mkk 包 → 跳过）
+            var suMeta = PackageStore.LoadAll(resourceDir).FirstOrDefault(
                 m => string.Equals(m.VehicleId, "su_30mkk", StringComparison.OrdinalIgnoreCase));
-            suMeta.IsResource = false;
-            PackageStore.SaveMeta(resourceDir, suMeta);
-            PartCatalog.Invalidate();
-            var unlocked = VehicleAggregator.BuildVehicle(resourceDir, "su_30mkk")!.SkinPackages.First();
-            log.AppendLine($"⑦ 解锁资源包: IsResource = {suMeta.IsResource}，映射 = {unlocked.Mappings.Count} 条（source.blk 原样）");
+
+            if (suMeta != null)
+            {
+                suMeta.IsResource = false;
+                PackageStore.SaveMeta(resourceDir, suMeta);
+                PartCatalog.Invalidate();
+                var unlocked = VehicleAggregator.BuildVehicle(resourceDir, "su_30mkk")!.SkinPackages.First();
+                log.AppendLine($"⑦ 解锁资源包: IsResource = {suMeta.IsResource}，映射 = {unlocked.Mappings.Count} 条（source.blk 原样）");
+            }
+            else
+            {
+                log.AppendLine("⑦ 解锁资源包: 库中无 su_30mkk 包，跳过");
+            }
 
             // ⑧ 国家前缀校对（germ / sw / f 实测修复）
             log.AppendLine($"⑧ 前缀校对: germ→{CountryResolver.Resolve("germ_t_34_85")}（应 de）"

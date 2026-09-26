@@ -66,6 +66,11 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>包卡片宽度（随窗口自适应，由视图在 SizeChanged 时计算下发）</summary>
     [ObservableProperty] private double _cardWidth = 150;
 
+    /// <summary>载具搜索关键字：匹配**内部标识或显示名**，与国家筛选叠加（§3.10，同载具管理页）。</summary>
+    [ObservableProperty] private string _vehicleSearchText = "";
+
+    partial void OnVehicleSearchTextChanged(string value) => ApplyCountryFilter();
+
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     public SkinsViewModel(AppConfig config)
@@ -819,13 +824,20 @@ public partial class SkinsViewModel : ObservableObject
     private void ApplyCountryFilter()
     {
         var countryId = SelectedCountry?.Id ?? CountryCatalog.AllId;
+        var query = VehicleSearchText.Trim();
 
-        var filtered = countryId == CountryCatalog.AllId
+        IEnumerable<Vehicle> filtered = countryId == CountryCatalog.AllId
             ? _allVehicles
-            : _allVehicles.Where(v => string.Equals(v.CountryId, countryId, StringComparison.OrdinalIgnoreCase)).ToList();
+            : _allVehicles.Where(v => string.Equals(v.CountryId, countryId, StringComparison.OrdinalIgnoreCase));
+
+        // 搜索与国家筛选**叠加**：匹配内部标识或显示名，不区分大小写
+        if (query.Length > 0)
+            filtered = filtered.Where(v =>
+                v.Id.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                || v.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
 
         var previousVehicleId = SelectedVehicle?.Id;
-        Vehicles = new ObservableCollection<Vehicle>(filtered);
+        Vehicles = new ObservableCollection<Vehicle>(filtered.ToList());
         SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousVehicleId) ?? Vehicles.FirstOrDefault();
     }
 
