@@ -422,7 +422,7 @@
   "datatables.source.builtin": "Built-in table (embedded resource)",
   "pkg.card.resource": "Source",
   "skins.wtlive": "Download from WT Live",
-  "wtlive.title": "Import Skin from WT Live",
+  "wtlive.title": "Download from WT Live",
   "wtlive.url.hint": "Paste a skin link, e.g. https://live.warthunder.com/post/1189546/en/",
   "wtlive.url.invalid": "Invalid link: expected a live.warthunder.com/post/<number> skin URL",
   "wtlive.fetch": "Fetch",

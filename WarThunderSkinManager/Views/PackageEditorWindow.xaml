@@ -43,17 +43,18 @@
 
                     <TextBlock Text="{loc:Loc pkg.editor.preview}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
 
-                    <!-- 预览区（1:1 正方形；图片 Uniform 居中，不裁剪） -->
-                    <Grid Height="200">
+                    <!-- 预览区（占满可用宽度、1:1 正方形；图片 Uniform 居中，不裁剪） -->
+                    <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <Border Grid.Column="0" Width="200" Height="200" CornerRadius="8"
+                        <Border Grid.Column="0" x:Name="PreviewBorder" CornerRadius="8"
                                 Background="{StaticResource BrushSurface}"
                                 BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                                Margin="0,0,14,0" SnapsToDevicePixels="True">
+                                Margin="0,0,14,0" SnapsToDevicePixels="True"
+                                SizeChanged="PreviewBorder_SizeChanged">
                             <Grid>
                                 <TextBlock Text="{loc:Loc pkg.editor.noPreview}" Style="{StaticResource PageSubtitle}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>

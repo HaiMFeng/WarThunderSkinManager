@@ -422,7 +422,7 @@
   "datatables.source.builtin": "内置表（嵌入资源）",
   "pkg.card.resource": "资源",
   "skins.wtlive": "从 WT Live 下载",
-  "wtlive.title": "从 WT Live 导入涂装",
+  "wtlive.title": "从 WT Live 下载",
   "wtlive.url.hint": "粘贴涂装链接，如 https://live.warthunder.com/post/1189546/en/",
   "wtlive.url.invalid": "链接无效：应为 live.warthunder.com/post/<数字> 格式的涂装链接",
   "wtlive.fetch": "读取",
