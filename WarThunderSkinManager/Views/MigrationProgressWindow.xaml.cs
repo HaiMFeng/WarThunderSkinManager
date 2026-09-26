@@ -15,6 +15,9 @@ public sealed partial class MigrationProgressVm : ObservableObject
     [ObservableProperty] private long _totalBytes = 1;
     [ObservableProperty] private string _currentItem = "";
     [ObservableProperty] private string _countText = "";
+
+    /// <summary>0..1 比例（进度条 ScaleX 绑定）。</summary>
+    [ObservableProperty] private double _fraction;
 }
 
 /// <summary>
@@ -48,6 +51,7 @@ public partial class MigrationProgressWindow : Window
     {
         _vm.DoneBytes = progress.DoneBytes;
         _vm.TotalBytes = progress.TotalBytes > 0 ? progress.TotalBytes : 1;
+        _vm.Fraction = Math.Clamp(_vm.DoneBytes / (double)_vm.TotalBytes, 0, 1);
         _vm.CurrentItem = progress.Current;
         _vm.CountText = $"{DataResetService.FormatSize(progress.DoneBytes)} / {DataResetService.FormatSize(progress.TotalBytes)}";
     }

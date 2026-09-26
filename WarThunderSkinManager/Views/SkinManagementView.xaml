@@ -100,18 +100,16 @@
                                                 <TextBlock Grid.Column="1" Text="{Binding StateText}"
                                                            Style="{StaticResource PageSubtitle}" Margin="12,0,0,0"/>
                                             </Grid>
-                                            <ProgressBar Height="4" Minimum="0" Maximum="1" Value="{Binding Progress}"
-                                                         Margin="0,4,0,0">
-                                                <ProgressBar.Template>
-                                                    <ControlTemplate TargetType="ProgressBar">
-                                                        <Grid>
-                                                            <Border Background="{StaticResource BrushSurface2}" CornerRadius="2"/>
-                                                            <Border x:Name="PART_Indicator" Background="{StaticResource BrushPrimary}"
-                                                                    CornerRadius="2" HorizontalAlignment="Left"/>
-                                                        </Grid>
-                                                    </ControlTemplate>
-                                                </ProgressBar.Template>
-                                            </ProgressBar>
+                                            <!-- 进度指示条：ScaleX 绑定 0..1 比例（ProgressBar 最小模板的 PART_Indicator 不会自动变宽） -->
+                                            <Grid Height="4" Margin="0,4,0,0">
+                                                <Border Background="{StaticResource BrushSurface2}" CornerRadius="2"/>
+                                                <Border Background="{StaticResource BrushPrimary}" CornerRadius="2"
+                                                        RenderTransformOrigin="0,0.5">
+                                                    <Border.RenderTransform>
+                                                        <ScaleTransform ScaleX="{Binding Progress}" ScaleY="1"/>
+                                                    </Border.RenderTransform>
+                                                </Border>
+                                            </Grid>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -343,7 +341,8 @@
                                                 <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}"
                                                            FontSize="26" Foreground="{StaticResource BrushTextMuted}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                <Image Stretch="UniformToFill" Source="{Binding PreviewImage}"/>
+                                                <Image Stretch="Uniform" HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" Source="{Binding PreviewImage}"/>
                                             </Grid>
                                         </Border>
                                         <!-- 底部半透明名字条（激活的包用绿色条，与选中态的蓝色描边区分） -->

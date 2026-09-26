@@ -31,18 +31,15 @@
             </Grid>
 
             <StackPanel Grid.Row="1" Margin="20,16,20,18">
-                <ProgressBar Height="6" Minimum="0" Maximum="{Binding TotalBytes}" Value="{Binding DoneBytes}">
-                    <ProgressBar.Template>
-                        <ControlTemplate TargetType="ProgressBar">
-                            <Grid>
-                                <Border Background="{StaticResource BrushSurface2}" CornerRadius="3"/>
-                                <Border x:Name="PART_Track" Background="Transparent"/>
-                                <Border x:Name="PART_Indicator" Background="{StaticResource BrushPrimary}"
-                                        CornerRadius="3" HorizontalAlignment="Left"/>
-                            </Grid>
-                        </ControlTemplate>
-                    </ProgressBar.Template>
-                </ProgressBar>
+                <!-- 进度条：ScaleX 绑定比例（ProgressBar 最小模板的 PART_Indicator 不会自动变宽） -->
+                <Grid Height="6">
+                    <Border Background="{StaticResource BrushSurface2}" CornerRadius="3"/>
+                    <Border Background="{StaticResource BrushPrimary}" CornerRadius="3" RenderTransformOrigin="0,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform ScaleX="{Binding Fraction}" ScaleY="1"/>
+                        </Border.RenderTransform>
+                    </Border>
+                </Grid>
 
                 <Grid Margin="0,12,0,0">
                     <TextBlock Text="{Binding CurrentItem}" Style="{StaticResource PageSubtitle}"

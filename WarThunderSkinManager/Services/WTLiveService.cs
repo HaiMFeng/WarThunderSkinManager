@@ -108,7 +108,7 @@ public static class WTLiveService
 
     /// <summary>
     /// 下载附件到 <paramref name="destPath"/>（1 MB 缓冲；进度按字节报 0..1 比例；
-    /// 自动创建目标目录；失败自动重试一次——CDN 偶发 TLS 握手抖动）。
+    /// 自动创建目标目录；失败自动重试至多 3 次——国内访问 WT Live / CDN 的 TLS 握手抖动常见）。
     /// 服务端不报内容长度时按 <paramref name="expectedSize"/> 兜底。
     /// </summary>
     public static async Task DownloadFileAsync(string url, string destPath, long? expectedSize,
@@ -128,10 +128,10 @@ public static class WTLiveService
             {
                 throw;
             }
-            catch (Exception ex) when (attempt == 1)
+            catch (Exception ex) when (attempt < 3)
             {
-                await Task.Delay(800, ct);
-                System.Diagnostics.Debug.WriteLine($"WTLive download retry: {ex.Message}");
+                await Task.Delay(800 * attempt, ct); // 退避：0.8s / 1.6s
+                System.Diagnostics.Debug.WriteLine($"WTLive download retry #{attempt}: {ex.Message}");
             }
         }
     }
