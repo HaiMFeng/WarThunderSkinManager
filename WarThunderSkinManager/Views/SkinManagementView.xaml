@@ -72,12 +72,65 @@
                 <Button Content="{loc:Loc skins.importUserSkins}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportUserSkinsCommand}"/>
 
-                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停显示各下载状态 -->
-                <Button Margin="8,0,0,0" Style="{StaticResource SecondaryButton}" Padding="10,6"
-                        ToolTipService.InitialShowDelay="150"
-                        ToolTip="{Binding Skins.WtLiveStatusText}">
+                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；点击弹出浮窗显示各下载状态 -->
+                <Button x:Name="WtLiveListButton" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"
+                        Padding="10,6" Click="WtLiveList_Click">
                     <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="16"/>
                 </Button>
+
+                <Popup x:Name="WtLiveListPopup" PlacementTarget="{Binding ElementName=WtLiveListButton}"
+                       Placement="Bottom" VerticalOffset="4" StaysOpen="False" AllowsTransparency="True"
+                       PopupAnimation="Fade">
+                    <Border Background="{StaticResource BrushBackground}" BorderBrush="{StaticResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8" Padding="14,10" Width="360" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc wtlive.list.title}" Style="{StaticResource FieldLabel}"
+                                       FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <ItemsControl ItemsSource="{Binding Skins.WtLiveDownloads}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,0,0,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding FileName}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding StateText}"
+                                                           Style="{StaticResource PageSubtitle}" Margin="12,0,0,0"/>
+                                            </Grid>
+                                            <ProgressBar Height="4" Minimum="0" Maximum="1" Value="{Binding Progress}"
+                                                         Margin="0,4,0,0">
+                                                <ProgressBar.Template>
+                                                    <ControlTemplate TargetType="ProgressBar">
+                                                        <Grid>
+                                                            <Border Background="{StaticResource BrushSurface2}" CornerRadius="2"/>
+                                                            <Border x:Name="PART_Indicator" Background="{StaticResource BrushPrimary}"
+                                                                    CornerRadius="2" HorizontalAlignment="Left"/>
+                                                        </Grid>
+                                                    </ControlTemplate>
+                                                </ProgressBar.Template>
+                                            </ProgressBar>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="{loc:Loc wtlive.list.empty}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Skins.WtLiveDownloads.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </Popup>
             </StackPanel>
         </Grid>
 

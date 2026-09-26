@@ -18,12 +18,15 @@ public partial class WTLiveImportWindow : Window
 {
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
-    /// <summary>用户确认后要下载的帖子（ShowDialog 返回 true 时非空）。</summary>
+    /// <summary>用户确认后要下载的涂装（ShowDialog 返回 true 时非空）。</summary>
     public WTLivePost? Post { get; private set; }
+
+    private bool _closed; // 窗口已关 → 异步读取完成的回调不再触碰界面
 
     public WTLiveImportWindow()
     {
         InitializeComponent();
+        Closed += (_, _) => _closed = true;
         UrlBox.Focus();
     }
 
@@ -38,23 +41,28 @@ public partial class WTLiveImportWindow : Window
 
         SetBusy(Loc["wtlive.fetching"]);
 
+        WTLivePost? post;
+
         try
         {
-            Post = await WTLiveService.FetchPostAsync(postId.Value, System.Threading.CancellationToken.None);
+            post = await WTLiveService.FetchPostAsync(postId.Value, System.Threading.CancellationToken.None);
         }
         catch (Exception ex)
         {
-            Post = null;
+            if (_closed) return;
             ShowError(Loc.Format("wtlive.fetchFailed", ex.Message));
             return;
         }
 
-        ShowPost(Post);
+        if (_closed) return;
+        Post = post;
+        ShowPost(post);
     }
 
     private void ShowPost(WTLivePost post)
     {
         HintText.Visibility = Visibility.Collapsed;
+        SetBusyState(false); // 读取完成：恢复「读取」按钮（否则停留在「正在读取…」）
 
         if (post.File == null)
         {
@@ -131,7 +139,7 @@ public partial class WTLiveImportWindow : Window
         if (e.Key == Key.Enter) Fetch_Click(sender, e);
     }
 
-    private void Close_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => DragMove();
 }

@@ -78,14 +78,8 @@ public partial class SkinsViewModel : ObservableObject
 
     // ---------- WT Live 下载（§3.15）----------
 
-    /// <summary>WT Live 下载列表（顶部「下载列表」按钮悬停展示状态）。</summary>
+    /// <summary>WT Live 下载列表（「下载列表」浮窗展示状态）。</summary>
     public ObservableCollection<WtLiveDownloadItem> WtLiveDownloads { get; } = new();
-
-    /// <summary>下载列表聚合状态（按钮 ToolTip；空列表显示占位文案）。</summary>
-    public string WtLiveStatusText
-        => WtLiveDownloads.Count == 0
-            ? Loc["wtlive.list.empty"]
-            : string.Join("\n", WtLiveDownloads.Select(d => $"{d.FileName} — {d.StateText}"));
 
     /// <summary>打开「从 WT Live 下载」窗口（网址输入 + 校验 + 信息确认）。</summary>
     [RelayCommand]
@@ -113,8 +107,6 @@ public partial class SkinsViewModel : ObservableObject
             post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null);
 
         WtLiveDownloads.Add(item);
-        OnPropertyChanged(nameof(WtLiveStatusText));
-        item.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(WtLiveDownloadItem.StateText) or nameof(WtLiveDownloadItem.State)) OnPropertyChanged(nameof(WtLiveStatusText)); };
 
         try
         {

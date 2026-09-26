@@ -67,6 +67,7 @@ public static class WTLiveService
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://live.warthunder.com/api/posts/get/");
         request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
         request.Headers.Referrer = new Uri($"https://live.warthunder.com/post/{postId}/en/");
+        request.Version = HttpVersion.Version11;
         request.Content = new StringContent($"lang_group={postId}&language=en", Encoding.UTF8,
             "application/x-www-form-urlencoded");
 
@@ -106,14 +107,41 @@ public static class WTLiveService
     }
 
     /// <summary>
-    /// 下载附件到 <paramref name="destPath"/>（1 MB 缓冲；进度按字节报 0..1 比例）。
+    /// 下载附件到 <paramref name="destPath"/>（1 MB 缓冲；进度按字节报 0..1 比例；
+    /// 自动创建目标目录；失败自动重试一次——CDN 偶发 TLS 握手抖动）。
     /// 服务端不报内容长度时按 <paramref name="expectedSize"/> 兜底。
     /// </summary>
     public static async Task DownloadFileAsync(string url, string destPath, long? expectedSize,
         IProgress<ImportProgress>? progress, CancellationToken ct)
     {
+        var dir = Path.GetDirectoryName(destPath);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await DownloadOnceAsync(url, destPath, expectedSize, progress, ct);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt == 1)
+            {
+                await Task.Delay(800, ct);
+                System.Diagnostics.Debug.WriteLine($"WTLive download retry: {ex.Message}");
+            }
+        }
+    }
+
+    private static async Task DownloadOnceAsync(string url, string destPath, long? expectedSize,
+        IProgress<ImportProgress>? progress, CancellationToken ct)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Referrer = new Uri("https://live.warthunder.com/");
+        request.Version = HttpVersion.Version11; // 站点经 Cloudflare，H2 握手偶发失败 → 强制 1.1
 
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
