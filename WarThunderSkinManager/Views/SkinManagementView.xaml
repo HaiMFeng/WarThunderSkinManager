@@ -295,10 +295,12 @@
                                             </Border.Style>
                                             <TextBlock Text="{loc:Loc skins.active}" Foreground="{StaticResource BrushOnAccent}" FontSize="11"/>
                                         </Border>
-                                        <!-- 资源包标记（灰）：只读素材（§3.5） -->
+                                        <!-- 资源包标记（紫）：只读素材（§3.5）；紫色与「跨载具」胶囊同源，灰底上辨识度足够 -->
                                         <Border VerticalAlignment="Top" HorizontalAlignment="Right"
                                                 Margin="8" Padding="8,3" CornerRadius="9"
-                                                Background="{StaticResource BrushSurface}">
+                                                Background="{StaticResource BrushTagCrossBg}"
+                                                BorderBrush="{StaticResource BrushTagCrossBorder}"
+                                                BorderThickness="1">
                                             <Border.Style>
                                                 <Style TargetType="Border">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -309,7 +311,7 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <TextBlock Text="{loc:Loc pkg.card.resource}" Foreground="{StaticResource BrushTextSecondary}" FontSize="11"/>
+                                            <TextBlock Text="{loc:Loc pkg.card.resource}" Foreground="{StaticResource BrushTagCrossText}" FontSize="11"/>
                                         </Border>
                                     </Grid>
                                 </DataTemplate>
