@@ -93,9 +93,10 @@ public static class WTLiveService
             : new WTLiveFile(dto.File.Name ?? "", dto.File.Link, dto.File.Size);
 
         var descriptionText = HtmlToText(dto.Description ?? "");
-        var displayName = FirstLine(descriptionText);
-        if (displayName.Length == 0 && file != null)
-            displayName = Path.GetFileNameWithoutExtension(file.Name);
+
+        // 建议显示名 = 压缩包文件名去扩展名（如 template_cn_hq_11）；
+        // 正文首行通常是作者的宣传语而非涂装名，不用于命名（§3.15）
+        var displayName = file == null ? "" : Path.GetFileNameWithoutExtension(file.Name);
 
         return new WTLivePost(postId, dto.Id,
             dto.Author?.Nickname ?? "",
@@ -184,12 +185,6 @@ public static class WTLiveService
             .Where(l => l.Length > 0);
 
         return string.Join("\n", lines);
-    }
-
-    private static string FirstLine(string text)
-    {
-        var line = text.Split('\n').FirstOrDefault() ?? "";
-        return line.Length > 60 ? line[..60] + "…" : line;
     }
 
     private static HttpClient CreateClient()

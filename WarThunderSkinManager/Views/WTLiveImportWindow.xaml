@@ -10,7 +10,9 @@
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" CornerRadius="0"/>
+        <!-- CaptionHeight=0：整个标题栏保持客户区（与其他进度窗一致）——
+             非客户区标题栏会吞掉按钮的命中测试（悬停 / 点击全部失效） -->
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"/>
     </WindowChrome.WindowChrome>
 
     <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}"

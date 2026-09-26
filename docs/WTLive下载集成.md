@@ -28,9 +28,9 @@ lang_group=<帖子id>&language=en
 |---|---|---|
 | `type` | `"camouflage"` | 非涂装帖（sights / missions 等）直接拒绝 |
 | `author.nickname` | `"锅盖头领域大神"` | 归属作者展示 |
-| `description` | HTML（`<p>` / `<br>` / `#话题` 链接） | 剥标签 → 纯文本描述；**首个非空行 = 建议显示名**（截断 60 字符） |
+| `description` | HTML（`<p>` / `<br>` / `#话题` 链接） | 剥标签 → 纯文本描述（确认窗展示；**不用于命名**——正文首行多是宣传语） |
 | `images[].orig.src` | `https://cdn-live.warthunder.com/uploads/.../<原图>.png` | 首张原图下载后设为涂装包预览图（`PreviewStore.SaveFromFile`） |
-| `file.name` | `"template_cn_hq_11.zip"` | 附件原始文件名（模板包常带**载具前缀**） |
+| `file.name` | `"template_cn_hq_11.zip"` | 附件原始文件名（模板包常带**载具前缀**）；**去扩展名 = 建议显示名** |
 | `file.link` | `https://live.warthunder.com/dl/<hash>/` | **站内下载直链**（匿名可下） |
 | `file.size` | `4930419` | 下载进度基准（服务端也可能给 `Content-Length`，优先用响应头） |
 | `downloads` / `views` / `likes` | 6 / 30 / 3 | 展示 |
