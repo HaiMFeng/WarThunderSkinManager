@@ -319,10 +319,16 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 首次生成某载具的 blk 后提示：用户涂装必须**在游戏里手动选中一次**才会生效
     /// （取消激活会保留空 blk，正是为了之后切换不必重选，见 §3.8）。
+    /// 「游戏内同步涂装选择」开启时不再提示——选择已由 §3.14 自动写入存档（§3.14）。
     /// </summary>
     private void PromptFirstOutput(string vehicleId)
     {
         if (_config.FirstOutputNoticeSeen) return; // 用户已勾过「下次不再提醒」
+
+        // 自动同步就绪（开关开 + Saves 目录 + 账户齐备）→ 游戏内选择已自动写入，无需手动选
+        if (_config.GameSyncEnabled
+            && !string.IsNullOrWhiteSpace(_config.SavesDirectory)
+            && !string.IsNullOrWhiteSpace(_config.ManagedAccountId)) return;
 
         var noMore = MessageDialog.InfoWithCheck(
             Loc.Format("skins.firstOutput", SelectedVehicle?.DisplayName ?? vehicleId, vehicleId + ".blk"),
