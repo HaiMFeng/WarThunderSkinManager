@@ -7,6 +7,13 @@ namespace WarThunderSkinManager.Models;
 /// <summary>涂装包（导入时的一个 blk = 一个包）。物理存于资源目录 packages/&lt;Id&gt;/。</summary>
 public partial class SkinPackage : ObservableObject
 {
+    /// <summary>
+    /// **仅聚合 / 候选用**的原始映射（§3.5）：配置过部件贴图（<c>PartsConfigured</c>）的包里，
+    /// 被用户设为「无」或移除的 <c>source.blk</c> 原始条目——**不参与输出**（输出只看
+    /// <see cref="Mappings"/>），但保留部件行与候选，让「不选用」随时可以改回来。
+    /// </summary>
+    public List<TexMapping> OriginalMappings { get; set; } = new();
+
     /// <summary>程序内稳定标识（GUID）</summary>
     [ObservableProperty] private string _id = "";
 

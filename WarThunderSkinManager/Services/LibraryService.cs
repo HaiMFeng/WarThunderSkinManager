@@ -31,6 +31,9 @@ public sealed class SnapshotPackage
     /// <summary>已解析的映射（来自 <c>meta.parts</c>，或未配置时解析 <c>source.blk</c> 的结果）。</summary>
     public List<SnapshotMapping> Mappings { get; set; } = new();
 
+    /// <summary>仅聚合 / 候选用：配置过的包里被「无」掉的原始映射（不参与输出，见 §3.5）。</summary>
+    public List<SnapshotMapping> OriginalMappings { get; set; } = new();
+
     /// <summary><c>meta.json</c> 的写入时间（UTC ticks）与长度 → 判断是否被改动。</summary>
     public long MetaTicks { get; set; }
     public long MetaLength { get; set; }
@@ -62,7 +65,7 @@ public sealed class LibrarySnapshot
 public static class LibraryService
 {
     /// <summary>快照格式版本：结构变化时 +1，旧快照自动作废（当作没有，走全量重建）。</summary>
-    private const int FormatVersion = 1;
+    private const int FormatVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -194,6 +197,7 @@ public static class LibraryService
                 {
                     Meta = meta,
                     Mappings = package.Mappings.Select(ToSnapshot).ToList(),
+                    OriginalMappings = package.OriginalMappings.Select(ToSnapshot).ToList(),
                     MetaTicks = metaTicks,
                     MetaLength = metaLength,
                     BlkTicks = blkTicks,
@@ -340,6 +344,20 @@ public static class LibraryService
         foreach (var mapping in snapshot.Mappings)
         {
             package.Mappings.Add(new TexMapping
+            {
+                Mode = mapping.Mode,
+                FromModule = mapping.From,
+                ToFile = mapping.To,
+                Param = mapping.Param,
+                HasWildcard = mapping.HasWildcard,
+                TextureMissing = mapping.TextureMissing,
+                Issues = new List<string>(mapping.Issues)
+            });
+        }
+
+        foreach (var mapping in snapshot.OriginalMappings)
+        {
+            package.OriginalMappings.Add(new TexMapping
             {
                 Mode = mapping.Mode,
                 FromModule = mapping.From,

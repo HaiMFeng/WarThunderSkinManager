@@ -145,6 +145,27 @@ public static class PartCatalog
                     list.Add(new Entry(vehicle.Id, package.Id, package.Name, mapping.FromModule,
                         mapping.ToFile, blob, mapping.Mode, mapping.Param));
                 }
+
+                // 原始映射（被「无」掉的部件）：同样可作为候选来源（§3.5 可逆的「不选用」）
+                foreach (var mapping in package.OriginalMappings)
+                {
+                    var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
+                    if (key.Length == 0) continue;
+
+                    if (!blobs.TryGetValue(mapping.ToFile, out var blob) || string.IsNullOrWhiteSpace(blob)) continue;
+
+                    var extension = Path.GetExtension(mapping.ToFile).ToLowerInvariant();
+                    if (!File.Exists(BlobStore.BlobPath(resourceDir, blob, extension))) continue;
+
+                    if (!table.TryGetValue(key, out var originalList))
+                    {
+                        originalList = new List<Entry>();
+                        table[key] = originalList;
+                    }
+
+                    originalList.Add(new Entry(vehicle.Id, package.Id, package.Name, mapping.FromModule,
+                        mapping.ToFile, blob, mapping.Mode, mapping.Param));
+                }
             }
 
         // 稳定顺序（按载具 → 包名 → 贴图名），保证界面里候选顺序可预期

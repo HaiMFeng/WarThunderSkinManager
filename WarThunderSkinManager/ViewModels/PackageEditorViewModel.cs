@@ -150,25 +150,64 @@ public partial class PackageEditorViewModel : ObservableObject
 
         var pool = new Dictionary<string, List<PartCandidate>>(StringComparer.OrdinalIgnoreCase);
         var current = new Dictionary<string, PartCandidate>(StringComparer.OrdinalIgnoreCase);
+        // 同一部件位置内按**内容（blob）去重**（§3.5）：同一张贴图被多个包采用时只显示一条候选，
+        // 显示名优先取**最早的持有包**（通常是原始导入包）——避免「A 包采用后变成 A.xxx 满天飞」的混乱，
+        // 也消除被改名副本（to 撞名生成的 hash 后缀名）造成的重复项
+        var seenBlobs = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var package in vehicle.SkinPackages)
+        {
             foreach (var mapping in package.Mappings)
             {
                 var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
                 if (key.Length == 0) continue;
 
                 // 只要有条目就建行：本包/别的包该位置都没贴图时，该行只显示「无」
-                if (!pool.ContainsKey(key)) pool[key] = new List<PartCandidate>();
+                if (!pool.ContainsKey(key))
+                {
+                    pool[key] = new List<PartCandidate>();
+                    seenBlobs[key] = new HashSet<string>(StringComparer.Ordinal);
+                }
 
                 // 贴图缺失的条目不作为候选（§3.2 校验）
                 if (!TryBuildCandidate(package, mapping, out var candidate)) continue;
 
-                pool[key].Add(candidate);
+                PartCandidate entry;
+                if (seenBlobs[key].Add(candidate.Blob))
+                {
+                    pool[key].Add(candidate);
+                    entry = candidate;
+                }
+                else
+                {
+                    // 同内容贴图已有候选 → 合并（不重复列出），本包选择指向该已有条目
+                    entry = pool[key].First(c => string.Equals(c.Blob, candidate.Blob, StringComparison.Ordinal));
+                }
 
                 // 本包在该位置当前使用的贴图
                 if (string.Equals(package.Id, _meta.Id, StringComparison.Ordinal))
-                    current[key] = candidate;
+                    current[key] = entry;
             }
+
+            // 原始映射（被「无」掉的部件，§3.5）：为部件行保留候选，让「不选用」可逆；
+            // 这类条目只在其内容尚未出现在候选池时补充进来
+            foreach (var mapping in package.OriginalMappings)
+            {
+                var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
+                if (key.Length == 0) continue;
+
+                if (!pool.ContainsKey(key))
+                {
+                    pool[key] = new List<PartCandidate>();
+                    seenBlobs[key] = new HashSet<string>(StringComparer.Ordinal);
+                }
+
+                if (!TryBuildCandidate(package, mapping, out var candidate)) continue;
+
+                if (seenBlobs[key].Add(candidate.Blob))
+                    pool[key].Add(candidate);
+            }
+        }
 
         AddCrossVehicleCandidates(pool);
         AddMultiSourceCandidates(pool);

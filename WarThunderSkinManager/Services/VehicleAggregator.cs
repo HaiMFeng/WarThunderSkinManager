@@ -62,6 +62,26 @@ public static class VehicleAggregator
 
                 part.Candidates.Add(mapping);
             }
+
+            // 原始映射（被「无」掉 / 移除的部件）：只产生部件行与候选，不参与输出（§3.5）
+            foreach (var mapping in package.OriginalMappings)
+            {
+                var key = NormalizeFrom(mapping.FromModule);
+                if (key.Length == 0) continue;
+
+                if (!parts.TryGetValue(key, out var originalPart))
+                {
+                    originalPart = new VehiclePart
+                    {
+                        From = key,
+                        DisplayName = key,
+                        Tags = PartTagResolver.Resolve(key, vehicleId)
+                    };
+                    parts[key] = originalPart;
+                }
+
+                originalPart.Candidates.Add(mapping);
+            }
         }
 
         vehicle.Parts = parts.Values
@@ -126,6 +146,7 @@ public static class VehicleAggregator
 
         if (meta.PartsConfigured || meta.Parts.Count > 0)
         {
+            var configured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var part in meta.Parts)
             {
                 if (string.IsNullOrWhiteSpace(part.From) || string.IsNullOrWhiteSpace(part.To)) continue;
@@ -138,6 +159,24 @@ public static class VehicleAggregator
                     Param = part.Param,
                     HasWildcard = part.From.Contains('*')
                 });
+                configured.Add(NormalizeFrom(part.From));
+            }
+
+            // 原始映射里未被配置覆盖的部件（含被用户设为「无」的）→ 记入 **OriginalMappings**：
+            // 不参与输出（输出只看 Mappings），但聚合与属性页保留部件行与候选——
+            // 「不选用」必须是可逆的，否则部件会从列表里永久消失（§3.5）
+            var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
+            if (File.Exists(sourceBlk))
+            {
+                var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
+                foreach (var mapping in blk.Mappings)
+                {
+                    var key = NormalizeFrom(mapping.FromModule);
+                    if (key.Length == 0 || configured.Contains(key)) continue;
+                    if (PartExclusionService.IsExcluded(meta.VehicleId, key)) continue;
+
+                    package.OriginalMappings.Add(mapping);
+                }
             }
         }
         else
