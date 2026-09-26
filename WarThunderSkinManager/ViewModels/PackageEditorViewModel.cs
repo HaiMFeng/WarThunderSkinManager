@@ -203,7 +203,8 @@ public partial class PackageEditorViewModel : ObservableObject
         // 也消除被改名副本（to 撞名生成的 hash 后缀名）造成的重复项
         var seenBlobs = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var package in vehicle.SkinPackages)
+        // **资源包优先**遍历：同内容贴图的出处（显示名）优先归属资源包，普通包采用不改变出处
+        foreach (var package in vehicle.SkinPackages.OrderByDescending(p => p.IsResource))
         {
             foreach (var mapping in package.Mappings)
             {

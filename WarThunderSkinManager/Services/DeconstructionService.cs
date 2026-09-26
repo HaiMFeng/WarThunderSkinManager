@@ -32,7 +32,8 @@ public static class DeconstructionService
             Id = Guid.NewGuid().ToString("N"),
             VehicleId = blk.VehicleId,
             Name = PackageNaming.Resolve(name, blkPath),
-            SourceImportId = sourceImportId
+            SourceImportId = sourceImportId,
+            IsResource = true // 导入包 = 只读资源（§3.5）
         };
 
         var meta = new PackageMeta

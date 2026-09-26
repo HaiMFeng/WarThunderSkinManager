@@ -598,6 +598,127 @@ internal static class SelfTest
             PartCatalog.Invalidate();
             log.AppendLine("清理     : 已删除");
 
+            // ---- 资源包模型（§3.5）：模拟用户操作序列 ----
+            log.AppendLine();
+            log.AppendLine("---- 资源包模型（模拟用户操作）----");
+            var resConfig = new AppConfig
+            {
+                ConfigDirectory = Path.Combine(workDir, "cfg-resource"),
+                ResourceDirectory = resourceDir
+            };
+
+            // ⓪ 重新导入一份**干净的**资源包（前面的章节已把第一份导入包解锁成普通包）
+            var resSource = Path.Combine(workDir, "res-src");
+            CopyDirectory(sourceFolder, resSource);
+            var resImport = ImportService.Commit(
+                ImportService.Scan(resSource, ImportSourceType.Folder).ToList(),
+                resourceDir, ImportSourceType.Folder, resSource);
+            var resPkgMeta = resImport.Packages.First(
+                m => string.Equals(m.VehicleId, firstVehicleId, StringComparison.OrdinalIgnoreCase));
+
+            // ① 导入 → 资源包
+            log.AppendLine($"① 导入包是资源包 = {resPkgMeta.IsResource}（应 True）");
+
+            // ② 资源包可激活输出（原始 blk 内容）
+            var resVehicle = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId);
+            var resPkg = resVehicle!.SkinPackages.First(
+                p => string.Equals(p.Id, resPkgMeta.Id, StringComparison.Ordinal));
+            log.AppendLine($"② 调试: vehicle={resVehicle.Id}，资源包 mappings={resPkg.Mappings.Count}"
+                         + $"，original={resPkg.OriginalMappings.Count}，isResource={resPkg.IsResource}"
+                         + $"，载具包数={resVehicle.SkinPackages.Count}");
+            var resSync = OutputService.SyncVehicle(Path.Combine(workDir, "res-userskins"),
+                resourceDir, firstVehicleId, LoadoutService.BuildLoadout(resPkg));
+            log.AppendLine($"② 资源包激活输出: {resSync.BlkEntries} 条映射、{resSync.WrittenTextures} 张贴图");
+
+            // ③ 复制 → 普通包；新建空白 → 普通包
+            var copiedMeta = PackageStore.Duplicate(resourceDir, resPkgMeta.Id, "副本（普通）");
+            var mixMeta = PackageStore.CreateBlank(resourceDir, firstVehicleId, "混合（普通）");
+            log.AppendLine($"③ 复制包为普通包 = {copiedMeta != null && !copiedMeta.IsResource}"
+                         + $"，新建空白包为普通包 = {!mixMeta.IsResource}");
+
+            // ④ 空白包编辑（模拟属性页）：从资源包采用贴图 → to 保持原名，无哈希改名
+            PartCatalog.Invalidate();
+            var mixEditor = new PackageEditorViewModel(resConfig, mixMeta);
+            foreach (var row in mixEditor.Parts)
+            {
+                var fromResource = row.Candidates.FirstOrDefault(c => !c.IsNone
+                    && string.Equals(c.PackageId, resPkgMeta.Id, StringComparison.Ordinal));
+                if (fromResource != null) row.SelectedCandidate = fromResource;
+            }
+            mixEditor.Apply();
+            PackageStore.SaveMeta(resourceDir, mixMeta); // Apply 只改内存 meta，显式落盘
+            var mixAfter = PackageStore.Load(resourceDir, mixMeta.Id)!;
+            var hashRenamed = mixAfter.Textures
+                .Where(t => System.Text.RegularExpressions.Regex.IsMatch(t.To, @"_[0-9a-f]{8}\."))
+                .ToList();
+            var resUntouched = PackageStore.Load(resourceDir, resPkgMeta.Id)!;
+            log.AppendLine($"④ 采用资源包贴图: to 保持原名（无哈希改名）= {hashRenamed.Count == 0}"
+                         + $"（{string.Join("、", mixAfter.Parts.Select(p => p.To))}）"
+                         + $"，资源包未被改动 = {resUntouched.Parts.Count == 0 && !resUntouched.PartsConfigured}");
+
+            // ⑤ 「不选用」可逆：选「无」→ 落盘 → 重开（行仍在）→ 重新选择 → 恢复；每步显式落盘 / 重载
+            var mixState1 = PackageStore.Load(resourceDir, mixMeta.Id)!;
+            var mixEditor2 = new PackageEditorViewModel(resConfig, mixState1);
+            var rowA = mixEditor2.Parts.FirstOrDefault(
+                r => string.Equals(r.From, "a1_c", StringComparison.OrdinalIgnoreCase));
+            var rowAStillExists = rowA != null;
+            if (rowA != null)
+            {
+                rowA.SelectedCandidate = rowA.Candidates.First(c => c.IsNone); // 手动选「无」
+                mixEditor2.Apply();
+                PackageStore.SaveMeta(resourceDir, mixState1);
+            }
+
+            var mixState2 = PackageStore.Load(resourceDir, mixMeta.Id)!;
+            var partsAfterNone = mixState2.Parts.Count; // 应 1（a1_c 被设为「无」→ 不输出）
+            var editor3 = new PackageEditorViewModel(resConfig, mixState2);
+            var rowAAfterNone = editor3.Parts.FirstOrDefault(
+                r => string.Equals(r.From, "a1_c", StringComparison.OrdinalIgnoreCase));
+            var a1Candidates = rowAAfterNone?.Candidates.Count(c => !c.IsNone) ?? 0;
+            log.AppendLine($"⑤ 不选用可逆: 选择「无」后行仍存在 = {rowAStillExists}"
+                         + $"，parts 剩 {partsAfterNone} 条（应 1）"
+                         + $"，重开后行存在 = {rowAAfterNone != null}，候选 {a1Candidates} 条（应 > 0）");
+
+            if (rowAAfterNone != null)
+            {
+                var restore = rowAAfterNone.Candidates.FirstOrDefault(c => !c.IsNone);
+                if (restore != null) rowAAfterNone.SelectedCandidate = restore;
+                editor3.Apply();
+                PackageStore.SaveMeta(resourceDir, mixState2);
+            }
+            var mixRestored = PackageStore.Load(resourceDir, mixMeta.Id)!;
+            log.AppendLine($"⑤ 恢复后     : parts = {mixRestored.Parts.Count} 条（应 2）");
+
+            // ⑥ 删除资源包 → 普通包存活（blob 被引用不回收），输出不受影响
+            var blobA = PackageStore.Load(resourceDir, mixMeta.Id)!.Textures
+                .First(t => t.To.EndsWith(".dds", StringComparison.OrdinalIgnoreCase)).Blob;
+            PackageStore.Delete(resourceDir, resPkgMeta.Id);
+            BlobGc.Collect(resourceDir);
+            PartCatalog.Invalidate();
+            var blobAPath = BlobStore.BlobPath(resourceDir, blobA, ".dds");
+            var surviveVehicle = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId);
+            var survivePkg = surviveVehicle!.SkinPackages.First(
+                p => string.Equals(p.Id, mixMeta.Id, StringComparison.Ordinal));
+            var surviveSync = OutputService.SyncVehicle(Path.Combine(workDir, "res-userskins"),
+                resourceDir, firstVehicleId, LoadoutService.BuildLoadout(survivePkg));
+            log.AppendLine($"⑥ 删除资源包: 引用中的 blob 存活 = {File.Exists(blobAPath)}"
+                         + $"，普通包输出 = {surviveSync.BlkEntries} 条映射、{surviveSync.WrittenTextures} 张贴图");
+
+            // ⑦ 解锁资源包（IsResource → false）：以 source.blk 为映射来源
+            var suMeta = PackageStore.LoadAll(resourceDir).First(
+                m => string.Equals(m.VehicleId, "su_30mkk", StringComparison.OrdinalIgnoreCase));
+            suMeta.IsResource = false;
+            PackageStore.SaveMeta(resourceDir, suMeta);
+            PartCatalog.Invalidate();
+            var unlocked = VehicleAggregator.BuildVehicle(resourceDir, "su_30mkk")!.SkinPackages.First();
+            log.AppendLine($"⑦ 解锁资源包: IsResource = {suMeta.IsResource}，映射 = {unlocked.Mappings.Count} 条（source.blk 原样）");
+
+            // ⑧ 国家前缀校对（germ / sw / f 实测修复）
+            log.AppendLine($"⑧ 前缀校对: germ→{CountryResolver.Resolve("germ_t_34_85")}（应 de）"
+                         + $"，sw→{CountryResolver.Resolve("sw_t_90")}（应 se）"
+                         + $"，f→{CountryResolver.Resolve("f_mb_152")}（应 fr）"
+                         + $"，ch→{CountryResolver.Resolve("ch_unknown")}（应 unclassified）");
+
             // ---- 压缩包导入（§3.1：拖入压缩包）----
             log.AppendLine();
             log.AppendLine("---- 压缩包导入 ----");

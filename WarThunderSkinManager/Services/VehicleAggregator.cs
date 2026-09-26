@@ -149,13 +149,14 @@ public static class VehicleAggregator
         // （资源包的 parts/textures 永不改写；编辑请复制为普通包）
         if (meta.IsResource)
         {
-            var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
-            if (File.Exists(sourceBlk))
+            var resourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
+            if (File.Exists(resourceBlk))
             {
-                var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
+                var blk = BlkParser.Parse(resourceBlk, File.ReadAllText(resourceBlk, Encoding.UTF8));
                 package.Mappings.AddRange(blk.Mappings);
             }
 
+            ApplyTextures(package, meta.Textures); // ⚠️ 别漏：blob 回填缺失会让激活输出全部“无可用贴图”
             return package;
         }
 
