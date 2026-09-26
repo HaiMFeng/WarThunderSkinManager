@@ -36,6 +36,9 @@ public sealed class ImportProgress
 
     /// <summary>当前处理的包名</summary>
     public string Current { get; init; } = "";
+
+    /// <summary>0..1 的比例进度（解压等以字节 / 条目计的阶段）；空 = 按 Done/Total 计。</summary>
+    public double? Fraction { get; init; }
 }
 
 /// <summary>源清理结果（功能设计 §3.1）。</summary>

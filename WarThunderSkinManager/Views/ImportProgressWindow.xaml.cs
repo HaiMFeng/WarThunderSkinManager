@@ -13,8 +13,7 @@ public sealed partial class ImportProgressVm : ObservableObject
 {
     [ObservableProperty] private string _titleText = "";
     [ObservableProperty] private bool _barVisible;
-    [ObservableProperty] private int _done;
-    [ObservableProperty] private int _total;
+    [ObservableProperty] private double _fraction;
     [ObservableProperty] private string _currentItem = "";
     [ObservableProperty] private string _countText = "";
 }
@@ -41,19 +40,35 @@ public partial class ImportProgressWindow : Window
         InitializeComponent();
         DataContext = _vm;
         _vm.TitleText = title;
-        _vm.BarVisible = total > 0; // 无总量（扫描阶段）→ 不显示进度条
-        _vm.Total = Math.Max(total, 1);
+        _vm.BarVisible = total > 0; // 无总量（准备阶段首报前）→ 不显示进度条
+        _vm.Fraction = 0;
+        _vm.CountText = total > 0 ? $"0 / {total}" : "";
 
         Closing += (_, _) => Cancellation.Cancel(); // 任何途径关窗都等于取消
     }
 
-    /// <summary>报告进度（UI 线程调用，由 Progress&lt;T&gt; 回调）。</summary>
+    /// <summary>报告进度（UI 线程调用，由 Progress&lt;T&gt; 回调）。
+    /// 解压等阶段带 <see cref="ImportProgress.Fraction"/> → 显示百分比；解构阶段按 Done/Total 显示计数。</summary>
     public void Update(ImportProgress progress)
     {
-        _vm.Done = progress.Done;
-        _vm.Total = Math.Max(progress.Total, 1);
+        if (progress.Fraction is { } fraction)
+        {
+            _vm.BarVisible = true;
+            _vm.Fraction = Math.Clamp(fraction, 0, 1);
+            _vm.CountText = $"{Math.Round(fraction * 100)}%";
+        }
+        else if (progress.Total > 0)
+        {
+            _vm.BarVisible = true;
+            _vm.Fraction = (double)progress.Done / Math.Max(progress.Total, 1);
+            _vm.CountText = $"{progress.Done} / {progress.Total}";
+        }
+        else
+        {
+            _vm.BarVisible = false;
+        }
+
         _vm.CurrentItem = progress.Current;
-        _vm.CountText = $"{progress.Done} / {progress.Total}";
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

@@ -2,11 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Readers;
 
 namespace WarThunderSkinManager.Services;
+
+/// <summary>解压进度（在条目之间报告；压缩头未给字节总量时以条目计数折算比例）。</summary>
+/// <param name="Fraction">0..1 的总体进度。</param>
+/// <param name="Entry">当前条目名（相对路径）。</param>
+public sealed record ArchiveExtractProgress(double Fraction, string Entry);
 
 /// <summary>
 /// 压缩包需要密码（或密码不对）时抛出：由界面层弹密码框后**重试**，
@@ -49,15 +55,18 @@ public static class ArchiveService
     /// 解压压缩包到暂存区，返回**本次解压的根目录**（形如 <c>imports/extract/1a2b3c4d</c>）。
     /// 受密码保护且未给密码 / 密码不对时抛 <see cref="ArchivePasswordException"/>。
     /// 解压中途失败会清掉半成品，避免留下残缺目录。
+    /// 进度在**条目之间**报告（<paramref name="progress"/>）；<paramref name="cancellationToken"/>
+    /// 亦在条目之间生效——解压是纯 IO 密集操作，供大批量导入的进度窗使用（§3.1）。
     /// </summary>
-    public static string Extract(string archivePath, string resourceDir, string? password = null)
+    public static string Extract(string archivePath, string resourceDir, string? password = null,
+        IProgress<ArchiveExtractProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var staging = Path.Combine(StagingRoot(resourceDir), Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(staging);
 
         try
         {
-            ExtractInto(archivePath, staging, password);
+            ExtractInto(archivePath, staging, password, progress, cancellationToken);
         }
         catch
         {
@@ -79,7 +88,8 @@ public static class ArchiveService
 
     // ---------- 内部 ----------
 
-    private static void ExtractInto(string archivePath, string staging, string? password)
+    private static void ExtractInto(string archivePath, string staging, string? password,
+        IProgress<ArchiveExtractProgress>? progress, CancellationToken cancellationToken)
     {
         var options = new ReaderOptions();
         if (!string.IsNullOrEmpty(password)) options.Password = password;
@@ -100,8 +110,22 @@ public static class ArchiveService
             if (string.IsNullOrEmpty(password) && archive.Entries.Any(entry => entry.IsEncrypted))
                 throw PasswordError(password, null);
 
-            foreach (var entry in archive.Entries.Where(entry => !entry.IsDirectory))
+            var entries = archive.Entries.Where(entry => !entry.IsDirectory).ToList();
+            var totalEntries = Math.Max(entries.Count, 1);
+
+            // 字节总量可得（zip / 7z 的头里通常有）→ 按字节折算比例；未知（部分流式格式）→ 按条目计数
+            var sizesKnown = entries.All(entry => entry.Size >= 0);
+            var totalBytes = entries.Sum(entry => Math.Max(entry.Size, 0));
+
+            ReportExtract(progress, entries, 0, 0, totalBytes, totalEntries, sizesKnown);
+
+            var doneEntries = 0;
+            var doneBytes = 0L;
+
+            foreach (var entry in entries)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 try
                 {
                     entry.WriteToDirectory(staging,
@@ -111,9 +135,19 @@ public static class ArchiveService
                 {
                     throw PasswordError(password, ex);
                 }
+
+                doneEntries++;
+                if (entry.Size > 0) doneBytes += entry.Size;
+                ReportExtract(progress, entries, doneEntries, doneBytes, totalBytes, totalEntries, sizesKnown);
             }
         }
     }
+
+    private static void ReportExtract(IProgress<ArchiveExtractProgress>? progress, List<IArchiveEntry> entries,
+        int doneEntries, long doneBytes, long totalBytes, int totalEntries, bool sizesKnown)
+        => progress?.Report(new ArchiveExtractProgress(
+            sizesKnown ? doneBytes / (double)Math.Max(totalBytes, 1) : doneEntries / (double)totalEntries,
+            doneEntries < entries.Count ? entries[doneEntries].Key ?? "" : ""));
 
     private static ArchivePasswordException PasswordError(string? password, Exception? inner)
         => new(password != null,

@@ -31,8 +31,8 @@
             </Grid>
 
             <StackPanel Grid.Row="1" Margin="20,16,20,18">
-                <!-- 进度条：扫描阶段无总量 → 隐藏 -->
-                <ProgressBar Height="6" Minimum="0" Maximum="{Binding Total}" Value="{Binding Done}">
+                <!-- 进度条：0..1 比例驱动（计数阶段按 Done/Total 折算，解压阶段按字节 / 条目） -->
+                <ProgressBar Height="6" Minimum="0" Maximum="1" Value="{Binding Fraction}">
                     <ProgressBar.Template>
                         <ControlTemplate TargetType="ProgressBar">
                             <Grid>

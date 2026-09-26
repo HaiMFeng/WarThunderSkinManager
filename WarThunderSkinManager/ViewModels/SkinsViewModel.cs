@@ -984,38 +984,53 @@ public partial class SkinsViewModel : ObservableObject
 
         try
         {
-            // 压缩包解压（可能要密码 → 留在 UI 线程弹框）；建议包名 = 压缩包名 / 包内唯一顶层文件夹名
-            foreach (var archive in archives)
-            {
-                var extracted = ExtractArchiveWithPrompt(archive, resourceDir);
-                if (extracted == null)
-                {
-                    skipped++;
-                    continue;
-                }
+            // 准备阶段（解压 + 扫描）**全部后台执行**（§3.1 大批量）：进度窗全程可见、可取消——
+            // 解压按条目报比例（字节优先），解析按压缩包 / 文件夹逐个显示；密码框经调度器回 UI 线程弹出
+            var window = new ImportProgressWindow(Loc["import.progressPreparing"], total: 0)
+                { Owner = Application.Current?.MainWindow };
+            IProgress<ImportProgress> reporter = new Progress<ImportProgress>(window.Update);
 
-                staging.Add(extracted);
-            }
-
-            // 扫描在**后台**执行（大量 blk 文本读取是秒级，§3.1）；解压根此时已就绪
-            var scanStaging = staging.ToList();
-            var scanArchives = archives.ToList();
-            var scanFolders = folders.ToList();
-
-            var candidates = await Task.Run(() =>
+            var prepare = Task.Run(async () =>
             {
                 var list = new List<ImportCandidate>();
+                var ct = window.Cancellation.Token;
 
-                // staging 与 scanArchives 一一对应（skipped 的两边都不进）
-                for (var i = 0; i < scanStaging.Count; i++)
-                    list.AddRange(ImportService.Scan(scanStaging[i], ImportSourceType.Archive,
-                        ArchivePackName(scanArchives[i], scanStaging[i])));
+                foreach (var archive in archives)
+                {
+                    ct.ThrowIfCancellationRequested();
 
-                foreach (var folder in scanFolders)
-                    list.AddRange(ImportService.Scan(folder, ImportSourceType.Folder));
+                    var extracted = await ExtractArchiveWithPromptAsync(archive, resourceDir, reporter, ct);
+                    if (extracted == null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    staging.Add(extracted);
+
+                    // 解析（读全部 blk 文本，秒级）：逐压缩包显示（用户示例的「正在解析 xxx.zip」）
+                    reporter.Report(new ImportProgress
+                        { Current = Loc.Format("import.progressScanningArchive", Path.GetFileName(archive)) });
+                    list.AddRange(ImportService.Scan(extracted, ImportSourceType.Archive,
+                        ArchivePackName(archive, extracted), ct));
+                }
+
+                foreach (var folder in folders)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    reporter.Report(new ImportProgress
+                        { Current = Loc.Format("import.progressScanningFolder", Path.GetFileName(folder)) });
+                    list.AddRange(ImportService.Scan(folder, ImportSourceType.Folder, null, ct));
+                }
 
                 return list;
             });
+
+            _ = prepare.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+            window.ShowDialog(); // 阻塞至准备完成 / 取消（关窗即取消）
+
+            var candidates = prepare.Result; // 取消 → OperationCanceledException（下方捕获）
 
             // 只拖入一个文件夹 → 沿用「导入文件夹」语义（可勾选删除该文件夹）
             var singleFolder = folders.Count == 1 && archives.Count == 0;
@@ -1043,10 +1058,12 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 解压压缩包，遇到密码保护时弹密码框（密码不对可重试，最多 3 次）。
-    /// 返回解压根目录；用户取消或解压失败返回 <c>null</c>（该压缩包跳过，不影响其他来源）。
+    /// 解压压缩包（**后台**执行，条目级进度上报），遇密码保护时经调度器回 UI 线程弹密码框
+    /// （密码不对可重试，最多 3 次）。返回解压根目录；用户取消或解压失败返回 <c>null</c>
+    /// （该压缩包跳过，不影响其他来源）。
     /// </summary>
-    private string? ExtractArchiveWithPrompt(string archivePath, string resourceDir)
+    private async Task<string?> ExtractArchiveWithPromptAsync(string archivePath, string resourceDir,
+        IProgress<ImportProgress> progress, CancellationToken ct)
     {
         var fileName = Path.GetFileName(archivePath);
         string? password = null;
@@ -1056,24 +1073,51 @@ public partial class SkinsViewModel : ObservableObject
         {
             try
             {
-                return ArchiveService.Extract(archivePath, resourceDir, password);
+                progress.Report(new ImportProgress
+                {
+                    Current = Loc.Format("import.progressExtracting", fileName),
+                    Fraction = 0
+                });
+
+                var extractReporter = new Progress<ArchiveExtractProgress>(p => progress.Report(new ImportProgress
+                {
+                    Current = Loc.Format("import.progressExtracting", fileName),
+                    Fraction = p.Fraction
+                }));
+
+                return await Task.Run(() => ArchiveService.Extract(
+                    archivePath, resourceDir, password, extractReporter, ct), ct);
             }
             catch (ArchivePasswordException ex)
             {
-                password = PasswordDialogWindow.Prompt(
-                    Application.Current?.MainWindow, fileName, wrongPassword || ex.WrongPassword);
+                password = await RunOnUi(() => PasswordDialogWindow.Prompt(
+                    Application.Current?.MainWindow, fileName, wrongPassword || ex.WrongPassword));
 
                 if (password == null) return null; // 用户取消 → 跳过该压缩包
                 wrongPassword = true;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                ShowStatus(Loc.Format("import.archive.openFailed", $"{fileName}：{ex.Message}"));
+                RunOnUi(() => ShowStatus(Loc.Format("import.archive.openFailed", $"{fileName}：{ex.Message}")));
                 return null;
             }
         }
 
         return null; // 连续 3 次密码不对
+    }
+
+    /// <summary>在 UI 线程执行（后台任务里弹框 / 改界面状态用）。</summary>
+    private static Task<T> RunOnUi<T>(Func<T> action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        return dispatcher == null ? Task.FromResult(action()) : dispatcher.InvokeAsync(action).Task;
+    }
+
+    private static void RunOnUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) action();
+        else dispatcher.Invoke(action);
     }
 
     /// <summary>压缩包的建议包名：压缩包文件名（去扩展名）；包内只有一个顶层文件夹时取该文件夹名。</summary>
