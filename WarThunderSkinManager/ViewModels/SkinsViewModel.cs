@@ -130,6 +130,7 @@ public partial class SkinsViewModel : ObservableObject
 
         // 本流程的暂存产物（与其他下载互不相交；结束只清理自己的，不整区清扫）
         string? zipPath = null, extracted = null, previewImagePath = null;
+        Task? previewTask = null;
 
         try
         {
@@ -146,8 +147,21 @@ public partial class SkinsViewModel : ObservableObject
                 item.StateText = Loc.Format("wtlive.state.downloading", $"{item.Progress:P0}");
             });
 
-            await Task.Run(() => WTLiveService.DownloadFileAsync(
+            var zipTask = Task.Run(() => WTLiveService.DownloadFileAsync(
                 post.File.Link, zipPath, post.File.Size, reporter, _downloadsCts.Token));
+
+            // 预览原图与 zip **并行**下载（国内网络差 → 越早开始越可能在导入完成前就绪；
+            // 即使失败也不影响导入结果，仅丢预览）
+            if (!string.IsNullOrWhiteSpace(item.PreviewUrl))
+            {
+                previewImagePath = Path.Combine(wtliveDir,
+                    $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+
+                previewTask = Task.Run(() => WTLiveService.DownloadFileAsync(
+                    item.PreviewUrl!, previewImagePath, null, null, _downloadsCts.Token));
+            }
+
+            await zipTask;
 
             // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
             item.State = WtLiveDownloadState.Importing;
@@ -166,17 +180,27 @@ public partial class SkinsViewModel : ObservableObject
             // 导入成功 → 预览图应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
             {
-                if (!string.IsNullOrWhiteSpace(item.PreviewUrl))
+                // 等预览图就绪（通常 zip 下载期间就已下完）：失败只提示，不影响导入结果
+                var previewReady = false;
+                if (previewTask != null)
                 {
-                    previewImagePath = Path.Combine(wtliveDir,
-                        $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+                    try
+                    {
+                        await previewTask;
+                        previewReady = File.Exists(previewImagePath);
+                    }
+                    catch (OperationCanceledException) { throw; } // 退出取消 → 走外层「已取消」
+                    catch (Exception ex)
+                    {
+                        ShowStatus(Loc["wtlive.previewFailed"]);
+                        System.Diagnostics.Debug.WriteLine($"WTLive preview failed: {ex.Message}");
+                    }
+                }
 
-                    await Task.Run(() => WTLiveService.DownloadFileAsync(
-                        item.PreviewUrl!, previewImagePath, null, null, _downloadsCts.Token));
-
-                    if (File.Exists(previewImagePath))
-                        foreach (var package in result.Packages)
-                            PreviewStore.SaveFromFile(_config.ConfigDirectory, package.Id, previewImagePath);
+                if (previewReady && previewImagePath != null)
+                {
+                    foreach (var package in result.Packages)
+                        PreviewStore.SaveFromFile(_config.ConfigDirectory, package.Id, previewImagePath);
 
                     // 当前列表里正好有这些包 → 立即刷新缩略图
                     foreach (var package in Packages)
@@ -211,6 +235,12 @@ public partial class SkinsViewModel : ObservableObject
         }
         finally
         {
+            // 预览任务可能仍在下载 → 等它结束（成功或异常都吞掉）再清理，避免「删了又被写回」
+            if (previewTask != null)
+            {
+                try { await previewTask; } catch { /* 取消 / 网络失败均可 */ }
+            }
+
             // 只清理**本流程**的产物——其他下载 / 导入流程的暂存可能仍在使用，禁止整区清扫
             foreach (var path in new[] { zipPath, extracted, previewImagePath })
                 TryDeletePath(path);
