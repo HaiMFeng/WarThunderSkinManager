@@ -166,6 +166,8 @@
   "import.failed": "Import failed: {0}",
   "import.needResource": "Please set the program resource storage directory in 'Settings' first",
   "import.needUserSkins": "Please set the game UserSkins directory in 'Settings' first",
+  "skins.importArchives": "Import Archives",
+  "archive.filter": "Archives (*.zip; *.7z; *.rar; *.tar; *.gz; *.bz2; *.xz)",
   "import.progressScanning": "Scanning skin files…",
   "import.progressPreparing": "Preparing import…",
   "import.progressExtracting": "Extracting {0}",

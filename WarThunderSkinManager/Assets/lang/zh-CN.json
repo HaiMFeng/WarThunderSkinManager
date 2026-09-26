@@ -166,6 +166,8 @@
   "import.failed": "导入失败：{0}",
   "import.needResource": "请先在「设置」中指定程序资源存储目录",
   "import.needUserSkins": "请先在「设置」中指定游戏 UserSkins 目录",
+  "skins.importArchives": "导入压缩包",
+  "archive.filter": "压缩包 (*.zip; *.7z; *.rar; *.tar; *.gz; *.bz2; *.xz)",
   "import.progressScanning": "正在扫描涂装文件…",
   "import.progressPreparing": "正在准备导入…",
   "import.progressExtracting": "正在解压 {0}",

@@ -174,6 +174,32 @@ public partial class SkinsViewModel : ObservableObject
                   ImportSourceType.Folder, dialog.FolderName);
     }
 
+    /// <summary>导入压缩包：文件选择器（**多选**，过滤器与识别同一份扩展名清单）→ 复用拖入链路
+    /// （解压 + 扫描后台执行带进度 → 预览 → 解构），含「导入后删除压缩包」选项。</summary>
+    [RelayCommand]
+    private void ImportArchives()
+    {
+        if (!EnsureResourceDir()) return;
+
+        var dialog = new OpenFileDialog
+        {
+            Title = Loc["skins.importArchives"],
+            Multiselect = true,
+            Filter = ArchiveService.FileDialogFilter
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        var archives = dialog.FileNames.Where(ArchiveService.IsArchive).ToList();
+        if (archives.Count == 0)
+        {
+            ShowStatus(Loc["import.drop.none"]);
+            return;
+        }
+
+        ImportDropped(archives); // 拖入链路已覆盖：解压后台 + 进度 / 预览 / 解构 / 删除压缩包选项
+    }
+
     [RelayCommand]
     private void ImportUserSkins()
     {

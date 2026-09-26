@@ -47,6 +47,10 @@ public static class ArchiveService
         => !string.IsNullOrWhiteSpace(path) &&
            Extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>文件选择器的过滤器（「导入压缩包」按钮用；与 <see cref="IsArchive"/> 同一份扩展名清单，不会漂移）。</summary>
+    public static string FileDialogFilter
+        => $"{LocalizationManager.Instance["archive.filter"]}|{string.Join(";", Extensions.Select(ext => "*" + ext))}";
+
     /// <summary>解压暂存区根目录（功能设计 §3.1：先解压到程序资源存储目录）。</summary>
     public static string StagingRoot(string resourceDir)
         => Path.Combine(ImportService.ImportsDirectory(resourceDir), "extract");

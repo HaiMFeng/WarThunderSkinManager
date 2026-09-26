@@ -63,7 +63,9 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
-                <Button Content="{loc:Loc skins.importFolder}" Style="{StaticResource PrimaryButton}"
+                <Button Content="{loc:Loc skins.importArchives}" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding Skins.ImportArchivesCommand}"/>
+                <Button Content="{loc:Loc skins.importFolder}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportFolderCommand}"/>
                 <Button Content="{loc:Loc skins.importUserSkins}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportUserSkinsCommand}"/>
