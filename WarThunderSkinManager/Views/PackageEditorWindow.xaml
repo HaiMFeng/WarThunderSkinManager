@@ -55,8 +55,19 @@
                                 BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
                                 Margin="0,0,14,0" SnapsToDevicePixels="True">
                             <Grid>
-                                <TextBlock Text="{loc:Loc pkg.editor.noPreview}" Style="{StaticResource PageSubtitle}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc pkg.editor.noPreview}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasPreview}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <Image Source="{Binding PreviewImage}" Stretch="Uniform">
                                     <Image.Style>
                                         <Style TargetType="Image">

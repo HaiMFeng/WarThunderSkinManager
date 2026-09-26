@@ -33,7 +33,21 @@ public partial class SkinManagementView : UserControl
     private FrameworkElement? _dragContainer;
     private DateTime _lastReorder = DateTime.MinValue;
 
-    public SkinManagementView() => InitializeComponent();
+    public SkinManagementView()
+    {
+        InitializeComponent();
+
+        // 切到其他导航页（本视图隐藏）时强制收起下载列表浮窗——
+        // Popup StaysOpen=True 且 IsVisible 变化不触发 MouseLeave，需手动关闭
+        IsVisibleChanged += (_, e) =>
+        {
+            if (!(bool)e.NewValue)
+            {
+                CancelCloseWtLivePopup();
+                WtLiveListPopup.IsOpen = false;
+            }
+        };
+    }
 
     // ==================== 卡片尺寸自适应 + 过渡动画 ====================
 

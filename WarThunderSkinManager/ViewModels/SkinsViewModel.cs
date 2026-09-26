@@ -180,7 +180,8 @@ public partial class SkinsViewModel : ObservableObject
             // 导入成功 → 预览图应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
             {
-                // 等预览图就绪（通常 zip 下载期间就已下完）：失败只提示，不影响导入结果
+                // 等预览图就绪（通常 zip 下载期间就已下完）：任何失败（含退出取消）
+                // 都不影响「导入已完成」的事实——只丢预览
                 var previewReady = false;
                 if (previewTask != null)
                 {
@@ -189,7 +190,6 @@ public partial class SkinsViewModel : ObservableObject
                         await previewTask;
                         previewReady = File.Exists(previewImagePath);
                     }
-                    catch (OperationCanceledException) { throw; } // 退出取消 → 走外层「已取消」
                     catch (Exception ex)
                     {
                         ShowStatus(Loc["wtlive.previewFailed"]);
@@ -224,8 +224,17 @@ public partial class SkinsViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            item.State = WtLiveDownloadState.Failed;
-            item.StateText = Loc["wtlive.state.canceled"];
+            // 区分「程序退出主动取消」与网络级超时（后者是 OCE 子类）
+            if (_downloadsCts.IsCancellationRequested)
+            {
+                item.State = WtLiveDownloadState.Failed;
+                item.StateText = Loc["wtlive.state.canceled"];
+            }
+            else
+            {
+                item.State = WtLiveDownloadState.Failed;
+                item.StateText = Loc.Format("wtlive.state.failed", "timeout");
+            }
         }
         catch (Exception ex)
         {
@@ -265,6 +274,9 @@ public partial class SkinsViewModel : ObservableObject
     public SkinsViewModel(AppConfig config)
     {
         _config = config;
+
+        // 启动时清扫导入暂存区：上次会话（含被强杀的下载）可能留下残留（§3.15）
+        try { ArchiveService.CleanupStagingRoot(config.ResourceDirectory); } catch { /* 目录不可写时忽略 */ }
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _statusTimer.Tick += (_, _) =>
@@ -1202,7 +1214,7 @@ public partial class SkinsViewModel : ObservableObject
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("import.failed", ex.Message));
-            return null;
+            throw; // 异常上抛：WT Live 流程需要区分「导入失败」与「无可导入内容」
         }
     }
 

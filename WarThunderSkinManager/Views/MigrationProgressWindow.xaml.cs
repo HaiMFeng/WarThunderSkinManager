@@ -49,11 +49,13 @@ public partial class MigrationProgressWindow : Window
     /// <summary>报告进度（UI 线程调用，由 Progress&lt;T&gt; 回调）。</summary>
     public void Update(MigrationProgress progress)
     {
+        var total = progress.TotalBytes > 0 ? progress.TotalBytes : 1;
+
         _vm.DoneBytes = progress.DoneBytes;
-        _vm.TotalBytes = progress.TotalBytes > 0 ? progress.TotalBytes : 1;
-        _vm.Fraction = Math.Clamp(_vm.DoneBytes / (double)_vm.TotalBytes, 0, 1);
+        _vm.TotalBytes = total;
+        _vm.Fraction = Math.Clamp(_vm.DoneBytes / (double)total, 0, 1);
         _vm.CurrentItem = progress.Current;
-        _vm.CountText = $"{DataResetService.FormatSize(progress.DoneBytes)} / {DataResetService.FormatSize(progress.TotalBytes)}";
+        _vm.CountText = $"{DataResetService.FormatSize(progress.DoneBytes)} / {DataResetService.FormatSize(total)}";
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

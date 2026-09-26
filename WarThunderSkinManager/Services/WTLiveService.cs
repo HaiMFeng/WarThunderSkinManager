@@ -50,14 +50,20 @@ public sealed record WTLivePost(
 /// </remarks>
 public static class WTLiveService
 {
-    private static readonly HttpClient Http = CreateClient();
+    private static readonly HttpClient Http = CreateClient(TimeSpan.FromSeconds(60));
+
+    /// <summary>下载专用客户端：**禁用总超时**——HttpClient.Timeout 覆盖整个响应周期，
+    /// 大文件在慢网下必然超 60s 被掐断；取消改由外部 CTS 驱动（§3.15）。</summary>
+    private static readonly HttpClient DownloadHttp = CreateClient(Timeout.InfiniteTimeSpan);
 
     /// <summary>帖子 URL（<c>/post/&lt;id&gt;/…</c>），返回帖子 id；非帖子链接返回 null。</summary>
     public static long? IsPostUrl(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
-        var match = Regex.Match(text.Trim(), @"live\.warthunder\.com/post/(\d+)", RegexOptions.IgnoreCase);
+        // 容错可选语言段（/post/123、/post/123/en/、/post/123/zh/）
+        var match = Regex.Match(text.Trim(),
+            @"live\.warthunder\.com/(?:[a-z-]+/)?post/(\d+)", RegexOptions.IgnoreCase);
         return match.Success && long.TryParse(match.Groups[1].Value, out var id) ? id : null;
     }
 
@@ -77,8 +83,8 @@ public static class WTLiveService
         var json = await response.Content.ReadAsStringAsync(ct);
         var dto = JsonSerializer.Deserialize<PostResponse>(json);
 
-        if (dto == null || string.Equals(dto.Status, "ERR", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("帖子不存在或服务端拒绝（status=ERR）");
+        if (dto == null || !string.IsNullOrEmpty(dto.Status))
+            throw new InvalidDataException("涂装不存在或服务端拒绝（status=ERR）");
 
         if (!string.Equals(dto.Type, "camouflage", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"该帖子类型为 {dto.Type}，不是涂装（camouflage）");
@@ -125,13 +131,14 @@ public static class WTLiveService
                 await DownloadOnceAsync(url, destPath, expectedSize, progress, ct);
                 return;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                throw;
+                throw; // 用户 / 程序退出取消 → 不重试
             }
             catch (Exception ex) when (attempt < 3)
             {
-                await Task.Delay(800 * attempt, ct); // 退避：0.8s / 1.6s
+                // 网络失败 / 服务器超时（TaskCanceledException）等 → 退避重试：0.8s / 1.6s
+                await Task.Delay(800 * attempt, ct);
                 System.Diagnostics.Debug.WriteLine($"WTLive download retry #{attempt}: {ex.Message}");
             }
         }
@@ -144,7 +151,7 @@ public static class WTLiveService
         request.Headers.Referrer = new Uri("https://live.warthunder.com/");
         request.Version = HttpVersion.Version11; // 站点经 Cloudflare，H2 握手偶发失败 → 强制 1.1
 
-        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await DownloadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
 
         var total = response.Content.Headers.ContentLength ?? expectedSize ?? -1;
@@ -187,14 +194,14 @@ public static class WTLiveService
         return string.Join("\n", lines);
     }
 
-    private static HttpClient CreateClient()
+    private static HttpClient CreateClient(TimeSpan timeout)
     {
         var handler = new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All
         };
 
-        var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+        var client = new HttpClient(handler) { Timeout = timeout };
         client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36");
         client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
