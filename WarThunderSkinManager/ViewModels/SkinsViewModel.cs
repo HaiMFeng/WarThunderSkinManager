@@ -155,26 +155,45 @@ public partial class SkinsViewModel : ObservableObject
             extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir));
             var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, post.File!.Name));
 
-            // 单候选 → 用网页解析的名字作为建议显示名（预览窗可再改）
-            if (candidates.Count == 1 && post.DisplayName.Length > 0)
-                candidates[0].SuggestedName = post.DisplayName;
+            // 预览图与显示名的**归属载具**：单载具包即唯一候选；
+            // 多载具包时按压缩包文件名匹配（如 template_cn_hq_11.zip → cn_hq_11），唯一匹配才应用
+            var previewVehicleId = ResolveWtLivePreviewVehicle(candidates, post.File.Name);
+
+            if (previewVehicleId != null && post.DisplayName.Length > 0)
+            {
+                candidates.First(c => string.Equals(c.VehicleId, previewVehicleId, StringComparison.OrdinalIgnoreCase))
+                          .SuggestedName = post.DisplayName;
+            }
 
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath);
 
-            // 导入成功 → 应用预览图（首张原图）与确认显示名
+            // 导入成功 → 给归属载具应用预览图与完成状态
             if (result is { Packages.Count: > 0 })
             {
-                if (!string.IsNullOrWhiteSpace(item.PreviewUrl))
+                var imported = previewVehicleId == null
+                    ? null
+                    : result.Packages.FirstOrDefault(p =>
+                        string.Equals(p.VehicleId, previewVehicleId, StringComparison.OrdinalIgnoreCase));
+
+                if (imported != null)
                 {
-                    previewImagePath = Path.Combine(wtliveDir,
-                        $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+                    if (!string.IsNullOrWhiteSpace(item.PreviewUrl))
+                    {
+                        previewImagePath = Path.Combine(wtliveDir,
+                            $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
 
-                    await ApplyWtLivePreviewAsync(result.Packages[0].Id, item, previewImagePath);
+                        await ApplyWtLivePreviewAsync(imported.Id, item, previewImagePath);
+                    }
+
+                    item.State = WtLiveDownloadState.Completed;
+                    item.StateText = Loc.Format("wtlive.state.completed", imported.Name);
+                    ShowStatus(Loc.Format("wtlive.imported", imported.Name));
                 }
-
-                item.State = WtLiveDownloadState.Completed;
-                item.StateText = Loc.Format("wtlive.state.completed", result.Packages[0].Name);
-                ShowStatus(Loc.Format("wtlive.imported", result.Packages[0].Name));
+                else
+                {
+                    item.State = WtLiveDownloadState.Completed;
+                    item.StateText = Loc["wtlive.state.nothing"];
+                }
             }
             else
             {
@@ -227,6 +246,34 @@ public partial class SkinsViewModel : ObservableObject
         {
             // 预览图失败不影响导入结果
         }
+    }
+
+    /// <summary>
+    /// 解析 WT Live 预览图与显示名的**归属载具**（§3.15）：
+    /// 单候选 → 该候选；多候选 → 按压缩包文件名匹配（去 <c>template</c> 前缀与分隔符后，
+    /// 载具标识应包含于其中），**唯一匹配**才返回——判不清时返回 null（宁可不给预览也不贴错）。
+    /// </summary>
+    private static string? ResolveWtLivePreviewVehicle(List<ImportCandidate> candidates, string zipFileName)
+    {
+        if (candidates.Count == 0) return null;
+        if (candidates.Count == 1) return candidates[0].VehicleId;
+
+        var stem = Path.GetFileNameWithoutExtension(zipFileName)
+            .Replace("template", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("_", "").Replace("-", "").Replace(" ", "");
+
+        if (stem.Length == 0) return null;
+
+        var matches = candidates
+            .Where(c => !string.IsNullOrEmpty(c.VehicleId))
+            .Where(c => stem.Contains(
+                c.VehicleId.Replace("_", "").Replace("-", ""),
+                StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.VehicleId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private static void TryDeletePath(string? path)
