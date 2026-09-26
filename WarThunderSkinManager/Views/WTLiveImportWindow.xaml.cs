@@ -32,6 +32,8 @@ public partial class WTLiveImportWindow : Window
 
     private async void Fetch_Click(object sender, RoutedEventArgs e)
     {
+        if (!FetchButton.IsEnabled) return; // 读取中防重入（Enter 键绕过禁用的按钮）
+
         var postId = WTLiveService.IsPostUrl(UrlBox.Text);
         if (postId == null)
         {

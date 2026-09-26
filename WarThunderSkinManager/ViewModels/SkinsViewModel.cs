@@ -127,11 +127,15 @@ public partial class SkinsViewModel : ObservableObject
         // 主窗口顶部通用提示：明确当前开始下载哪个文件
         ShowStatus(Loc.Format("wtlive.started", post.File.Name));
 
+        // 本流程的暂存产物（与其他下载互不相交；结束只清理自己的，不整区清扫）
+        string? zipPath = null, extracted = null, previewImagePath = null;
+
         try
         {
             var resourceDir = _config.ResourceDirectory;
-            var zipPath = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive",
-                $"{post.LangGroup}-{Path.GetFileName(post.File.Name)}");
+            var wtliveDir = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive");
+            zipPath = Path.Combine(wtliveDir,
+                $"{post.LangGroup}-{Guid.NewGuid().ToString("N")[..8]}-{Path.GetFileName(post.File.Name)}");
 
             // 下载（后台，按字节报比例；随程序退出统一取消）
             item.StateText = Loc["wtlive.state.downloading0"];
@@ -148,7 +152,7 @@ public partial class SkinsViewModel : ObservableObject
             item.State = WtLiveDownloadState.Importing;
             item.StateText = Loc["wtlive.state.importing"];
 
-            var extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir));
+            extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir));
             var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, post.File!.Name));
 
             // 单候选 → 用网页解析的名字作为建议显示名（预览窗可再改）
@@ -160,7 +164,14 @@ public partial class SkinsViewModel : ObservableObject
             // 导入成功 → 应用预览图（首张原图）与确认显示名
             if (result is { Packages.Count: > 0 })
             {
-                await ApplyWtLivePreviewAsync(result.Packages[0].Id, item);
+                if (!string.IsNullOrWhiteSpace(item.PreviewUrl))
+                {
+                    previewImagePath = Path.Combine(wtliveDir,
+                        $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+
+                    await ApplyWtLivePreviewAsync(result.Packages[0].Id, item, previewImagePath);
+                }
+
                 item.State = WtLiveDownloadState.Completed;
                 item.StateText = Loc.Format("wtlive.state.completed", result.Packages[0].Name);
                 ShowStatus(Loc.Format("wtlive.imported", result.Packages[0].Name));
@@ -184,20 +195,19 @@ public partial class SkinsViewModel : ObservableObject
         }
         finally
         {
-            try { ArchiveService.CleanupStagingRoot(_config.ResourceDirectory); } catch { /* 收尾失败不影响 */ }
+            // 只清理**本流程**的产物——其他下载 / 导入流程的暂存可能仍在使用，禁止整区清扫
+            foreach (var path in new[] { zipPath, extracted, previewImagePath })
+                TryDeletePath(path);
         }
     }
 
     /// <summary>下载 WT Live 首张原图并设为涂装包预览（失败静默——预览是锦上添花）。</summary>
-    private async Task ApplyWtLivePreviewAsync(string packageId, WtLiveDownloadItem item)
+    private async Task ApplyWtLivePreviewAsync(string packageId, WtLiveDownloadItem item, string imagePath)
     {
-        if (string.IsNullOrWhiteSpace(item.PreviewUrl) || !WTLiveService.IsPostUrl(item.Url).HasValue) return;
+        if (string.IsNullOrWhiteSpace(item.PreviewUrl)) return;
 
         try
         {
-            var imagePath = Path.Combine(ArchiveService.StagingRoot(_config.ResourceDirectory), "wtlive",
-                $"preview-{item.PostId}{Path.GetExtension(item.PreviewUrl)}");
-
             await Task.Run(() => WTLiveService.DownloadFileAsync(item.PreviewUrl!, imagePath, null, null, _downloadsCts.Token));
 
             if (File.Exists(imagePath))
@@ -216,6 +226,21 @@ public partial class SkinsViewModel : ObservableObject
         catch
         {
             // 预览图失败不影响导入结果
+        }
+    }
+
+    private static void TryDeletePath(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+            else if (File.Exists(path)) File.Delete(path);
+        }
+        catch
+        {
+            // 清理失败不影响主流程
         }
     }
 
