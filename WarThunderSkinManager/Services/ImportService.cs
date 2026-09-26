@@ -282,6 +282,14 @@ public static class ImportService
                 return result;
             }
 
+            // 根内含程序自己的 WTSM 输出 → 拒绝整删（用户把 UserSkins 本身选成导入源的场景，§3.1 安全）
+            if (Directory.Exists(Path.Combine(fullRoot, "WTSM")))
+            {
+                result.Skipped.Add(fullRoot);
+                result.Errors.Add(Loc.Format("import.warn.cleanupProtected", fullRoot));
+                return result;
+            }
+
             try
             {
                 if (Directory.Exists(fullRoot))

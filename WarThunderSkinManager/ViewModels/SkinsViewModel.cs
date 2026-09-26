@@ -805,7 +805,7 @@ public partial class SkinsViewModel : ObservableObject
                 var full = PreviewStore.FullPath(configDir, package.Id);
                 var image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth); // Freeze 过 → 跨线程安全
 
-                Application.Current?.Dispatcher.Invoke(() =>
+                Application.Current?.Dispatcher.BeginInvoke(() =>
                 {
                     if (!ReferenceEquals(_previewDecodeToken, decodeToken)) return;
 
@@ -856,7 +856,7 @@ public partial class SkinsViewModel : ObservableObject
 
     // ---------- 导入 ----------
 
-    private void RunImport(Func<List<ImportCandidate>> scan, ImportSourceType sourceType, string sourcePath)
+    private async void RunImport(Func<List<ImportCandidate>> scan, ImportSourceType sourceType, string sourcePath)
     {
         try
         {
@@ -865,12 +865,13 @@ public partial class SkinsViewModel : ObservableObject
                 { Owner = Application.Current?.MainWindow };
 
             var scanTask = Task.Run(scan);
-            scanTask.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+            _ = scanTask.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
 
             window.ShowDialog(); // 阻塞至扫描完成 / 用户取消（关窗即取消）
 
-            var candidates = scanTask.Result; // 取消 → OperationCanceledException（下方捕获）
-            RunImport(candidates, sourceType, sourcePath);
+            // await（而非 Result）：正确展开取消异常（Result 会包成 AggregateException 把取消误报为失败）
+            var candidates = await scanTask;
+            await RunImportAsync(candidates, sourceType, sourcePath);
         }
         catch (OperationCanceledException)
         {
@@ -886,8 +887,9 @@ public partial class SkinsViewModel : ObservableObject
     /// 「预览 → 解构」流程（功能设计 §3.1）。<paramref name="archives"/> 非空时，
     /// 预览里提供「导入成功后删除压缩包」选项（默认不勾，见 <see cref="ImportPreviewViewModel"/>）。
     /// </summary>
-    private void RunImport(List<ImportCandidate> candidates, ImportSourceType sourceType, string sourcePath,
-        bool canDeleteArchive = false, IReadOnlyList<string>? archives = null, string extraStatus = "")
+    private async Task RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
+        string sourcePath, bool canDeleteArchive = false, IReadOnlyList<string>? archives = null,
+        string extraStatus = "")
     {
         try
         {
@@ -901,10 +903,10 @@ public partial class SkinsViewModel : ObservableObject
             var sourceExists = !string.IsNullOrWhiteSpace(sourcePath) && Directory.Exists(sourcePath);
 
             // 预览 VM（分组 + 行模型）在**后台**构建：几千个候选时这是可感知的 UI 冻结源（§3.1 大批量）
-            var preview = Task.Run(() => new ImportPreviewViewModel(candidates, sourceType, sourceExists,
+            var preview = await Task.Run(() => new ImportPreviewViewModel(candidates, sourceType, sourceExists,
                 canDeleteArchive,
                 deleteSourceDefault: RememberedDeleteSource(sourceType),
-                deleteArchiveDefault: _config.ImportDeleteArchive)).Result;
+                deleteArchiveDefault: _config.ImportDeleteArchive));
 
             var window = new ImportPreviewWindow
             {
@@ -925,11 +927,12 @@ public partial class SkinsViewModel : ObservableObject
 
             var commitTask = Task.Run(() => ImportService.Commit(
                 candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, progressWindow.Cancellation.Token));
-            commitTask.ContinueWith(_ => progressWindow.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+            _ = commitTask.ContinueWith(_ => progressWindow.Close(), TaskScheduler.FromCurrentSynchronizationContext());
 
-            progressWindow.ShowDialog(); // 阻塞至解构完成 / 取消（进度经 Progress<T> 回调更新）
+            progressWindow.ShowDialog(); // 模态至解构完成 / 取消（进度经 Progress<T> 回调更新）
 
-            var result = commitTask.Result; // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
+            // await（而非 Result）：手动关窗后任务按包粒度收尾，期间 UI 保持响应
+            var result = await commitTask; // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
             PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
 
             // 取消时不清理源（用户可能还要重试剩余部分）
@@ -1086,7 +1089,7 @@ public partial class SkinsViewModel : ObservableObject
             // 只拖入一个文件夹 → 沿用「导入文件夹」语义（可勾选删除该文件夹）
             var singleFolder = folders.Count == 1 && archives.Count == 0;
 
-            RunImport(candidates,
+            await RunImportAsync(candidates,
                 archives.Count > 0 ? ImportSourceType.Archive : ImportSourceType.Folder,
                 singleFolder
                     ? folders[0]

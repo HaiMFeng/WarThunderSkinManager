@@ -36,6 +36,11 @@ public partial class MigrationProgressWindow : Window
         InitializeComponent();
         DataContext = _vm;
         _vm.TitleText = title;
+
+        // 任何途径关窗（含 Alt+F4 / 系统菜单）都等于取消——否则 ShowDialog 返回后
+        // 迁移仍在跑，调用方取结果会一直阻塞（假死），与导入进度窗同一约定
+        Closing += (_, _) => Cancellation.Cancel();
+        Closed += (_, _) => Cancellation.Dispose();
     }
 
     /// <summary>报告进度（UI 线程调用，由 Progress&lt;T&gt; 回调）。</summary>

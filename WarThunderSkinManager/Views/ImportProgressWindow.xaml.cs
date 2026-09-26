@@ -45,6 +45,7 @@ public partial class ImportProgressWindow : Window
         _vm.CountText = total > 0 ? $"0 / {total}" : "";
 
         Closing += (_, _) => Cancellation.Cancel(); // 任何途径关窗都等于取消
+        Closed += (_, _) => Cancellation.Dispose(); // 任务续延仅调 ThrowIfCancellationRequested，Dispose 安全
     }
 
     /// <summary>报告进度（UI 线程调用，由 Progress&lt;T&gt; 回调）。

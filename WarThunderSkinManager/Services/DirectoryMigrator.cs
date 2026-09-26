@@ -139,22 +139,16 @@ public static class DirectoryMigrator
         catch (OperationCanceledException)
         {
             result.Canceled = true;
-
-            // 清理本次**复制**产生的半成品（目标此前无同名条目，删除安全，之后可重试）；
-            // 同卷已改名条目**保留**——源已不在，数据完整地在目标
-            foreach (var target in copiedTargets)
-            {
-                try
-                {
-                    if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
-                    else if (File.Exists(target)) File.Delete(target);
-                }
-                catch (Exception ex)
-                {
-                    result.Warnings.Add($"{Path.GetFileName(target)}：{ex.Message}");
-                }
-            }
-
+            CleanupCopied(copiedTargets, result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            // 非取消类失败（磁盘满 / IO 错）：同样清理复制半成品并**返回失败警告**而非外抛——
+            // 否则目标留下半截目录，下次迁移因"目标已存在"整体跳过，用户无从恢复
+            result.Warnings.Add(LocalizationManager.Instance.Format(
+                "migrate.error.interrupted", ex.Message));
+            CleanupCopied(copiedTargets, result);
             return result;
         }
 
@@ -174,6 +168,23 @@ public static class DirectoryMigrator
         }
 
         return result;
+    }
+
+    /// <summary>清理本次**复制**产生的半成品（目标此前无同名条目，删除安全，之后可重试）。</summary>
+    private static void CleanupCopied(List<string> copiedTargets, MigrationResult result)
+    {
+        foreach (var target in copiedTargets)
+        {
+            try
+            {
+                if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+                else if (File.Exists(target)) File.Delete(target);
+            }
+            catch (Exception ex)
+            {
+                result.Warnings.Add($"{Path.GetFileName(target)}：{ex.Message}");
+            }
+        }
     }
 
     private static IEnumerable<string> EnumerateFiles(string dir)

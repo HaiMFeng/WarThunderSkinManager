@@ -239,7 +239,7 @@ public partial class MainViewModel : ObservableObject
     /// 同卷 = 瞬时改名；跨卷 = 复制完成后才删源，取消时源完好。
     /// 迁移在后台执行 + 进度窗可取消；取消 / 失败返回 <c>false</c>（**不保存**目录配置）。
     /// </summary>
-    private bool MigrateChangedDirectories(string oldConfigDir, string oldResourceDir, string oldUserSkinsDir)
+    private async Task<bool> MigrateChangedDirectoriesAsync(string oldConfigDir, string oldResourceDir, string oldUserSkinsDir)
     {
         var configChanged = !SamePath(oldConfigDir, Config.ConfigDirectory) && Directory.Exists(oldConfigDir);
         var resourceChanged = !SamePath(oldResourceDir, Config.ResourceDirectory) && Directory.Exists(oldResourceDir);
@@ -335,14 +335,15 @@ public partial class MainViewModel : ObservableObject
             return result;
         });
 
-        task.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
-        window.ShowDialog(); // 阻塞至迁移完成 / 取消
+        _ = task.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+        window.ShowDialog(); // 模态至迁移完成 / 取消（关窗即取消，见窗口 Closing 钩子）
 
+        // **await 而非 Result**：用户手动关窗后任务还要收尾当前文件，同步取结果会阻塞 UI（假死）
         MigrationResult migrated;
 
         try
         {
-            migrated = task.Result;
+            migrated = await task;
         }
         catch (Exception ex)
         {
@@ -496,12 +497,16 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var selections = BuildGameSyncSelections();
+            // 标量先在 UI 线程取快照；**全库 meta 读盘 + 逐载具激活读取在后台**（几百包时不冻结 UI）
             var savesDir = Config.SavesDirectory;
             var account = Config.ManagedAccountId;
+            var overwrite = overwriteForeign;
 
             var report = await Task.Run(() =>
-                GameSaveSyncService.Sync(savesDir, account, selections, overwriteForeign, out _));
+            {
+                var selections = BuildGameSyncSelections();
+                return GameSaveSyncService.Sync(savesDir, account, selections, overwrite, out _);
+            });
 
             GameSyncStatus = report.HasWarnings
                 ? string.Join("；", report.Warnings)
@@ -624,7 +629,7 @@ public partial class MainViewModel : ObservableObject
         }
 
         Config.PartReuseNoticeSeen = true;
-        PersistConfig();
+        SafePersist();
 
         OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
     }
@@ -643,7 +648,7 @@ public partial class MainViewModel : ObservableObject
 
         // 主题字典在启动时合并，切换后重启生效（§3「生效时机」采用重启方案）
         Config.Theme = value.Id;
-        PersistConfig();
+        SafePersist();
         ShowStatus(Loc["settings.theme.changed"]);
     }
 
@@ -654,8 +659,16 @@ public partial class MainViewModel : ObservableObject
         var exe = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(exe)) return;
 
-        Process.Start(exe);
-        Application.Current?.Shutdown();
+        try
+        {
+            Process.Start(exe);
+            Application.Current?.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            // exe 被占用 / 权限拒绝等 → 提示而非崩溃
+            ShowStatus(Loc.Format("settings.restart.failed", ex.Message));
+        }
     }
 
     // ---------- 界面语言（功能设计 §3.9）----------
@@ -694,7 +707,7 @@ public partial class MainViewModel : ObservableObject
     private void ApplyLanguage(LanguageOption option)
     {
         Config.Language = option.Code;
-        PersistConfig();
+        SafePersist();
 
         LocalizationManager.Instance.Load(Config.ConfigDirectory, option.Code);
 
@@ -845,7 +858,7 @@ public partial class MainViewModel : ObservableObject
     /// 选定后迁移（后台 + 进度窗，可取消）→ 自动保存；取消 / 失败**回滚**到原目录。
     /// 迁移必须挂在变更瞬间：目录一经保存，页面与静态服务就会读新目录——挂在「保存」按钮上会被绕过。
     /// </summary>
-    private void ChangeDirectory(string current, string scopeKey, Action<string> apply)
+    private async void ChangeDirectory(string current, string scopeKey, Action<string> apply)
     {
         // 旧目录有数据 → 先提醒（选择位置之前）；空目录无需迁移，直接选择
         var hasData = !string.IsNullOrWhiteSpace(current) && Directory.Exists(current)
@@ -889,7 +902,7 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            if (!MigrateChangedDirectories(oldConfig, oldResource, oldUserSkins))
+            if (!await MigrateChangedDirectoriesAsync(oldConfig, oldResource, oldUserSkins))
             {
                 apply(current); // 取消 / 失败 → 回滚，旧配置依旧可用
                 PartExclusionService.Configure(Config.ConfigDirectory);
@@ -899,11 +912,12 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            // 迁移意外失败 → 回滚目录并提示；**不能让异常上抛**（命令处理器抛出会崩溃整个程序）
+            // 迁移意外失败 → 回滚目录并提示；**不能让异常上抛**（async void 命令处理器抛出会崩溃整个程序）
             apply(current);
             PartExclusionService.Configure(Config.ConfigDirectory);
             DataTables.Configure(Config.ConfigDirectory);
             ShowStatus(Loc.Format("migrate.failed", ex.Message));
+            return;
         }
 
         AutoSave();
@@ -1122,6 +1136,19 @@ public partial class MainViewModel : ObservableObject
     }
 
     private void PersistConfig() => ConfigService.Save(Config.ConfigDirectory, Config);
+
+    /// <summary>落盘但**不抛**：写盘失败（磁盘满 / 目录被删 / 占用）只提示，绝不让命令处理器崩溃。</summary>
+    private void SafePersist()
+    {
+        try
+        {
+            PersistConfig();
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("settings.saveFailed", ex.Message));
+        }
+    }
 
     private void ShowStatus(string message)
     {

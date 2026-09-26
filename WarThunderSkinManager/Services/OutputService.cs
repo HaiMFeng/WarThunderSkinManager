@@ -72,9 +72,9 @@ public static class OutputService
                 if (extension is ".dds" or ".tga") File.Delete(file);
             }
 
-            // 空 blk：文件名与路径不变 → 游戏仍认这套涂装，但全部回落默认贴图
-            File.WriteAllText(Path.Combine(outDir, vehicleId + ".blk"),
-                BlkWriter.Write(Array.Empty<BlkWriter.Entry>()), new UTF8Encoding(false));
+            // 空 blk：文件名与路径不变 → 游戏仍认这套涂装，但全部回落默认贴图（原子写，§3.8）
+            AtomicFile.WriteAllText(Path.Combine(outDir, vehicleId + ".blk"),
+                BlkWriter.Write(Array.Empty<BlkWriter.Entry>()));
 
             return (true, null);
         }
@@ -203,8 +203,9 @@ public static class OutputService
             }
         }
 
-        // 写 blk（最后写 = 提交点；路径不变 → 热重载）
-        File.WriteAllText(blkPath, BlkWriter.Write(entries), new UTF8Encoding(false));
+        // 写 blk（最后写 = 提交点；路径不变 → 热重载）。**原子写**：blk 是"生效点"，
+        // 半截文件会让游戏读到坏配置（与 meta.json 同级保护，§3.8）
+        AtomicFile.WriteAllText(blkPath, BlkWriter.Write(entries));
         report.BlkPath = blkPath;
         report.BlkEntries = entries.Count;
 

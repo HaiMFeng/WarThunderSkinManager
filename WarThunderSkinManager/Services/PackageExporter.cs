@@ -85,7 +85,10 @@ public static class PackageExporter
             var sourceBlk = EnsureSourceBlk(resourceDir, packageId);
             WriteBlkAndTextures(resourceDir, meta, sourceBlk, staging, naming);
 
-            using (var stream = File.Create(archivePath))
+            // 写到同目录**临时名**再 Move：中途崩溃不留半截压缩包在目标位置（§3.11）
+            var tmpArchive = archivePath + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
+
+            using (var stream = File.Create(tmpArchive))
             {
                 if (isTar)
                 {
@@ -101,6 +104,7 @@ public static class PackageExporter
                 }
             }
 
+            File.Move(tmpArchive, archivePath, overwrite: true);
             return archivePath;
         }
         finally
@@ -164,7 +168,10 @@ public static class PackageExporter
             var fileName = naming switch
             {
                 TextureNaming.Hash => blob + extension,
-                TextureNaming.PartName => VehicleAggregator.NormalizeFrom(entry.From) + extension,
+                // 部件名归一化后可能为空（异常 from）→ 回退原名，避免产生 ".dds" 这种空名文件
+                TextureNaming.PartName => VehicleAggregator.NormalizeFrom(entry.From) is { Length: > 0 } part
+                    ? part + extension
+                    : entry.ToFile,
                 _ => entry.ToFile
             };
 

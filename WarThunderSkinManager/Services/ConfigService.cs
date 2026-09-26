@@ -75,7 +75,7 @@ public static class ConfigService
     {
         var dir = Path.Combine(configDir, "mappings");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "vehicles.json"),
+        AtomicFile.WriteAllText(Path.Combine(dir, "vehicles.json"),
             JsonSerializer.Serialize(map, JsonOpts));
     }
 
@@ -105,7 +105,7 @@ public static class ConfigService
     {
         var dir = Path.Combine(configDir, "mappings");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(VehicleCountriesFile(configDir),
+        AtomicFile.WriteAllText(VehicleCountriesFile(configDir),
             JsonSerializer.Serialize(map, JsonOpts));
     }
 
@@ -133,7 +133,7 @@ public static class ConfigService
     {
         var dir = Path.Combine(configDir, "loadouts");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(ActivationFile(configDir, vehicleId),
+        AtomicFile.WriteAllText(ActivationFile(configDir, vehicleId),
             JsonSerializer.Serialize(activation, JsonOpts));
     }
 
@@ -145,8 +145,15 @@ public static class ConfigService
         var path = CountriesFile(configDir);
         if (File.Exists(path))
         {
-            var list = JsonSerializer.Deserialize<List<Country>>(File.ReadAllText(path));
-            if (list != null) return list;
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<Country>>(File.ReadAllText(path));
+                if (list != null) return list;
+            }
+            catch
+            {
+                // 损坏 → 视为空（国家归类有前缀推断兜底），避免启动即崩
+            }
         }
         return new List<Country>();
     }
@@ -154,7 +161,7 @@ public static class ConfigService
     public static void SaveCountries(string configDir, List<Country> countries)
     {
         Directory.CreateDirectory(configDir);
-        File.WriteAllText(CountriesFile(configDir),
+        AtomicFile.WriteAllText(CountriesFile(configDir),
             JsonSerializer.Serialize(countries, JsonOpts));
     }
 }

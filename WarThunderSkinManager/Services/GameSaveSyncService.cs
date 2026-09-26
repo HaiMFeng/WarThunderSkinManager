@@ -36,6 +36,9 @@ public static class GameSaveSyncService
 {
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
+    /// <summary>同步互斥：事件触发与手动按钮可能几乎同时发起，串行化防止并发写同一存档（§3.14）。</summary>
+    private static readonly SemaphoreSlim SyncGate = new(1, 1);
+
     /// <summary>userSkins 条目行（如 <c>      su_30mkk:t="WTSM/su_30mkk"</c>；键可含 - 等字符）。</summary>
     private static readonly Regex EntryLine = new(
         @"^(?<indent>\s*)(?<key>[^:\s]+):t=""(?<value>.*)""\s*$", RegexOptions.Compiled);
@@ -90,17 +93,32 @@ public static class GameSaveSyncService
     public static string WtsmSkinValue(string vehicleId) => $"WTSM/{vehicleId}";
 
     /// <summary>
-    /// 同步激活涂装到 global.blk（**后台调用**：文件 IO + 进程枚举）。
+    /// 同步激活涂装到 global.blk（**后台调用**：文件 IO + 进程枚举；内部互斥，可安全并发调用）。
     /// 写 <c>&lt;Saves&gt;/&lt;账户&gt;/production/global.blk</c>；当选中账户即最近登录账户时，
     /// 一并写 <c>&lt;Saves&gt;/last/production/global.blk</c> 镜像。
     /// </summary>
     /// <param name="savesDir">存档目录</param>
-    /// <param name="accountId">管理账户（Saves 下的数字目录名）</param>
+    /// <param name="accountId">管理账户（Saves 下的数字目录名；强制 0-9 白名单，防路径注入）</param>
     /// <param name="selections">载具Id → 目标值；null / 空串 = 清空该载具（仅限 WTSM 管理的行）</param>
     /// <param name="overwriteForeign">覆写模式（「覆写全部」按钮）：userSkins 块内**所有**非目标行
     /// 一并清空——包括用户手动选的第三方涂装（破坏性，调用方须先弹警告确认）</param>
     /// <param name="wroteLast">输出：本次是否也写了 last\ 镜像</param>
     public static GameSyncReport Sync(string savesDir, string accountId,
+        IReadOnlyDictionary<string, string?> selections, bool overwriteForeign, out bool wroteLast)
+    {
+        // 串行化（调用方多为后台任务，短暂阻塞无碍）
+        SyncGate.Wait();
+        try
+        {
+            return SyncCore(savesDir, accountId, selections, overwriteForeign, out wroteLast);
+        }
+        finally
+        {
+            SyncGate.Release();
+        }
+    }
+
+    private static GameSyncReport SyncCore(string savesDir, string accountId,
         IReadOnlyDictionary<string, string?> selections, bool overwriteForeign, out bool wroteLast)
     {
         wroteLast = false;
@@ -112,7 +130,8 @@ public static class GameSaveSyncService
             return new GameSyncReport(0, 0, 0, warnings);
         }
 
-        if (string.IsNullOrWhiteSpace(accountId))
+        // 账户名强制 ASCII 数字白名单：值来自配置文件（可手改），防 "..\" 之类路径注入（§3.14 安全）
+        if (string.IsNullOrWhiteSpace(accountId) || !accountId.All(c => c is >= '0' and <= '9'))
         {
             warnings.Add(Loc["gsync.noAccount"]);
             return new GameSyncReport(0, 0, 0, warnings);
@@ -183,54 +202,76 @@ public static class GameSaveSyncService
         var skipped = 0;
         var changed = false;
 
-        // 条目缩进取块内首个条目行（常规 6 空格）；块本身 4 空格
+        // 条目缩进取块内首个条目行（常规 6 空格）；块本身 4 空格。
+        // CRLF 风格同样取自块内首个条目行——被编辑的行必须保持原文件的换行风格（§3.14 数据保真）
         var indent = "      ";
+        var useCr = false;
         for (var i = open + 1; i < close; i++)
         {
             var match = EntryLine.Match(lines[i].TrimEnd('\r'));
-            if (match.Success) { indent = match.Groups["indent"].Value; break; }
+            if (match.Success)
+            {
+                indent = match.Groups["indent"].Value;
+                useCr = lines[i].EndsWith('\r');
+                break;
+            }
         }
 
-        // 现有条目索引：键 → 行号
-        var existing = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // 现有条目索引：键 → 行号列表（同键多行 = 游戏侧/第三方工具造成的重复，须**全部**处理）
+        var existing = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         for (var i = open + 1; i < close; i++)
         {
             var match = EntryLine.Match(lines[i].TrimEnd('\r'));
-            if (match.Success) existing[match.Groups["key"].Value] = i;
+            if (!match.Success) continue;
+
+            var key = match.Groups["key"].Value;
+            if (!existing.TryGetValue(key, out var list)) existing[key] = list = new List<int>();
+            list.Add(i);
         }
 
-        // 1) 库内载具：按激活状态写 / 清
+        // 1) 库内载具：按激活状态写 / 清（所有同名行一起改，避免两行值冲突）
         foreach (var (vehicleId, desired) in selections)
         {
             var targetValue = desired ?? "";
 
-            if (existing.TryGetValue(vehicleId, out var lineIndex))
+            if (existing.TryGetValue(vehicleId, out var lineIndexes))
             {
-                var match = EntryLine.Match(lines[lineIndex].TrimEnd('\r'));
-                var currentValue = match.Groups["value"].Value;
-                var currentIndent = match.Groups["indent"].Value;
+                var touched = false;
 
-                if (string.Equals(currentValue, targetValue, StringComparison.Ordinal)) continue;
-
-                var managed = currentValue.StartsWith("WTSM/", StringComparison.OrdinalIgnoreCase)
-                              || currentValue.Length == 0;
-
-                if (!managed && !overwriteForeign)
+                foreach (var lineIndex in lineIndexes)
                 {
-                    skipped++; // 用户手动选的非 WTSM 涂装 → 不碰（§3.14 安全边界）
-                    continue;
+                    var match = EntryLine.Match(lines[lineIndex].TrimEnd('\r'));
+                    var currentValue = match.Groups["value"].Value;
+                    var currentIndent = match.Groups["indent"].Value;
+                    var hasCr = lines[lineIndex].EndsWith('\r');
+
+                    if (string.Equals(currentValue, targetValue, StringComparison.Ordinal)) continue;
+
+                    var managed = currentValue.StartsWith("WTSM/", StringComparison.OrdinalIgnoreCase)
+                                  || currentValue.Length == 0;
+
+                    if (!managed && !overwriteForeign)
+                    {
+                        skipped++; // 用户手动选的非 WTSM 涂装 → 不碰（§3.14 安全边界）
+                        continue;
+                    }
+
+                    lines[lineIndex] = $"{currentIndent}{vehicleId}:t=\"{targetValue}\"" + (hasCr ? "\r" : "");
+                    changed = true;
+                    touched = true;
                 }
 
-                lines[lineIndex] = $"{currentIndent}{vehicleId}:t=\"{targetValue}\"";
-                changed = true;
-                if (targetValue.Length == 0) cleared++; else updated++;
+                if (touched)
+                {
+                    if (targetValue.Length == 0) cleared++; else updated++;
+                }
             }
             else if (targetValue.Length > 0)
             {
-                // 新条目：插到块尾（close 行之前）
+                // 新条目：插到块尾（close 行之前），缩进与换行风格随块
                 var insertAt = close;
                 var newLines = lines.ToList();
-                newLines.Insert(insertAt, $"{indent}{vehicleId}:t=\"{targetValue}\"");
+                newLines.Insert(insertAt, $"{indent}{vehicleId}:t=\"{targetValue}\"" + (useCr ? "\r" : ""));
                 lines = newLines.ToArray();
                 close++; // 块尾下移
                 changed = true;
@@ -248,7 +289,8 @@ public static class GameSaveSyncService
                 if (selections.ContainsKey(match.Groups["key"].Value)) continue; // 上面已处理
                 if (match.Groups["value"].Value.Length == 0) continue;
 
-                lines[i] = $"{match.Groups["indent"].Value}{match.Groups["key"].Value}:t=\"\"";
+                lines[i] = $"{match.Groups["indent"].Value}{match.Groups["key"].Value}:t=\"\""
+                           + (lines[i].EndsWith('\r') ? "\r" : "");
                 changed = true;
                 cleared++;
             }
@@ -256,11 +298,11 @@ public static class GameSaveSyncService
 
         if (!changed) return (updated, cleared, skipped);
 
-        // 写前备份 + 原子落盘（tmp + Move；编码 / 换行风格保持原样）
+        // 写前备份 + 原子落盘（唯一临时名 + Move；编码 / 每行换行风格保持原样）
         try { File.Copy(path, path + ".wtsm-bak", overwrite: true); }
         catch { /* 备份失败不阻塞（写入本身仍有 tmp 保护） */ }
 
-        var tmp = path + ".wtsm-tmp";
+        var tmp = $"{path}.{Guid.NewGuid().ToString("N")[..8]}.wtsm-tmp";
         File.WriteAllText(tmp, string.Join('\n', lines), encoding);
         File.Move(tmp, path, overwrite: true);
 
