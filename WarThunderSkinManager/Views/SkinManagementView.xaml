@@ -72,15 +72,16 @@
                 <Button Content="{loc:Loc skins.importUserSkins}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportUserSkinsCommand}"/>
 
-                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；点击弹出浮窗显示各下载状态 -->
+                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停展开浮窗，移出关闭 -->
                 <Button x:Name="WtLiveListButton" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"
-                        Padding="10,6" Click="WtLiveList_Click">
+                        Padding="10,6" MouseEnter="WtLiveListButton_MouseEnter" MouseLeave="WtLiveListButton_MouseLeave">
                     <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="16"/>
                 </Button>
 
                 <Popup x:Name="WtLiveListPopup" PlacementTarget="{Binding ElementName=WtLiveListButton}"
-                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
-                       PopupAnimation="Fade" Width="360">
+                       Placement="Bottom" StaysOpen="True" AllowsTransparency="True"
+                       PopupAnimation="Fade" Width="360"
+                       MouseEnter="WtLivePopup_MouseEnter" MouseLeave="WtLivePopup_MouseLeave">
                     <Border Background="{StaticResource BrushBackground}" BorderBrush="{StaticResource BrushBorder}"
                             BorderThickness="1" CornerRadius="8" Padding="14,10">
                         <StackPanel>

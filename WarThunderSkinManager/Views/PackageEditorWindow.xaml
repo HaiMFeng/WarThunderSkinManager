@@ -43,14 +43,15 @@
 
                     <TextBlock Text="{loc:Loc pkg.editor.preview}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
 
-                    <!-- 预览区 -->
-                    <Grid Height="180">
+                    <!-- 预览区（1:1 正方形；图片 Uniform 居中，不裁剪） -->
+                    <Grid Height="200">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="150"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <Border Grid.Column="0" CornerRadius="8" Background="{StaticResource BrushSurface}"
+                        <Border Grid.Column="0" Width="200" Height="200" CornerRadius="8"
+                                Background="{StaticResource BrushSurface}"
                                 BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
                                 Margin="0,0,14,0" SnapsToDevicePixels="True">
                             <Grid>

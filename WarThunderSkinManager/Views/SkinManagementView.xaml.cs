@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.ViewModels;
 
@@ -246,14 +247,44 @@ public partial class SkinManagementView : UserControl
 
     // ==================== 其他 ====================
 
-    /// <summary>
-    /// WT Live 下载列表浮窗开关（点击按钮切换；点击浮窗外自动收起）。
-    /// 浮窗**右缘**对齐按钮右缘（默认左对齐会让 360 宽的浮窗右半超出窗口）。
-    /// </summary>
-    private void WtLiveList_Click(object sender, RoutedEventArgs e)
+    // ==================== WT Live 下载列表浮窗（§3.15：悬停展开，移出关闭） ====================
+
+    /// <summary>移出后的延时关闭计时器（给鼠标从按钮移入浮窗留出间隙）。</summary>
+    private DispatcherTimer? _wtLivePopupCloseTimer;
+
+    private void WtLiveListButton_MouseEnter(object sender, MouseEventArgs e) => OpenWtLivePopup();
+
+    private void WtLiveListButton_MouseLeave(object sender, MouseEventArgs e) => ScheduleCloseWtLivePopup();
+
+    private void WtLivePopup_MouseEnter(object sender, MouseEventArgs e) => CancelCloseWtLivePopup();
+
+    private void WtLivePopup_MouseLeave(object sender, MouseEventArgs e) => ScheduleCloseWtLivePopup();
+
+    private void OpenWtLivePopup()
     {
+        CancelCloseWtLivePopup();
+
+        // 浮窗**右缘**对齐按钮右缘（默认左对齐会让 360 宽的浮窗右半超出窗口）
         WtLiveListPopup.HorizontalOffset = WtLiveListButton.ActualWidth - WtLiveListPopup.Width;
-        WtLiveListPopup.IsOpen = !WtLiveListPopup.IsOpen;
+        WtLiveListPopup.IsOpen = true;
+    }
+
+    private void ScheduleCloseWtLivePopup()
+    {
+        CancelCloseWtLivePopup();
+        _wtLivePopupCloseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _wtLivePopupCloseTimer.Tick += (_, _) =>
+        {
+            CancelCloseWtLivePopup();
+            WtLiveListPopup.IsOpen = false;
+        };
+        _wtLivePopupCloseTimer.Start();
+    }
+
+    private void CancelCloseWtLivePopup()
+    {
+        _wtLivePopupCloseTimer?.Stop();
+        _wtLivePopupCloseTimer = null;
     }
 
     /// <summary>双击涂装包 = 打开属性对话框（改名 / 预览图）。</summary>
