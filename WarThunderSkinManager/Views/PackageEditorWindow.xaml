@@ -142,7 +142,7 @@
                                        Margin="0,1,10,0"/>
                             <TextBlock Grid.Column="1" Text="{loc:Loc pkg.editor.partsHintResource}"
                                        Foreground="{StaticResource BrushDangerSoftText}" FontWeight="SemiBold"
-                                       TextWrapping="Wrap"/>
+                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
 
