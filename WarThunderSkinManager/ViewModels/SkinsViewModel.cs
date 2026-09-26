@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -934,11 +935,61 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>预览图解码会话标记：切换载具后旧解码结果直接丢弃（避免回写过期载具的图）。</summary>
     private object? _previewDecodeToken;
 
+    // ---- 缩略图内存缓存（LRU，§3.6）：切换载具时命中缓存**立即**显示，消除「白 → 图」闪烁。
+    //      按包 id 缓存已解码的降采样图（Freeze 过，跨线程安全）；上限 100 张控制内存；
+    //      以预览文件最后写入时间校验新旧——预览被替换 / 清除时缓存自动失效。 ----
+    private readonly Dictionary<string, (ImageSource Image, DateTime Stamp)> _thumbCache = new();
+    private readonly LinkedList<string> _thumbCacheOrder = new();
+    private readonly object _thumbCacheGate = new();
+    private const int ThumbCacheCapacity = 100;
+
+    private ImageSource? GetCachedThumb(string packageId, string fullPath)
+    {
+        lock (_thumbCacheGate)
+        {
+            if (!_thumbCache.TryGetValue(packageId, out var cached)) return null;
+
+            DateTime stamp;
+            try { stamp = File.GetLastWriteTimeUtc(fullPath); } catch { stamp = DateTime.MinValue; }
+
+            if (File.Exists(fullPath) && stamp <= cached.Stamp)
+            {
+                _thumbCacheOrder.Remove(packageId);
+                _thumbCacheOrder.AddFirst(packageId); // 命中 → 移到队头（LRU）
+                return cached.Image;
+            }
+
+            _thumbCache.Remove(packageId); // 预览已不存在 / 已被替换 → 失效
+            _thumbCacheOrder.Remove(packageId);
+            return null;
+        }
+    }
+
+    private void PutCachedThumb(string packageId, string fullPath, ImageSource image)
+    {
+        lock (_thumbCacheGate)
+        {
+            DateTime stamp;
+            try { stamp = File.GetLastWriteTimeUtc(fullPath); } catch { stamp = DateTime.UtcNow; }
+
+            if (!_thumbCache.ContainsKey(packageId)) _thumbCacheOrder.AddFirst(packageId);
+            _thumbCache[packageId] = (image, stamp);
+
+            while (_thumbCacheOrder.Count > ThumbCacheCapacity)
+            {
+                var oldest = _thumbCacheOrder.Last!.Value;
+                _thumbCacheOrder.RemoveLast();
+                _thumbCache.Remove(oldest);
+            }
+        }
+    }
+
     /// <summary>
-    /// 预览图**按需加载**（§3.6）：只解码**当前载具**的包，切走时释放上一个载具的图，
-    /// 并按卡片需要的宽度**降采样解码** —— 否则几百个包一次性全解码会同时拖慢启动、吃掉大量内存。
+    /// 预览图**按需加载**（§3.6）：只解码**当前载具**的包，并按卡片需要的宽度**降采样解码** ——
+    /// 否则几百个包一次性全解码会同时拖慢启动、吃掉大量内存。
     /// 解码较重（每张数毫秒到数十毫秒）→ **后台线程逐张解码、逐张回 UI 线程填充**，
     /// 卡片渐进显示；切走载具后旧解码会话作废。缺失 / 解码失败则留空 → 界面显示占位。
+    /// 已解码的图进**内存缓存**：再次切换到该载具时直接命中、无白闪（LRU 上限 100 张）。
     /// </summary>
     private void LoadPreviews(Vehicle? vehicle)
     {
@@ -964,7 +1015,13 @@ public partial class SkinsViewModel : ObservableObject
                 if (!ReferenceEquals(_previewDecodeToken, decodeToken)) return; // 已切走 → 放弃剩余解码
 
                 var full = PreviewStore.FullPath(configDir, package.Id);
-                var image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth); // Freeze 过 → 跨线程安全
+
+                var image = GetCachedThumb(package.Id, full);
+                if (image == null)
+                {
+                    image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth); // Freeze 过 → 跨线程安全
+                    if (image != null) PutCachedThumb(package.Id, full, image);
+                }
 
                 Application.Current?.Dispatcher.BeginInvoke(() =>
                 {

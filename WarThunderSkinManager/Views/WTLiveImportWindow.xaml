@@ -25,7 +25,7 @@
 
             <!-- 标题栏（可拖动；X = 关闭） -->
             <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <TextBlock Text="{Binding TitleText}" Margin="14,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock Text="{loc:Loc wtlive.title}" Margin="14,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
                 <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
                         HorizontalAlignment="Right" Click="Close_Click"/>
             </Grid>
