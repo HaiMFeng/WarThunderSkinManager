@@ -193,6 +193,21 @@ public partial class MainViewModel : ObservableObject
             StatusMessage = "";
             _statusTimer.Stop();
         };
+
+        // Saves 目录自动探测（§3.14）：默认路径存在即静默采用；失败不阻塞（设置页可手选，不参与迁移）
+        if (string.IsNullOrWhiteSpace(Config.SavesDirectory))
+        {
+            var defaultSaves = GameSaveSyncService.DefaultSavesDirectory();
+            if (Directory.Exists(defaultSaves)) Config.SavesDirectory = defaultSaves; // 触发联动：载入账户 + 落盘
+        }
+
+        LoadGameAccounts(); // 已配置（无变更）时也要载入账户下拉
+
+        // 激活状态变化 → 游戏内同步（§3.14；IO 在后台，await 后回 UI 线程更新状态文字）
+        Skins.GameSkinSelectionChanged += () => _ = RunGameSyncAsync(overwriteForeign: false, silent: false);
+
+        // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
+        if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
     }
 
     /// <summary>
@@ -400,7 +415,130 @@ public partial class MainViewModel : ObservableObject
 
     private bool _wizardShown;
 
-    /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）。</summary>
+    // ---------- 游戏内同步涂装选择（§3.14） ----------
+
+    /// <summary>Saves 下的账户目录（纯数字）。</summary>
+    [ObservableProperty] private System.Collections.ObjectModel.ObservableCollection<string> _gameAccounts = new();
+
+    /// <summary>当前选中的管理账户。</summary>
+    [ObservableProperty] private string? _selectedGameAccount;
+
+    /// <summary>最近一次同步的结果文字（设置页展示）。</summary>
+    [ObservableProperty] private string _gameSyncStatus = "";
+
+    /// <summary>「游戏内同步」操作区是否可用（Saves 目录已配置）。</summary>
+    public bool GameSyncBlockEnabled => !string.IsNullOrWhiteSpace(Config.SavesDirectory);
+
+    /// <summary>同步前提齐备（开关开 + 目录 + 账户）。</summary>
+    private bool GameSyncReady
+        => Config.GameSyncEnabled
+           && !string.IsNullOrWhiteSpace(Config.SavesDirectory) && Directory.Exists(Config.SavesDirectory)
+           && !string.IsNullOrWhiteSpace(Config.ManagedAccountId);
+
+    /// <summary>账户下拉默认选中：已记忆账户 → lastlogin uid → 第一个；选定即记忆。</summary>
+    private void LoadGameAccounts()
+    {
+        var accounts = GameSaveSyncService.EnumerateAccountIds(Config.SavesDirectory);
+        GameAccounts = new System.Collections.ObjectModel.ObservableCollection<string>(accounts);
+
+        var lastUid = GameSaveSyncService.ReadLastLoginUid(Config.SavesDirectory);
+        var preferred = new[] { Config.ManagedAccountId, lastUid }.FirstOrDefault(
+                            id => !string.IsNullOrEmpty(id) && accounts.Contains(id))
+                        ?? accounts.FirstOrDefault();
+
+        // 属性赋值：回调内已判断与 ManagedAccountId 相同则不写回，无循环
+        SelectedGameAccount = preferred;
+        if (!string.IsNullOrWhiteSpace(preferred) && Config.ManagedAccountId != preferred)
+            Config.ManagedAccountId = preferred; // OnConfigChanged 落盘
+    }
+
+    partial void OnSelectedGameAccountChanged(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && Config.ManagedAccountId != value)
+            Config.ManagedAccountId = value;
+    }
+
+    /// <summary>库内全部载具 → 激活状态（值 = WTSM/&lt;载具Id&gt;；无激活 = null 清空，§3.14）。</summary>
+    private IReadOnlyDictionary<string, string?> BuildGameSyncSelections()
+    {
+        var dict = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            foreach (var vehicleId in PackageStore.LoadAll(Config.ResourceDirectory)
+                         .Select(m => m.VehicleId)
+                         .Where(id => id.Length > 0)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var active = LoadoutService.LoadActivation(Config.ConfigDirectory, vehicleId).ActivePackageId;
+                dict[vehicleId] = string.IsNullOrEmpty(active) ? null : GameSaveSyncService.WtsmSkinValue(vehicleId);
+            }
+        }
+        catch
+        {
+            // 库读不了 → 空集：本次不写任何条目（覆写模式也不会误清）
+        }
+
+        return dict;
+    }
+
+    /// <summary>
+    /// 执行同步（IO 在后台，await 后回 UI 线程）：更新设置页状态文字；有警告 / 失败时同步主状态栏。
+    /// <paramref name="silent"/> = 启动兜底 / 开关联动，成功不占用主状态栏。
+    /// </summary>
+    private async Task RunGameSyncAsync(bool overwriteForeign, bool silent)
+    {
+        if (!GameSyncReady)
+        {
+            if (!silent) ShowStatus(Loc["gsync.notReady"]);
+            return;
+        }
+
+        try
+        {
+            var selections = BuildGameSyncSelections();
+            var savesDir = Config.SavesDirectory;
+            var account = Config.ManagedAccountId;
+
+            var report = await Task.Run(() =>
+                GameSaveSyncService.Sync(savesDir, account, selections, overwriteForeign, out _));
+
+            GameSyncStatus = report.HasWarnings
+                ? string.Join("；", report.Warnings)
+                : Loc.Format("gsync.done", report.Updated, report.Cleared)
+                  + (report.Skipped > 0 ? " " + Loc.Format("gsync.skippedSuffix", report.Skipped) : "");
+
+            if (report.HasWarnings) ShowStatus(GameSyncStatus);
+            else if (!silent) ShowStatus(Loc.Format("gsync.done", report.Updated, report.Cleared));
+        }
+        catch (Exception ex)
+        {
+            GameSyncStatus = Loc.Format("gsync.failed", "?", ex.Message);
+            ShowStatus(GameSyncStatus);
+        }
+    }
+
+    /// <summary>「立即写入」：按当前激活状态同步（服务端在游戏运行中会拒绝并报告）。</summary>
+    [RelayCommand]
+    private Task WriteGameSkins() => RunGameSyncAsync(overwriteForeign: false, silent: false);
+
+    /// <summary>「覆写全部涂装选择」：破坏性——库外载具与用户手动选的第三方涂装一并清空，先警告。</summary>
+    [RelayCommand]
+    private async Task OverwriteGameSkins()
+    {
+        var confirmed = MessageDialog.Confirm(
+            Loc["gsync.overwriteConfirm"],
+            Loc["gsync.overwriteTitle"],
+            Loc["common.continue"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
+
+        if (!confirmed) return;
+
+        await RunGameSyncAsync(overwriteForeign: true, silent: false);
+    }
+
+    /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）；
+    /// Saves 目录 / 游戏内同步选项（§3.14）变化即落盘并刷新账户。</summary>
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
@@ -413,6 +551,22 @@ public partial class MainViewModel : ObservableObject
 
             case nameof(AppConfig.PartReuseEnabled):
                 ConfirmPartReuseToggle();
+                break;
+
+            case nameof(AppConfig.SavesDirectory):
+                LoadGameAccounts(); // 目录变了 → 重扫账户（lastlogin uid 可能随游戏切换）
+                OnPropertyChanged(nameof(GameSyncBlockEnabled));
+                AutoSave();
+                break;
+
+            case nameof(AppConfig.GameSyncEnabled):
+                AutoSave();
+                // 开启即尝试同步一次（游戏运行中 → 服务端报告跳过原因）
+                if (Config.GameSyncEnabled) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
+                break;
+
+            case nameof(AppConfig.ManagedAccountId):
+                AutoSave();
                 break;
         }
     }

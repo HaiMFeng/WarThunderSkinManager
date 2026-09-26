@@ -78,6 +78,27 @@
                         </Grid>
                         <TextBlock Text="{loc:Loc settings.config.hint}" Style="{StaticResource PageSubtitle}" Margin="0,6,0,0"/>
                     </StackPanel>
+
+                    <!-- Saves 目录（§3.14 游戏内同步）：首次启动自动探测，不参与目录迁移（游戏数据非程序所有） -->
+                    <StackPanel Margin="0,16,0,0">
+                        <TextBlock Text="{loc:Loc settings.saves.label}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
+                                     Text="{Binding Config.SavesDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding BrowseSavesCommand}"/>
+                                <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
+                                        Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
+                                        CommandParameter="{Binding Config.SavesDirectory}"/>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="{loc:Loc settings.saves.hint}" Style="{StaticResource PageSubtitle}" Margin="0,6,0,0"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
@@ -131,6 +152,42 @@
                         <TextBlock Text="{loc:Loc settings.partReuse.toggle}" VerticalAlignment="Center"/>
                         <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
                                   IsChecked="{Binding Config.PartReuseEnabled}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 游戏内同步涂装选择（§3.14）：激活状态写入游戏存档的 userSkins，免去进机库手动选择 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel IsEnabled="{Binding GameSyncBlockEnabled}">
+                    <TextBlock Text="{loc:Loc settings.gameSync}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.gameSync.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{loc:Loc settings.gameSync.toggle}" VerticalAlignment="Center"/>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
+                                  IsChecked="{Binding Config.GameSyncEnabled}"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,14,0,0"
+                                IsEnabled="{Binding Config.GameSyncEnabled, FallbackValue=True}">
+                        <TextBlock Text="{loc:Loc settings.gameSync.account}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+                        <ComboBox Style="{StaticResource BaseComboBox}" Width="220" HorizontalAlignment="Left"
+                                  ItemsSource="{Binding GameAccounts}"
+                                  SelectedItem="{Binding SelectedGameAccount, Mode=TwoWay}"/>
+                        <TextBlock Text="{loc:Loc settings.gameSync.accountHint}" Style="{StaticResource PageSubtitle}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Button Content="{loc:Loc settings.gameSync.write}" Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding WriteGameSkinsCommand}"/>
+                            <Button Content="{loc:Loc settings.gameSync.overwrite}" Style="{StaticResource DangerButton}"
+                                    Margin="8,0,0,0" Command="{Binding OverwriteGameSkinsCommand}"
+                                    ToolTip="{loc:Loc settings.gameSync.overwrite}"/>
+                        </StackPanel>
+
+                        <!-- 最近一次同步结果（含「游戏运行中已跳过」等提示） -->
+                        <TextBlock Text="{Binding GameSyncStatus, FallbackValue=''}" Style="{StaticResource PageSubtitle}"
+                                   TextWrapping="Wrap" Margin="0,10,0,0"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

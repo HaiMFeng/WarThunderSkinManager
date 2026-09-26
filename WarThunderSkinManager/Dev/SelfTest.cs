@@ -1083,6 +1083,55 @@ internal static class SelfTest
                          + $"用户表已变为 {new FileInfo(DataTables.UserFile(DataTables.Vehicles, oldTableDir)).Length / 1024} KB");
 
             log.AppendLine();
+            log.AppendLine("---- 游戏内同步涂装选择（§3.14） ----");
+            var savesDir = Path.Combine(workDir, "game-saves");
+            var globalBlk = """
+                    someSetting:b=yes
+
+                    otherBlock{
+                      nested:t="x"
+                    }
+
+                    userSkins{
+                      f_15e:t=""
+                      su_30mkk:t="thirdparty/OldSkin"
+                      il-2i:t=""
+                    }
+
+                    trailing{
+                      keep:t="yes"
+                    }
+                    """;
+            foreach (var dir in new[] { Path.Combine(savesDir, "123456", "production"), Path.Combine(savesDir, "last", "production") })
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "global.blk"), globalBlk, new UTF8Encoding(false));
+            }
+            File.WriteAllText(Path.Combine(savesDir, "lastlogin.blk"), "uid:i64=123456\n", new UTF8Encoding(false));
+
+            log.AppendLine($"lastlogin 解析: uid = {GameSaveSyncService.ReadLastLoginUid(savesDir)}（应 123456）；"
+                         + $"账户列表 = [{string.Join(", ", GameSaveSyncService.EnumerateAccountIds(savesDir))}]（应 123456）");
+
+            var selections = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["f_15e"] = GameSaveSyncService.WtsmSkinValue("f_15e"), // 激活 → 写入
+                ["su_30mkk"] = null                                     // 无激活 → 非前缀行，非覆写模式应保留
+            };
+            var safeSyncReport = GameSaveSyncService.Sync(savesDir, "123456", selections, overwriteForeign: false, out var wroteLast);
+            var syncedBlk = File.ReadAllText(Path.Combine(savesDir, "123456", "production", "global.blk"), new UTF8Encoding(false));
+            log.AppendLine($"同步(安全): last 镜像 = {wroteLast}（应 True），更新 {safeSyncReport.Updated} 清空 {safeSyncReport.Cleared} 保留 {safeSyncReport.Skipped}（两份文件各 1 → 应 2/0/2）；"
+                         + $"f_15e 写入 = {syncedBlk.Contains("f_15e:t=\"WTSM/f_15e\"")}，"
+                         + $"第三方保留 = {syncedBlk.Contains("thirdparty/OldSkin")}，"
+                         + $"块外完好 = {syncedBlk.Contains("someSetting:b=yes") && syncedBlk.Contains("keep:t=\"yes\"")}");
+            log.AppendLine($"滚动备份: {File.Exists(Path.Combine(savesDir, "123456", "production", "global.blk.wtsm-bak"))}（应 True）");
+
+            var overwriteReport = GameSaveSyncService.Sync(savesDir, "123456", selections, overwriteForeign: true, out _);
+            var overwrittenBlk = File.ReadAllText(Path.Combine(savesDir, "123456", "production", "global.blk"), new UTF8Encoding(false));
+            log.AppendLine($"同步(覆写): 清空 {overwriteReport.Cleared}（两份文件各 1 → 应 2）；"
+                         + $"第三方清除 = {!overwrittenBlk.Contains("thirdparty/OldSkin")}，"
+                         + $"嵌套块完好 = {overwrittenBlk.Contains("nested:t=\"x\"")}");
+
+            log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))
                 log.AppendLine("  " + w);

@@ -14,6 +14,19 @@ public partial class AppConfig : ObservableObject
     /// <summary>程序配置目录（默认 LocalAppData，可改）</summary>
     [ObservableProperty] private string _configDirectory = "";
 
+    /// <summary>
+    /// 战争雷霆存档目录（形如 <c>.../Documents/My Games/WarThunder/Saves</c>，游戏内同步涂装选择用，§3.14）。
+    /// 首次启动自动探测；不参与目录迁移（游戏数据非程序所有）。
+    /// </summary>
+    [ObservableProperty] private string _savesDirectory = "";
+
+    /// <summary>「游戏内同步涂装选择」开关（§3.14）：开启后激活 / 取消激活自动写游戏的 userSkins 记录。
+    /// 关闭只停用——已写入的选择保留，不清理。</summary>
+    [ObservableProperty] private bool _gameSyncEnabled;
+
+    /// <summary>游戏内同步管理的账户（Saves 下的纯数字目录名；默认取 lastlogin.blk 的 uid，§3.14）</summary>
+    [ObservableProperty] private string _managedAccountId = "";
+
     /// <summary>界面语言代码（对应 &lt;配置目录&gt;/lang/&lt;culture&gt;.json）</summary>
     [ObservableProperty] private string _language = "zh-CN";
 

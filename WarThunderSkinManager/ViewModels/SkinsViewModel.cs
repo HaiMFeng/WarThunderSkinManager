@@ -73,6 +73,9 @@ public partial class SkinsViewModel : ObservableObject
 
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
+    /// <summary>激活状态变化（激活 / 取消激活成功后触发，§3.14 游戏内同步由 MainViewModel 订阅）。</summary>
+    public event Action? GameSkinSelectionChanged;
+
     public SkinsViewModel(AppConfig config)
     {
         _config = config;
@@ -245,6 +248,8 @@ public partial class SkinsViewModel : ObservableObject
 
         // 首次生成该载具的 blk → 提示到游戏里选中这套用户涂装
         if (blkCreated) PromptFirstOutput(vehicleId);
+
+        GameSkinSelectionChanged?.Invoke(); // 激活状态变化 → 游戏内同步（§3.14）
     }
 
     /// <summary>
@@ -273,6 +278,8 @@ public partial class SkinsViewModel : ObservableObject
         }
 
         ShowStatus(status);
+
+        GameSkinSelectionChanged?.Invoke(); // 激活状态变化 → 游戏内同步（§3.14）
     }
 
     /// <summary>
