@@ -16,7 +16,7 @@
   "settings.subtitle": "目录、界面语言与数据维护",
   "settings.directories": "目录配置",
   "settings.saves.label": "游戏存档目录（Saves）",
-  "settings.saves.hint": "战争雷霆的存档位置（…\\Documents\\My Games\\WarThunder\\Saves），用于读写游戏内的涂装选择记录。首次启动自动探测，未找到时请手动指定。",
+  "settings.saves.hint": "战争雷霆存档目录，用于读写游戏内的涂装选择记录；首次启动自动探测",
   "settings.about": "关于",
   "settings.about.author": "作者",
   "settings.about.version": "版本",
@@ -422,7 +422,7 @@
   "pkg.editor.resource.hint": "资源包是导入产生的只读素材：部件贴图与名字永不改写，普通包从这里引用贴图。关闭开关（解锁）后可修改部件贴图。",
   "pkg.editor.resource.unlockTitle": "解锁资源包",
   "pkg.editor.resource.unlockOk": "解锁",
-  "pkg.editor.resource.unlockNotice": "解锁后该涂装包变为普通包，可以修改部件贴图；候选出处将优先显示资源包，本包独有的贴图以本包名义展示。此操作不可逆，确定解锁？",
+  "pkg.editor.resource.unlockNotice": "解锁后该涂装包变为普通包，可以修改部件贴图；候选出处将优先显示资源包，本包独有的贴图以本包名义展示。此操作不可逆——如需修改涂装，推荐复制一份副本编辑，保留原资源包。确定解锁？",
   "pkg.editor.partsHintResource": "资源包为只读素材，不能修改部件贴图。要编辑请先在上方关闭「资源包」解锁，或复制一份普通包。",
   "settings.about.disclaimer": "本工具仅供个人管理游戏涂装，涂装作品版权归原作者所有；公开分享导出内容前须取得原作者授权。完整声明见项目主页 README。"
 }

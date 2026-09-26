@@ -185,9 +185,20 @@
                                     ToolTip="{loc:Loc settings.gameSync.overwrite}"/>
                         </StackPanel>
 
-                        <!-- 最近一次同步结果（含「游戏运行中已跳过」等提示） -->
-                        <TextBlock Text="{Binding GameSyncStatus, FallbackValue=''}" Style="{StaticResource PageSubtitle}"
-                                   TextWrapping="Wrap" Margin="0,10,0,0"/>
+                        <!-- 最近一次同步结果（含「游戏运行中已跳过」等提示）；无内容时收起，不留空白 -->
+                        <TextBlock Text="{Binding GameSyncStatus}"
+                                   TextWrapping="Wrap" Margin="0,10,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding GameSyncStatus}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                 </StackPanel>
             </Border>
