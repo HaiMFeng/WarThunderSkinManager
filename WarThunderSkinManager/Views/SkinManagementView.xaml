@@ -63,12 +63,21 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
-                <Button Content="{loc:Loc skins.importArchives}" Style="{StaticResource SecondaryButton}"
+                <Button Content="{loc:Loc skins.wtlive}" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding Skins.OpenWtLiveImportCommand}"/>
+                <Button Content="{loc:Loc skins.importArchives}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportArchivesCommand}"/>
                 <Button Content="{loc:Loc skins.importFolder}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportFolderCommand}"/>
                 <Button Content="{loc:Loc skins.importUserSkins}" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.ImportUserSkinsCommand}"/>
+
+                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停显示各下载状态 -->
+                <Button Margin="8,0,0,0" Style="{StaticResource SecondaryButton}" Padding="10,6"
+                        ToolTipService.InitialShowDelay="150"
+                        ToolTip="{Binding Skins.WtLiveStatusText}">
+                    <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="16"/>
+                </Button>
             </StackPanel>
         </Grid>
 

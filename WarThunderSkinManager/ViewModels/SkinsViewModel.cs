@@ -76,6 +76,133 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>激活状态变化（激活 / 取消激活成功后触发，§3.14 游戏内同步由 MainViewModel 订阅）。</summary>
     public event Action? GameSkinSelectionChanged;
 
+    // ---------- WT Live 下载（§3.15）----------
+
+    /// <summary>WT Live 下载列表（顶部「下载列表」按钮悬停展示状态）。</summary>
+    public ObservableCollection<WtLiveDownloadItem> WtLiveDownloads { get; } = new();
+
+    /// <summary>下载列表聚合状态（按钮 ToolTip；空列表显示占位文案）。</summary>
+    public string WtLiveStatusText
+        => WtLiveDownloads.Count == 0
+            ? Loc["wtlive.list.empty"]
+            : string.Join("\n", WtLiveDownloads.Select(d => $"{d.FileName} — {d.StateText}"));
+
+    /// <summary>打开「从 WT Live 下载」窗口（网址输入 + 校验 + 信息确认）。</summary>
+    [RelayCommand]
+    private void OpenWtLiveImport()
+    {
+        if (!EnsureResourceDir()) return;
+
+        var window = new WTLiveImportWindow { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true || window.Post == null) return;
+
+        StartWtLiveDownload(window.Post);
+    }
+
+    /// <summary>
+    /// 后台下载 WT Live 附件 → 完成后自动进入常规导入流程（扫描 → 预览 → 解构），
+    /// 并把网页解析的显示名 / 首张预览图应用到导入的涂装包（§3.15）。
+    /// </summary>
+    private async void StartWtLiveDownload(WTLivePost post)
+    {
+        if (post.File == null) return; // 弹窗侧已拦截
+
+        var item = new WtLiveDownloadItem(post.LangGroup,
+            $"https://live.warthunder.com/post/{post.LangGroup}/en/",
+            post.File.Name, post.Author, post.DisplayName,
+            post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null);
+
+        WtLiveDownloads.Add(item);
+        OnPropertyChanged(nameof(WtLiveStatusText));
+        item.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(WtLiveDownloadItem.StateText) or nameof(WtLiveDownloadItem.State)) OnPropertyChanged(nameof(WtLiveStatusText)); };
+
+        try
+        {
+            var resourceDir = _config.ResourceDirectory;
+            var zipPath = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive",
+                $"{post.LangGroup}-{Path.GetFileName(post.File.Name)}");
+
+            // 下载（后台，按字节报比例）
+            item.StateText = Loc["wtlive.state.downloading0"];
+            var reporter = new Progress<ImportProgress>(p =>
+            {
+                item.Progress = p.Fraction ?? 0;
+                item.StateText = Loc.Format("wtlive.state.downloading", $"{item.Progress:P0}");
+            });
+
+            await Task.Run(() => WTLiveService.DownloadFileAsync(
+                post.File.Link, zipPath, post.File.Size, reporter, CancellationToken.None));
+
+            // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
+            item.State = WtLiveDownloadState.Importing;
+            item.StateText = Loc["wtlive.state.importing"];
+
+            var extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir));
+            var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, post.File!.Name));
+
+            // 单候选 → 用网页解析的名字作为建议显示名（预览窗可再改）
+            if (candidates.Count == 1 && post.DisplayName.Length > 0)
+                candidates[0].SuggestedName = post.DisplayName;
+
+            var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath);
+
+            // 导入成功 → 应用预览图（首张原图）与确认显示名
+            if (result is { Packages.Count: > 0 })
+            {
+                await ApplyWtLivePreviewAsync(result.Packages[0].Id, item);
+                item.State = WtLiveDownloadState.Completed;
+                item.StateText = Loc.Format("wtlive.state.completed", result.Packages[0].Name);
+                ShowStatus(Loc.Format("wtlive.imported", result.Packages[0].Name));
+            }
+            else
+            {
+                item.State = WtLiveDownloadState.Completed;
+                item.StateText = Loc["wtlive.state.nothing"];
+            }
+        }
+        catch (Exception ex)
+        {
+            item.State = WtLiveDownloadState.Failed;
+            item.StateText = Loc.Format("wtlive.state.failed", ex.Message);
+            ShowStatus(Loc.Format("wtlive.downloadFailed", ex.Message));
+        }
+        finally
+        {
+            try { ArchiveService.CleanupStagingRoot(_config.ResourceDirectory); } catch { /* 收尾失败不影响 */ }
+        }
+    }
+
+    /// <summary>下载 WT Live 首张原图并设为涂装包预览（失败静默——预览是锦上添花）。</summary>
+    private async Task ApplyWtLivePreviewAsync(string packageId, WtLiveDownloadItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.PreviewUrl) || !WTLiveService.IsPostUrl(item.Url).HasValue) return;
+
+        try
+        {
+            var imagePath = Path.Combine(ArchiveService.StagingRoot(_config.ResourceDirectory), "wtlive",
+                $"preview-{item.PostId}{Path.GetExtension(item.PreviewUrl)}");
+
+            await Task.Run(() => WTLiveService.DownloadFileAsync(item.PreviewUrl!, imagePath, null, null, CancellationToken.None));
+
+            if (File.Exists(imagePath))
+            {
+                PreviewStore.SaveFromFile(_config.ConfigDirectory, packageId, imagePath);
+
+                // 当前列表里正好有这个包 → 立即刷新缩略图
+                var package = Packages.FirstOrDefault(p => string.Equals(p.Id, packageId, StringComparison.Ordinal));
+                if (package != null)
+                {
+                    package.PreviewPath = PreviewStore.FullPath(_config.ConfigDirectory, packageId);
+                    package.PreviewImage = PreviewStore.LoadImage(package.PreviewPath, ThumbnailDecodeWidth);
+                }
+            }
+        }
+        catch
+        {
+            // 预览图失败不影响导入结果
+        }
+    }
+
     public SkinsViewModel(AppConfig config)
     {
         _config = config;
@@ -887,7 +1014,7 @@ public partial class SkinsViewModel : ObservableObject
     /// 「预览 → 解构」流程（功能设计 §3.1）。<paramref name="archives"/> 非空时，
     /// 预览里提供「导入成功后删除压缩包」选项（默认不勾，见 <see cref="ImportPreviewViewModel"/>）。
     /// </summary>
-    private async Task RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
+    private async Task<ImportResult?> RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
         string sourcePath, bool canDeleteArchive = false, IReadOnlyList<string>? archives = null,
         string extraStatus = "")
     {
@@ -896,7 +1023,7 @@ public partial class SkinsViewModel : ObservableObject
             if (candidates.Count == 0)
             {
                 ShowStatus(Loc["import.empty"]);
-                return;
+                return null;
             }
 
             // 从 UserSkins / 用户选中的文件夹导入时，提供「导入后清理源文件夹」（§3.1）
@@ -914,7 +1041,7 @@ public partial class SkinsViewModel : ObservableObject
                 Owner = Application.Current?.MainWindow
             };
 
-            if (window.ShowDialog() != true) return;
+            if (window.ShowDialog() != true) return null;
 
             RememberImportChoices(sourceType, preview);
             preview.ApplyNames();
@@ -948,10 +1075,13 @@ public partial class SkinsViewModel : ObservableObject
 
             RefreshLibrary();
             ShowStatus(message);
+
+            return result;
         }
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("import.failed", ex.Message));
+            return null;
         }
     }
 

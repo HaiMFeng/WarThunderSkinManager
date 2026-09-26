@@ -1132,6 +1132,40 @@ internal static class SelfTest
                          + $"嵌套块完好 = {overwrittenBlk.Contains("nested:t=\"x\"")}");
 
             log.AppendLine();
+            log.AppendLine("---- WT Live 解析（§3.15） ----");
+            var sampleJson = """
+                {"lang_group":1189546,"id":1242183,"language":"en","languages":["en"],
+                 "type":"camouflage","created":1790408452,"visible":true,
+                 "author":{"id":147560834,"nickname":"\u9505\u76d6\u5934"},
+                 "likes":3,"views":30,"downloads":6,
+                 "description":"\u003Cp\u003EFHQ-11 Fire Rescue \u003Cbr \/\u003E\n\u6d82\u88c5\u6d4b\u8bd5\u003C\/p\u003E\u003Cp\u003Esecond line\u003C\/p\u003E",
+                 "images":[{"id":1,"type":"image\/png",
+                   "mq":{"src":"https:\/\/cdn-live.warthunder.com\/a_mq.png","width":800,"height":430},
+                   "orig":{"src":"https:\/\/cdn-live.warthunder.com\/a.png"}},
+                  {"id":2,"type":"image\/png",
+                   "mq":{"src":"https:\/\/cdn-live.warthunder.com\/b_mq.png","width":800,"height":430},
+                   "orig":{"src":"https:\/\/cdn-live.warthunder.com\/b.png"}}],
+                 "file":{"id":2677168,"name":"template_cn_hq_11.zip",
+                   "link":"https:\/\/live.warthunder.com\/dl\/845e4034\/",
+                   "type":"application\/zip","size":4930419},
+                 "gamePreviewAvailable":false,"gameItemApproved":false,"gameItemTags":[]}
+                """;
+            var parsed = JsonSerializer.Deserialize<JsonElement>(sampleJson);
+            var postAuthor = parsed.GetProperty("author").GetProperty("nickname").GetString();
+            var postFileLink = parsed.GetProperty("file").GetProperty("link").GetString();
+            var postImageCount = parsed.GetProperty("images").GetArrayLength();
+            log.AppendLine($"JSON 解析: 作者 = {postAuthor}（应 锅盖头），file.link = {postFileLink?.StartsWith("https://live.warthunder.com/dl/")}，"
+                         + $"图片数 = {postImageCount}（应 2）");
+            log.AppendLine($"URL 识别: 标准链接 = {WTLiveService.IsPostUrl("https://live.warthunder.com/post/1189546/en/")?.ToString() == "1189546"}"
+                         + $"，多语言变体 = {WTLiveService.IsPostUrl("https://live.warthunder.com/post/1189546/zh/")?.ToString() == "1189546"}"
+                         + $"，非帖子链接 = {WTLiveService.IsPostUrl("https://live.warthunder.com/feed/camouflages/") == null}"
+                         + $"，纯文本 = {WTLiveService.IsPostUrl("随便一段文字") == null}");
+            var htmlSample = "<p>First line<br />second <b>bold</b> line</p><p>&amp; more</p>";
+            var htmlText = WTLiveService.HtmlToText(htmlSample);
+            log.AppendLine($"HTML 剥离: 首行 = \"{htmlText.Split('\n')[0]}\"（应 First line），行数 = {htmlText.Split('\n').Length}（应 3），"
+                         + $"实体解码 = {htmlText.Contains("&more", StringComparison.Ordinal) == false && htmlText.Contains("& more", StringComparison.Ordinal)}");
+
+            log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))
                 log.AppendLine("  " + w);
