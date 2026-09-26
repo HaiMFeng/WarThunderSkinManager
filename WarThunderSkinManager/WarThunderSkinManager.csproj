@@ -8,7 +8,7 @@
         <UseWPF>true</UseWPF>
         <!-- 版本与作者的**单一来源**：设置页「关于」经程序集特性读取（编译进 exe，外部不可改）。
              发布新构建只需改这里（Version 生成 InformationalVersion，界面显示时加 v 前缀）。 -->
-        <Version>0.1.0-beta</Version>
+        <Version>0.1.1-dev</Version>
         <Authors>HaiMFeng</Authors>
         <!-- exe / 窗口图标（多尺寸 ico，16–256） -->
         <ApplicationIcon>Assets\app.ico</ApplicationIcon>
