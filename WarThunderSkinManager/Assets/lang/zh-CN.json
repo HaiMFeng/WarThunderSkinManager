@@ -438,6 +438,7 @@
   "wtlive.displayName": "显示名（可在下方确认或修改）",
   "wtlive.description": "描述",
   "wtlive.start": "开始下载",
+  "wtlive.started": "开始下载 {0}，完成后自动导入",
   "wtlive.startHint": "确认无误后，点击「开始下载」将下载 {0}（{1}），完成后自动进入导入流程",
   "wtlive.list.empty": "暂无 WT Live 下载",
   "wtlive.state.downloading0": "下载中 0%",

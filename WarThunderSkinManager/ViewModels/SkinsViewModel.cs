@@ -124,6 +124,9 @@ public partial class SkinsViewModel : ObservableObject
 
         WtLiveDownloads.Add(item);
 
+        // 主窗口顶部通用提示：明确当前开始下载哪个文件
+        ShowStatus(Loc.Format("wtlive.started", post.File.Name));
+
         try
         {
             var resourceDir = _config.ResourceDirectory;
