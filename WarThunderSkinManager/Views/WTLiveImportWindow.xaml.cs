@@ -78,6 +78,10 @@ public partial class WTLiveImportWindow : Window
         DisplayNameBox.Text = post.DisplayName;
         DescriptionText.Text = post.DescriptionText;
 
+        // 明确告知即将下载的文件与大小
+        StartHint.Text = Loc.Format("wtlive.startHint", post.File.Name,
+            DataResetService.FormatSize(post.File.Size));
+
         InfoPanel.Visibility = Visibility.Visible;
         StartButton.IsEnabled = true;
     }

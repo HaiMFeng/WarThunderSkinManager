@@ -438,6 +438,7 @@
   "wtlive.displayName": "Display name (confirm or edit below)",
   "wtlive.description": "Description",
   "wtlive.start": "Start Download",
+  "wtlive.startHint": "Once confirmed, click 'Start Download' to fetch {0} ({1}); the import flow starts automatically afterwards",
   "wtlive.list.empty": "No WT Live downloads",
   "wtlive.state.downloading0": "Downloading 0%",
   "wtlive.state.downloading": "Downloading {0}",
