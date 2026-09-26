@@ -341,7 +341,8 @@
                                                 <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}"
                                                            FontSize="26" Foreground="{StaticResource BrushTextMuted}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                <Image Stretch="Uniform" HorizontalAlignment="Center"
+                                                <!-- UniformToFill 填满裁剪；对齐居中 → 裁掉的两侧均匀分布 -->
+                                                <Image Stretch="UniformToFill" HorizontalAlignment="Center"
                                                        VerticalAlignment="Center" Source="{Binding PreviewImage}"/>
                                             </Grid>
                                         </Border>
