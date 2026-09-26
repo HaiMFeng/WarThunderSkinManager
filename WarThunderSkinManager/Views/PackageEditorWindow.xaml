@@ -117,10 +117,13 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <TextBlock Text="{loc:Loc pkg.editor.partsHintResource}"
-                               TextWrapping="Wrap" Margin="0,0,0,10">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                    <!-- 资源包不可更改横幅（警示色，比普通提示醒目） -->
+                    <Border CornerRadius="6" Padding="12,9" Margin="0,0,0,10"
+                            Background="{StaticResource BrushDangerSoftBg}"
+                            BorderBrush="{StaticResource BrushDangerSoftBorder}"
+                            BorderThickness="1">
+                        <Border.Style>
+                            <Style TargetType="Border">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding CanEditTextures}" Value="False">
@@ -128,8 +131,16 @@
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                       Foreground="{StaticResource BrushDanger}" VerticalAlignment="Center"
+                                       Margin="0,0,10,0"/>
+                            <TextBlock Text="{loc:Loc pkg.editor.partsHintResource}"
+                                       Foreground="{StaticResource BrushDangerSoftText}" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="520"/>
+                        </StackPanel>
+                    </Border>
 
                     <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
