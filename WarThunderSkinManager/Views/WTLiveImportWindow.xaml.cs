@@ -70,24 +70,8 @@ public partial class WTLiveImportWindow : Window
             return;
         }
 
-        try
-        {
-            if (post.ImageUrls.Count > 0)
-            {
-                var image = new BitmapImage();
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.UriSource = new Uri(post.ImageUrls[0]);
-                image.DecodePixelWidth = 800;
-                image.EndInit();
-                PreviewImage.Source = image;
-            }
-        }
-        catch
-        {
-            // 预览图加载失败不阻塞（占位为空）
-        }
-
+        // 预览图不在确认窗内联加载（国内访问 CDN 慢会卡住界面）——
+        // 导入完成后由 StartWtLiveDownload 在后台取原图设为涂装包预览
         AuthorText.Text = post.Author;
         FileText.Text = $"{post.File.Name}（{DataResetService.FormatSize(post.File.Size)}）";
         DownloadsText.Text = post.Downloads.ToString();

@@ -79,10 +79,10 @@
                 </Button>
 
                 <Popup x:Name="WtLiveListPopup" PlacementTarget="{Binding ElementName=WtLiveListButton}"
-                       Placement="Bottom" VerticalOffset="4" StaysOpen="False" AllowsTransparency="True"
-                       PopupAnimation="Fade">
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                       PopupAnimation="Fade" Width="360">
                     <Border Background="{StaticResource BrushBackground}" BorderBrush="{StaticResource BrushBorder}"
-                            BorderThickness="1" CornerRadius="8" Padding="14,10" Width="360" Margin="0,0,0,10">
+                            BorderThickness="1" CornerRadius="8" Padding="14,10">
                         <StackPanel>
                             <TextBlock Text="{loc:Loc wtlive.list.title}" Style="{StaticResource FieldLabel}"
                                        FontWeight="SemiBold" Margin="0,0,0,8"/>

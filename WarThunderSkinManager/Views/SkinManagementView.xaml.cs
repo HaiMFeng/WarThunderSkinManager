@@ -246,9 +246,15 @@ public partial class SkinManagementView : UserControl
 
     // ==================== 其他 ====================
 
-    /// <summary>WT Live 下载列表浮窗开关（点击按钮切换；点击浮窗外自动收起）。</summary>
+    /// <summary>
+    /// WT Live 下载列表浮窗开关（点击按钮切换；点击浮窗外自动收起）。
+    /// 浮窗**右缘**对齐按钮右缘（默认左对齐会让 360 宽的浮窗右半超出窗口）。
+    /// </summary>
     private void WtLiveList_Click(object sender, RoutedEventArgs e)
-        => WtLiveListPopup.IsOpen = !WtLiveListPopup.IsOpen;
+    {
+        WtLiveListPopup.HorizontalOffset = WtLiveListButton.ActualWidth - WtLiveListPopup.Width;
+        WtLiveListPopup.IsOpen = !WtLiveListPopup.IsOpen;
+    }
 
     /// <summary>双击涂装包 = 打开属性对话框（改名 / 预览图）。</summary>
     private void PackageList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

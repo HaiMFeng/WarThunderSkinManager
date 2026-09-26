@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
-        Title="{Binding TitleText}"
+        Title="{loc:Loc wtlive.title}"
         Width="560" MinHeight="320"
         WindowStyle="None" ShowInTaskbar="False" ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner" MinWidth="480"
@@ -54,12 +54,12 @@
                 <TextBlock x:Name="HintText" Grid.Row="1" Text="{loc:Loc wtlive.url.hint}"
                            Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,8,0,0"/>
 
-                <!-- 帖子信息（读取成功后显示） -->
+                <!-- 涂装信息（读取成功后显示）；预览图不放确认窗内联加载（国内加载慢会卡住界面），
+                     下载导入完成后在后台取原图设为涂装包预览 -->
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,12,0,0"
                               Visibility="Collapsed" x:Name="InfoPanel">
                     <StackPanel>
-                        <Image x:Name="PreviewImage" MaxHeight="220" Stretch="Uniform" HorizontalAlignment="Left"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <TextBlock Text="{loc:Loc wtlive.author}" Style="{StaticResource FieldLabel}"/>
                             <TextBlock x:Name="AuthorText" Margin="12,0,24,0"/>
                             <TextBlock Text="{loc:Loc wtlive.file}" Style="{StaticResource FieldLabel}"/>
