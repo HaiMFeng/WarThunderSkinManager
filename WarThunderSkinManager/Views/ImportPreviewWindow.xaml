@@ -7,7 +7,7 @@
         MinWidth="680" MinHeight="400"
         WindowStyle="None" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake"
+        FontFamily="pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake, Segoe UI, Microsoft YaHei UI"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <WindowChrome.WindowChrome>

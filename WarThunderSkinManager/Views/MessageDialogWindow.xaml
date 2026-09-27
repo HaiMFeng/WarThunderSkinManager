@@ -5,7 +5,7 @@
         Width="460" SizeToContent="Height" MaxHeight="640"
         WindowStyle="None" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake"
+        FontFamily="pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake, Segoe UI, Microsoft YaHei UI"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
