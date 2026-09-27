@@ -56,7 +56,8 @@ public static class ResourceUpdateService
             UpstreamRepo + "char.vromfs.bin_u/config/shop.blkx"),
     };
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // 60 秒：units.csv 有 6 MB，慢网络下 30 秒容易误伤
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
 
     static ResourceUpdateService()
     {

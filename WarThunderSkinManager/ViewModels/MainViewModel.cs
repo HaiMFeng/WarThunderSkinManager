@@ -679,7 +679,7 @@ public partial class MainViewModel : ObservableObject
             catch (Exception ex)
             {
                 item.HasUpdate = false;
-                item.StatusText = Loc.Format("settings.resource.failed", ex.Message);
+                item.StatusText = ResourceFailText(ex);
             }
         }
     }
@@ -709,9 +709,17 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            item.StatusText = Loc.Format("settings.resource.failed", ex.Message);
+            item.StatusText = ResourceFailText(ex);
         }
     }
+
+    /// <summary>更新资源的网络异常 → 简短可读的失败文案（不把异常原文 / 堆栈直接上屏）。</summary>
+    private string ResourceFailText(Exception ex) => ex switch
+    {
+        TaskCanceledException or OperationCanceledException => Loc["settings.resource.failTimeout"],
+        System.Net.Http.HttpRequestException => Loc["settings.resource.failNetwork"],
+        _ => Loc["settings.resource.failed"],
+    };
 
     /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）；
     /// Saves 目录 / 游戏内同步选项（§3.14）变化即落盘并刷新账户。</summary>
