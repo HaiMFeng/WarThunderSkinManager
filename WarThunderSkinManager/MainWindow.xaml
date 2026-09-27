@@ -9,7 +9,7 @@
         Height="720" Width="1120"
         MinWidth="900" MinHeight="560"
         Opacity="0"
-        FontFamily="pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake, Segoe UI, Microsoft YaHei UI"
+        FontFamily="symbols_skyquake, Segoe UI, Microsoft YaHei UI"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}"
         WindowStyle="None"

@@ -238,9 +238,11 @@ public static class VehicleNameTable
     /// <item>删掉**不可见字符**：源表在 CJK 字符之间夹了大量零宽空格（U+200B），
     /// 保留会把词拆开（如 `四​联​机​枪`），也会让复制 / 搜索 / 比较出问题。</item>
     /// <item>**国旗占位符保留**：程序以游戏符号字体（根目录 <c>symbols_skyquake.ttf</c>，
-    /// 族名 <c>symbols_skyquake</c>，仅 15 个符号字形）作为字体链的**首位**——这些特殊字形
-    /// （多为块元素等<b>标准区段</b>字符，Segoe UI 也有字形、渲染成普通方块）只有放在首位
-    /// 才会被截住渲染成国旗 / 弹药图标；该字体没有的正常中英字符则回退到 Segoe UI / 雅黑。</item>
+    /// 族名 <c>symbols_skyquake</c>，仅 15 个符号字形）作为字体链的**首位**
+    /// （<c>symbols_skyquake, Segoe UI, Microsoft YaHei UI</c>，由 <c>IconFontLoader</c> 保障就位）——
+    /// 这些特殊字形（多为块元素等<b>标准区段</b>字符，Segoe UI 也有字形、渲染成普通方块）
+    /// 只有放在首位才会被截住渲染成国旗 / 弹药图标；该字体没有的正常中英字符则回退到
+    /// Segoe UI / 雅黑。</item>
     /// <item>折叠空白（含不换行空格）并去首尾。</item>
     /// </list>
     /// </summary>

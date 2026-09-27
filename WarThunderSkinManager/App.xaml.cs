@@ -20,6 +20,9 @@ public partial class App : Application
         // 全局异常兜底：任何未捕获异常记日志 + 友好提示，不直接崩溃进程（发布版必须，§4）
         RegisterGlobalExceptionHandlers();
 
+        // 游戏符号字体就位（须在首个窗口前；未安装的机器上私有注册嵌入副本，§3.7）
+        IconFontLoader.EnsureLoaded();
+
         // 开发自检：--selftest <源文件夹> <工作目录>（跑完即退出，不建窗口；门禁保证 GUI 模式绝不触发）
         if (e.Args.Length >= 3 && e.Args[0] == "--selftest")
         {

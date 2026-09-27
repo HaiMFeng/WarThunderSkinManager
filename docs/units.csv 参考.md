@@ -58,11 +58,13 @@
 4. **译文清理**（源数据脏点较多，**只处理不可见字符**）：
    - 删**零宽字符**（U+200B 等）：源表在 CJK 字符间夹了大量零宽空格，会把词拆开（`四​联​机​枪`）；
    - **国旗 / 图标占位符保留**：游戏用块元素 / 几何图形 / 私用区等特殊字形画"所属国"小国旗与
-     弹药图标。注意这些多是**标准区段字符**（如 `▀` = U+2580），Segoe UI 本身有字形
-     （渲染成普通方块）——因此游戏符号字体（根目录 `symbols_skyquake.ttf`，族名
-     `symbols_skyquake`，仅 15 个符号字形）必须放在各窗口字体链的**首位**
-     （`pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake, Segoe UI, Microsoft YaHei UI`）：
-     特殊字形被它截住渲染成图标，正常中英字符（该字体没有）继续回退到 Segoe UI / 雅黑；
+     弹药图标。注意这些多是**标准区段字符**（如 `▀` = U+2580），Segoe UI 也有字形（渲染成
+     普通方块）——因此游戏符号字体（根目录 `symbols_skyquake.ttf`，族名 `symbols_skyquake`，
+     仅 15 个符号字形）必须放在各窗口字体链的**首位**：
+     `FontFamily="symbols_skyquake, Segoe UI, Microsoft YaHei UI"`。
+     特殊字形被它截住渲染成图标，正常中英字符（该字体没有）继续回退到 Segoe UI / 雅黑。
+     字体未安装的机器上，启动时由 `IconFontLoader` 把嵌入副本私有注册（FR_PRIVATE，仅本进程）；
+     **不能用 pack URI 形式**（`pack://…/#族名`）引用嵌入字体——WPF 按名解析对它不可靠（实测）；
    - 折叠空白（含不换行空格）并去首尾；
 5. **查表**（`Lookup`）：字典大小写不敏感，按 **`id_1` → `id_0` → `id` → `id_shop`** 顺序取第一个非空值；
 6. **缓存**：按表来源标记（用户表路径 + 写入时间，1 秒 TTL）缓存——用户替换表文件后
