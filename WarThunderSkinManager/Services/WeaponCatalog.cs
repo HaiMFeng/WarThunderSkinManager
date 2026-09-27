@@ -6,7 +6,7 @@ using System.Text;
 namespace WarThunderSkinManager.Services;
 
 /// <summary>
-/// 内置武器名表（功能设计 §3.6）：嵌入资源 <c>ref/units_weaponry.csv</c>，
+/// 内置武器名表（功能设计 §3.6）：嵌入资源 <c>Assets/units_weaponry.csv</c>，
 /// 用于判断某个部件位置（<c>from</c>）是不是**武器**（导弹 / 炸弹 / 机炮 / 火箭弹…），
 /// 是的话在部件行上显示一个红色的「武器 / 导弹」标签。
 /// </summary>
