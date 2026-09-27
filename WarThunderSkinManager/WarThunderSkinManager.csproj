@@ -32,8 +32,9 @@
       <!-- 品牌资源：窗口图标（多尺寸 ico）与应用内灰轮廓镂空 Logo（经 OpacityMask 按主题染色） -->
       <Resource Include="Assets\app.ico" />
       <Resource Include="Assets\logo-outline.png" />
-      <!-- 游戏图标字体（族名 indicators）：国旗 / 弹药等占位符的渲染源（源文件在仓库根目录，Link 引用） -->
-      <Resource Include="..\icons.ttf" Link="Assets\icons.ttf" />
+      <!-- 游戏符号字体（族名 symbols_skyquake，仅 15 个符号字形）：国旗 / 弹药等占位符的渲染源
+           （源文件在仓库根目录，Link 引用；作为窗口字体链的**末位回退**，正常字符永远落在前面） -->
+      <Resource Include="..\symbols_skyquake.ttf" Link="Assets\symbols_skyquake.ttf" />
     </ItemGroup>
 
 </Project>

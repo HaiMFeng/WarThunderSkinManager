@@ -236,7 +236,7 @@ internal static class SelfTest
             log.AppendLine($"带国旗·简体         : {VehicleNameTable.Lookup("jp_halftrack_m16", "zh-CN") ?? "(未命中)"}");
 
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
-            // （UI 字体链以 icons.ttf 收尾，渲染成国旗 / 弹药图标）
+            // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;
             var invisibleLeft = 0;
             var flagLost = 0;

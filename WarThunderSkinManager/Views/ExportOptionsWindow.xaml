@@ -7,7 +7,7 @@
         WindowStyle="None" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         UseLayoutRounding="True"
-        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/icons.ttf/#indicators"
+        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/symbols_skyquake.ttf/#symbols_skyquake"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}"
