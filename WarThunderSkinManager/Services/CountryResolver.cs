@@ -19,6 +19,10 @@ namespace WarThunderSkinManager.Services;
 /// **id 归一化**：匹配前把 <c>-</c> 与 <c>_</c> 视为等价并转小写——商店侧 <c>a-26c</c> 与
 /// 涂装侧 <c>a_26c</c> 这类拼写差异真实存在。匹配仅作查表用，不改动载具 id 本身。
 /// </para>
+/// <para>
+/// **表来源**：用户表优先（<c>&lt;配置目录&gt;/ref/shop.blkx</c>，可由设置页「更新资源」在线更新，
+/// §3.15），否则内置嵌入资源；替换后无需重启（按来源标记重建缓存）。
+/// </para>
 /// </remarks>
 public static class CountryResolver
 {
@@ -41,6 +45,7 @@ public static class CountryResolver
 
     private static readonly object Gate = new();
     private static Dictionary<string, string>? _index; // 归一化载具 id → 国家 Id
+    private static string _stamp = "\0";
 
     /// <summary>解析载具内部标识所属国家 Id；商店表未收录返回 <see cref="Unclassified"/>。</summary>
     public static string Resolve(string vehicleId)
@@ -56,30 +61,42 @@ public static class CountryResolver
         => id.Trim().Replace('-', '_').ToLowerInvariant();
 
     /// <summary>
-    /// 解析嵌入的 shop.blkx：递归找「值为含 <c>rank</c> 键的对象」的条目（= 载具），
-    /// 键链路上的国家 / 军种块名即归属。表随程序发布，进程内解析一次后缓存。
+    /// 取索引：表来源变化（用户表被「更新资源」替换 / 手动修改）即重建，无需重启。
+    /// 解析规则：递归找「值为含 <c>rank</c> 键的对象」的条目（= 载具），键链路上的国家块即归属。
     /// </summary>
     private static Dictionary<string, string> Index()
     {
         lock (Gate)
         {
-            if (_index != null) return _index;
-
-            var index = new Dictionary<string, string>(StringComparer.Ordinal);
-            try
+            var stamp = DataTables.Stamp(DataTables.Shop);
+            if (_index == null || !string.Equals(stamp, _stamp, StringComparison.Ordinal))
             {
-                using var stream = OpenEmbedded();
-                using var doc = JsonDocument.Parse(stream);
-                Walk(doc.RootElement, null, index);
-            }
-            catch
-            {
-                // 表缺失 / 损坏 → 空索引：全部归「未分类」，用户仍可在载具管理手动归类
+                _index = BuildIndex();
+                _stamp = stamp;
             }
 
-            _index = index;
             return _index;
         }
+    }
+
+    private static Dictionary<string, string> BuildIndex()
+    {
+        var index = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        try
+        {
+            using var stream = DataTables.Open(DataTables.Shop);
+            if (stream == null) return index;
+
+            using var doc = JsonDocument.Parse(stream);
+            Walk(doc.RootElement, null, index);
+        }
+        catch
+        {
+            // 表缺失 / 损坏 → 空索引：全部归「未分类」，用户仍可在载具管理手动归类
+        }
+
+        return index;
     }
 
     private static void Walk(JsonElement node, string? country, Dictionary<string, string> index)
@@ -112,18 +129,5 @@ public static class CountryResolver
                     Walk(item, country, index);
                 break;
         }
-    }
-
-    /// <summary>从程序集取嵌入资源（资源名形如 <c>&lt;根命名空间&gt;.Assets.shop.blkx</c>）。</summary>
-    private static Stream OpenEmbedded()
-    {
-        var assembly = typeof(CountryResolver).Assembly;
-        foreach (var name in assembly.GetManifestResourceNames())
-        {
-            if (name.EndsWith(".Assets.shop.blkx", StringComparison.OrdinalIgnoreCase))
-                return assembly.GetManifestResourceStream(name)!;
-        }
-
-        throw new FileNotFoundException("嵌入资源 shop.blkx 缺失");
     }
 }

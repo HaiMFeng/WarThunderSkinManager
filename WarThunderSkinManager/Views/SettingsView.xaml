@@ -220,6 +220,50 @@
                 </StackPanel>
             </Border>
 
+            <!-- 更新资源（§3.15）：数据表可从上游仓库（War-Thunder-Datamine）检查 / 下载新版本 -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel IsEnabled="{Binding ResourceBlockEnabled}">
+                    <TextBlock Text="{loc:Loc settings.resourceUpdate}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.resourceUpdate.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+                    <ItemsControl ItemsSource="{Binding ResourceItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" MinWidth="230"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Margin="12,0,12,0"
+                                               Foreground="{StaticResource BrushTextSecondary}"/>
+                                    <Button Grid.Column="2" Content="{loc:Loc settings.resource.update}"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding DataContext.UpdateResourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasUpdate}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="{loc:Loc settings.resource.check}" Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding CheckResourceUpdatesCommand}"/>
+                </StackPanel>
+            </Border>
+
             <!-- 资源库维护（§4）：外部改动的手动全量同步 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>

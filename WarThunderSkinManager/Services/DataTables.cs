@@ -29,6 +29,9 @@ public static class DataTables
     /// <summary>武器名表文件名</summary>
     public const string Weaponry = "units_weaponry.csv";
 
+    /// <summary>商店归属表文件名（载具国家归类用，§3.4 / §3.15）</summary>
+    public const string Shop = "shop.blkx";
+
     /// <summary>当前配置目录（由 <see cref="LocalizationManager"/> 加载语言时同步，随配置目录改动而变）</summary>
     private static string _configDirectory = "";
 
@@ -168,7 +171,7 @@ public static class DataTables
         var created = 0;
         var updated = 0;
 
-        foreach (var file in new[] { Vehicles, Weaponry })
+        foreach (var file in new[] { Vehicles, Weaponry, Shop })
         {
             try
             {
@@ -198,6 +201,20 @@ public static class DataTables
         }
 
         return (created, updated);
+    }
+
+    /// <summary>
+    /// 「更新资源」（§3.15）：把在线下载的新表写入用户表，并把**基线一并写成同内容**——
+    /// 基线 = 用户表 = 新表，未来程序发布更新的内置表时仍按「用户没改过」正常跟随更新。
+    /// </summary>
+    public static void ApplyUpdatedTable(string fileName, string configDir, byte[] content)
+    {
+        if (string.IsNullOrWhiteSpace(configDir))
+            throw new InvalidOperationException("配置目录未就绪");
+
+        System.IO.Directory.CreateDirectory(UserDirectory(configDir));
+        AtomicFile.WriteAllBytes(UserFile(fileName, configDir), content);
+        AtomicFile.WriteAllBytes(BaselineFile(fileName, configDir), content);
     }
 
     /// <summary>把内置表写成基线文件（记录"上一次随程序发布的内置表"）。</summary>

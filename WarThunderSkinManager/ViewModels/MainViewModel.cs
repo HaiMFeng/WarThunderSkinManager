@@ -230,6 +230,7 @@ public partial class MainViewModel : ObservableObject
         Config = config;
 
         MigrateCountryOverrides(config); // 旧版一次性迁移（须先于各页加载数据，§3.4）
+        InitResourceItems(); // 设置页「更新资源」行条目（§3.15）
 
         // 部件排除清单跟随配置目录（载具管理页手动删除部件，§3.10）
         PartExclusionService.Configure(config.ConfigDirectory);
@@ -630,6 +631,86 @@ public partial class MainViewModel : ObservableObject
         if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName)) return;
 
         Config.SavesDirectory = dialog.FolderName; // OnConfigChanged → 重扫账户 + 落盘
+    }
+
+    // ---------- 更新资源（§3.15） ----------
+
+    /// <summary>各资源最近一次检查的结果（应用更新时取远端内容）。</summary>
+    private readonly Dictionary<string, ResourceCheckResult> _resourceChecks = new(StringComparer.Ordinal);
+
+    /// <summary>设置页「更新资源」行条目。</summary>
+    [ObservableProperty] private System.Collections.ObjectModel.ObservableCollection<ResourceUpdateItem> _resourceItems = new();
+
+    /// <summary>「更新资源」操作区是否可用（配置目录已就绪——更新写入 <c>ref/</c> 用户表）。</summary>
+    public bool ResourceBlockEnabled => !string.IsNullOrWhiteSpace(Config.ConfigDirectory);
+
+    private void InitResourceItems()
+    {
+        var items = new System.Collections.ObjectModel.ObservableCollection<ResourceUpdateItem>();
+        foreach (var info in ResourceUpdateService.Resources)
+            items.Add(new ResourceUpdateItem(info, Loc["settings.resource.notChecked"]));
+        ResourceItems = items;
+    }
+
+    /// <summary>逐个资源下载远端并比对版本指纹（顺序执行，避免带宽争抢；单资源失败不影响其余）。</summary>
+    [RelayCommand]
+    private async Task CheckResourceUpdates()
+    {
+        var configDir = Config.ConfigDirectory;
+        if (string.IsNullOrWhiteSpace(configDir))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        foreach (var item in ResourceItems)
+        {
+            item.StatusText = Loc["settings.resource.checking"];
+
+            try
+            {
+                var result = await ResourceUpdateService.CheckAsync(item.Info, configDir);
+                _resourceChecks[item.FileName] = result;
+                item.HasUpdate = result.HasUpdate;
+                item.StatusText = result.HasUpdate
+                    ? Loc.Format("settings.resource.hasUpdate", result.LocalVersion ?? "?", result.RemoteVersion)
+                    : Loc["settings.resource.upToDate"];
+            }
+            catch (Exception ex)
+            {
+                item.HasUpdate = false;
+                item.StatusText = Loc.Format("settings.resource.failed", ex.Message);
+            }
+        }
+    }
+
+    /// <summary>应用单个资源的更新（用户表 + 基线落盘），随后重建库视图使译名 / 武器标签 / 国家归类立即生效。</summary>
+    [RelayCommand]
+    private async Task UpdateResource(ResourceUpdateItem? item)
+    {
+        if (item == null || !item.HasUpdate) return;
+
+        var configDir = Config.ConfigDirectory;
+        if (string.IsNullOrWhiteSpace(configDir)) return;
+
+        if (!_resourceChecks.TryGetValue(item.FileName, out var result) || !result.HasUpdate) return;
+
+        item.StatusText = Loc["settings.resource.updating"];
+
+        try
+        {
+            await Task.Run(() => ResourceUpdateService.Apply(result, configDir));
+            item.HasUpdate = false;
+            item.StatusText = Loc["settings.resource.updated"];
+
+            // 新表生效（DataTables 按来源标记自动重建缓存）→ 库视图重算（译名 / 武器标签 / 国家归类）
+            if (!string.IsNullOrWhiteSpace(Config.ResourceDirectory) && Directory.Exists(Config.ResourceDirectory))
+                RebuildLibrary();
+        }
+        catch (Exception ex)
+        {
+            item.StatusText = Loc.Format("settings.resource.failed", ex.Message);
+        }
     }
 
     /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）；

@@ -19,4 +19,14 @@ internal static class AtomicFile
         File.WriteAllText(tmp, contents, new UTF8Encoding(false));
         File.Move(tmp, path, overwrite: true);
     }
+
+    public static void WriteAllBytes(string path, byte[] contents)
+    {
+        var dir = Path.GetDirectoryName(path) ?? ".";
+        Directory.CreateDirectory(dir);
+
+        var tmp = Path.Combine(dir, Path.GetFileName(path) + ".tmp");
+        File.WriteAllBytes(tmp, contents);
+        File.Move(tmp, path, overwrite: true);
+    }
 }
