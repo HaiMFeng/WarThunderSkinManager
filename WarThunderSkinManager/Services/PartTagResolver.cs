@@ -77,7 +77,8 @@ public static class PartTagResolver
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     /// <summary>
-    /// 推测标签：最多两个 —— 第 1 个是**部位 / 功能**，第 2 个是**贴图类型**；
+    /// 推测标签（可多个）：**武器 / 导弹**（武器表命中）→ 部位 / 功能（**全部命中**的部件词，
+    /// 按出现顺序，如 <c>wing_pylon</c> → 机翼、挂架）→ **贴图类型**；
     /// 没识别出来就不给（返回空列表）。
     /// </summary>
     /// <param name="from">模块代码（部件位置）</param>
@@ -90,8 +91,8 @@ public static class PartTagResolver
     private static string _cacheStamp = "\0";
 
     /// <summary>
-    /// 推测标签（**带缓存**：按 载具|from 缓存，投影 / 列表重建时零重复计算；
-    /// 武器表被替换时自动失效，见 <see cref="DataTables.Stamp"/>）。
+    /// 推测标签（**带缓存**：按 载具|from|语言 缓存，投影 / 列表重建时零重复计算；
+    /// 武器表被替换 / 界面语言切换时自动失效，见 <see cref="DataTables.Stamp"/>）。
     /// </summary>
     public static IReadOnlyList<PartTag> Resolve(string from, string? vehicleId = null)
     {
@@ -99,7 +100,7 @@ public static class PartTagResolver
 
         lock (CacheGate)
         {
-            var stamp = DataTables.Stamp(DataTables.Weaponry);
+            var stamp = DataTables.Stamp(DataTables.Weaponry) + "|" + Loc.Culture;
             if (!string.Equals(stamp, _cacheStamp, StringComparison.Ordinal))
             {
                 ResolveCache.Clear();
@@ -117,12 +118,12 @@ public static class PartTagResolver
 
     private static IReadOnlyList<PartTag> ResolveCore(string from, string? vehicleId)
     {
-        var tags = new List<PartTag>(3);
+        var tags = new List<PartTag>();
         if (string.IsNullOrWhiteSpace(from)) return tags;
 
         var lower = from.Replace("*", string.Empty).Trim().ToLowerInvariant();
 
-        var part = FindPart(lower);
+        var matches = FindParts(lower); // **全部**命中的部件词，按出现顺序
         var type = FindType(lower);
 
         // 去掉贴图类型后缀后的「部件核心」，用于查武器表
@@ -134,12 +135,18 @@ public static class PartTagResolver
             tags.Add(new PartTag { Text = Loc["part.tag.weapon"], Tone = TagTone.Weapon });
 
         // 前缀就是载具标识、中间没有部件词（如 `f_15e_c` / `cn_vt_5_n`）→ 载具主体贴图
-        if (IsVehicleBody(lower, vehicleId, part))
-            part = "part.tag.vehicleBody";
-
-        // 2) 部位 / 功能（默认色）；已由武器表确认是武器时，不再重复贴「导弹 / 炸弹」这类标签
-        if (part != null && !(isWeapon && RedundantWithWeapon.Contains(part)))
-            tags.Add(new PartTag { Text = Loc[part] });
+        if (IsVehicleBody(lower, vehicleId, matches.Count > 0))
+        {
+            tags.Add(new PartTag { Text = Loc["part.tag.vehicleBody"] });
+        }
+        else
+        {
+            // 2) 部位 / 功能（默认色，可多个，按出现顺序）；已由武器表确认是武器时，
+            //    不再重复贴「导弹 / 炸弹」这类标签
+            foreach (var (_, key) in matches)
+                if (!(isWeapon && RedundantWithWeapon.Contains(key)))
+                    tags.Add(new PartTag { Text = Loc[key] });
+        }
 
         // 3) 贴图类型（带色调，便于区分）
         if (type != null)
@@ -172,10 +179,10 @@ public static class PartTagResolver
     /// ⚠️ 不能只看后缀：绝大多数部件贴图同样以 <c>_c</c> / <c>_n</c> 结尾（如 <c>su_30mkk_pylon1_n</c>），
     /// 所以标识之后必须**整段**就是贴图类型后缀，多一个词（哪怕只是编号）都不算主体。
     /// </remarks>
-    private static bool IsVehicleBody(string lower, string? vehicleId, string? partKey)
+    private static bool IsVehicleBody(string lower, string? vehicleId, bool hasPartMatch)
     {
         // 已识别出部件词（如 su_30mkk_cockpit_c 的 cockpit）→ 一定不是主体
-        if (partKey != null) return false;
+        if (hasPartMatch) return false;
 
         var id = (vehicleId ?? string.Empty).Replace("*", string.Empty).Trim().ToLowerInvariant();
         if (id.EndsWith(".blk", StringComparison.Ordinal)) id = id[..^4];
@@ -210,20 +217,52 @@ public static class PartTagResolver
         return null;
     }
 
-    private static string? FindPart(string lower)
+    /// <summary>
+    /// 找出**全部**命中的部件词，按在 <c>from</c> 中**出现的先后顺序**排列
+    /// （如 <c>wing_pylon</c> → 机翼、挂架）。同一文案 key 只保留首个命中
+    /// （如 <c>aim9_sidewinder</c> → 一个「导弹」标签）。
+    /// </summary>
+    private static List<(int Pos, string Key)> FindParts(string lower)
     {
-        var segments = lower.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        // 分段 + 段起始偏移（分段关键字命中时取段位置，保证与整体出现顺序一致）
+        var segments = new List<(int Start, string Text)>();
+        var start = 0;
+        for (var i = 0; i <= lower.Length; i++)
+        {
+            if (i < lower.Length && lower[i] != '_') continue;
+
+            if (i > start) segments.Add((start, lower[start..i]));
+            start = i + 1;
+        }
+
+        var results = new List<(int Pos, string Key)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var (keyword, key) in Parts)
         {
-            var hit = keyword.Contains('_')
-                ? lower.Contains(keyword, StringComparison.Ordinal)
-                : segments.Any(s => SegmentMatches(s, keyword));
+            if (!seen.Add(key)) continue; // 同一文案 key 只出一个标签
 
-            if (hit) return key;
+            int pos;
+            if (keyword.Contains('_'))
+            {
+                pos = lower.IndexOf(keyword, StringComparison.Ordinal);
+            }
+            else
+            {
+                pos = -1;
+                foreach (var (segStart, segText) in segments)
+                {
+                    if (!SegmentMatches(segText, keyword)) continue;
+                    pos = segStart;
+                    break;
+                }
+            }
+
+            if (pos >= 0) results.Add((pos, key));
         }
 
-        return null;
+        // 出现位置升序；同位置按关键字优先级（OrderBy 稳定排序保持 Parts 顺序）
+        return results.OrderBy(r => r.Pos).ToList();
     }
 
     /// <summary>

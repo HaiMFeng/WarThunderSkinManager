@@ -943,6 +943,19 @@ public partial class SkinsViewModel : ObservableObject
         // 选中载具的标题 / 副标题派生自显示名与国家名，属性变更无人可代播报 → 手动补
         OnPropertyChanged(nameof(SelectedVehicleTitle));
         OnPropertyChanged(nameof(SelectedVehicleSubtitle));
+
+        RefreshPartTags();
+    }
+
+    /// <summary>
+    /// 部件推测标签随界面语言重建（§3.6）：标签缓存键含语言，重解析即得新文案；
+    /// 载具实例与载具管理页共享，就地更新一处即可同时刷新两页（含部件列表 / 属性页候选行）。
+    /// </summary>
+    public void RefreshPartTags()
+    {
+        foreach (var vehicle in _allVehicles)
+            foreach (var part in vehicle.Parts)
+                part.Tags = PartTagResolver.Resolve(part.From, vehicle.Id);
     }
 
     /// <summary>国家以用户在「载具管理」里的手动归类为准（§3.4 / §3.10）。</summary>
