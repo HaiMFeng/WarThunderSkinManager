@@ -1144,6 +1144,14 @@ internal static class SelfTest
                          + $"第三方清除 = {!overwrittenBlk.Contains("thirdparty/OldSkin")}，"
                          + $"嵌套块完好 = {overwrittenBlk.Contains("nested:t=\"x\"")}");
 
+            // 占位预创建（§3.14「预创建并选择涂装」）：首次创建、重复不覆盖
+            var phUserSkins = Path.Combine(workDir, "UserSkins");
+            var (phCreated, _) = OutputService.CreatePlaceholder(phUserSkins, "f_15c");
+            var (phAgain, _) = OutputService.CreatePlaceholder(phUserSkins, "f_15c");
+            var phBlk = File.ReadAllText(Path.Combine(phUserSkins, "WTSM", "f_15c", "f_15c.blk"));
+            log.AppendLine($"占位预创建: 首次 = {phCreated}（应 True），重复 = {phAgain}（应 False，不覆盖），"
+                         + $"空 blk = {!phBlk.Contains("replace_tex")}（应 True）");
+
             // ---- 更新资源落盘不被启动机制回滚（§3.15：只写用户表，绝不动基线）----
             var tablesDir = Path.Combine(workDir, "cfg-tables");
             DataTables.EnsureUserTables(tablesDir); // 首次启动：导出内置表 + 写基线

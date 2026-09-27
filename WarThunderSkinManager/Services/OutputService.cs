@@ -85,6 +85,38 @@ public static class OutputService
     }
 
     /// <summary>
+    /// 预创建占位输出（§3.14「预创建并选择涂装」）：为载具创建 <c>WTSM/&lt;载具Id&gt;/</c> 目录 +
+    /// **空 blk**——与取消激活后的形态一致：游戏认槽位、但不覆盖任何贴图（显示默认涂装）。
+    /// 已有输出（blk 存在）时**什么都不做**，绝不覆盖已有涂装内容。
+    /// </summary>
+    /// <returns><c>Created</c> = 是否新建了占位（已有输出为 false）；<c>Error</c> = 失败原因（成功为 null）。</returns>
+    public static (bool Created, string? Error) CreatePlaceholder(string userSkinsDir, string vehicleId)
+    {
+        if (string.IsNullOrWhiteSpace(userSkinsDir) || string.IsNullOrWhiteSpace(vehicleId))
+            return (false, null);
+
+        // 与 ClearVehicle 同一安全边界：输出目标必须在 WTSM 目录内（§3.8 安全）
+        var wtsmRoot = Path.GetFullPath(WtsmRoot(userSkinsDir));
+        var outDir = Path.GetFullPath(VehicleOutputDir(userSkinsDir, vehicleId));
+        if (!outDir.StartsWith(wtsmRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return (false, Loc.Format("output.warn.notInWtsm", outDir));
+
+        var blkPath = Path.Combine(outDir, vehicleId + ".blk");
+        if (File.Exists(blkPath)) return (false, null); // 已有输出 → 绝不覆盖
+
+        try
+        {
+            Directory.CreateDirectory(outDir);
+            AtomicFile.WriteAllText(blkPath, BlkWriter.Write(Array.Empty<BlkWriter.Entry>()));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>
     /// to 必须是**安全的相对路径**：不允许绝对路径 / 盘符 / <c>..</c> 段 / 空段——
     /// to 来自第三方 blk 内容，可能携带恶意路径（§3.8 安全）。
     /// </summary>

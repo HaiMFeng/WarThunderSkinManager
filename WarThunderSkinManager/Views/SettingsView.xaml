@@ -180,6 +180,9 @@
                         <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
                             <Button Content="{loc:Loc settings.gameSync.write}" Style="{StaticResource PrimaryButton}"
                                     Command="{Binding WriteGameSkinsCommand}"/>
+                            <Button Content="{loc:Loc settings.gameSync.precreate}" Style="{StaticResource SecondaryButton}"
+                                    Margin="8,0,0,0" Command="{Binding PreCreateGameSkinsCommand}"
+                                    ToolTip="{loc:Loc settings.gameSync.precreate.hint}"/>
                             <Button Content="{loc:Loc settings.gameSync.overwrite}" Style="{StaticResource DangerButton}"
                                     Margin="8,0,0,0" Command="{Binding OverwriteGameSkinsCommand}"
                                     ToolTip="{loc:Loc settings.gameSync.overwrite}"/>

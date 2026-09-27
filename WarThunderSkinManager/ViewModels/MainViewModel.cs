@@ -533,8 +533,12 @@ public partial class MainViewModel : ObservableObject
             Config.ManagedAccountId = value;
     }
 
-    /// <summary>库内全部载具 → 激活状态（值 = WTSM/&lt;载具Id&gt;；无激活 = null 清空，§3.14）。</summary>
-    private IReadOnlyDictionary<string, string?> BuildGameSyncSelections()
+    /// <summary>
+    /// 库内全部载具 → 激活状态（值 = WTSM/&lt;载具Id&gt;；无激活 = null 清空，§3.14）。
+    /// <paramref name="selectUnactivated"/> = 「预创建并选择」模式：无激活的载具也选中
+    /// （占位 blk + 预选，之后激活无需进机库手动选）。
+    /// </summary>
+    private IReadOnlyDictionary<string, string?> BuildGameSyncSelections(bool selectUnactivated = false)
     {
         var dict = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
@@ -546,7 +550,10 @@ public partial class MainViewModel : ObservableObject
                          .Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 var active = LoadoutService.LoadActivation(Config.ConfigDirectory, vehicleId).ActivePackageId;
-                dict[vehicleId] = string.IsNullOrEmpty(active) ? null : GameSaveSyncService.WtsmSkinValue(vehicleId);
+                var hasActive = !string.IsNullOrEmpty(active);
+                dict[vehicleId] = hasActive || selectUnactivated
+                    ? GameSaveSyncService.WtsmSkinValue(vehicleId)
+                    : null;
             }
         }
         catch
@@ -560,8 +567,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// 执行同步（IO 在后台，await 后回 UI 线程）：更新设置页状态文字；有警告 / 失败时同步主状态栏。
     /// <paramref name="silent"/> = 启动兜底 / 开关联动，成功不占用主状态栏。
+    /// <paramref name="selectUnactivated"/> = 「预创建并选择」模式（§3.14）。
     /// </summary>
-    private async Task RunGameSyncAsync(bool overwriteForeign, bool silent)
+    private async Task RunGameSyncAsync(bool overwriteForeign, bool silent, bool selectUnactivated = false)
     {
         if (!GameSyncReady)
         {
@@ -578,7 +586,7 @@ public partial class MainViewModel : ObservableObject
 
             var report = await Task.Run(() =>
             {
-                var selections = BuildGameSyncSelections();
+                var selections = BuildGameSyncSelections(selectUnactivated);
                 return GameSaveSyncService.Sync(savesDir, account, selections, overwrite, out _);
             });
 
@@ -600,6 +608,70 @@ public partial class MainViewModel : ObservableObject
     /// <summary>「立即写入」：按当前激活状态同步（服务端在游戏运行中会拒绝并报告）。</summary>
     [RelayCommand]
     private Task WriteGameSkins() => RunGameSyncAsync(overwriteForeign: false, silent: false);
+
+    /// <summary>
+    /// 「预创建并选择涂装」（§3.14）：为**没有激活涂装**的载具创建占位目录 + 空 blk
+    /// （与取消激活后的形态一致——游戏认槽位、显示默认涂装），并在游戏存档中预选
+    /// <c>WTSM/&lt;载具Id&gt;</c>。之后在程序内激活任何涂装都无需再进机库手动选择。
+    /// 已有输出的载具不动；游戏运行中则拒绝（存档会被覆写）。
+    /// </summary>
+    [RelayCommand]
+    private async Task PreCreateGameSkins()
+    {
+        if (!GameSyncReady)
+        {
+            ShowStatus(Loc["gsync.notReady"]);
+            return;
+        }
+
+        if (GameSaveSyncService.IsGameRunning())
+        {
+            GameSyncStatus = Loc["gsync.gameRunning"];
+            ShowStatus(GameSyncStatus);
+            return;
+        }
+
+        var userSkins = Config.UserSkinsDirectory;
+        if (string.IsNullOrWhiteSpace(userSkins) || !Directory.Exists(userSkins))
+        {
+            ShowStatus(Loc["gsync.noUserSkins"]);
+            return;
+        }
+
+        try
+        {
+            var configDir = Config.ConfigDirectory;
+            var resourceDir = Config.ResourceDirectory;
+
+            var created = await Task.Run(() =>
+            {
+                var count = 0;
+                foreach (var vehicleId in PackageStore.LoadAll(resourceDir)
+                             .Select(m => m.VehicleId)
+                             .Where(id => id.Length > 0)
+                             .Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    // 已有激活的载具输出是真实涂装，跳过
+                    if (!string.IsNullOrEmpty(LoadoutService.LoadActivation(configDir, vehicleId).ActivePackageId))
+                        continue;
+
+                    var (createdBlk, error) = OutputService.CreatePlaceholder(userSkins, vehicleId);
+                    if (error != null) throw new InvalidOperationException(error);
+                    if (createdBlk) count++;
+                }
+
+                return count;
+            });
+
+            if (created > 0) ShowStatus(Loc.Format("gsync.precreate.created", created));
+            await RunGameSyncAsync(overwriteForeign: false, silent: false, selectUnactivated: true);
+        }
+        catch (Exception ex)
+        {
+            GameSyncStatus = Loc.Format("gsync.failed", "?", ex.Message);
+            ShowStatus(GameSyncStatus);
+        }
+    }
 
     /// <summary>「覆写全部涂装选择」：破坏性——库外载具与用户手动选的第三方涂装一并清空，先警告。</summary>
     [RelayCommand]
