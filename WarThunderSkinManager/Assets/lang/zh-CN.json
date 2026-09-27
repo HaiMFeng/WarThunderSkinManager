@@ -54,7 +54,7 @@
   "settings.resource.checking": "检查中…",
   "settings.resource.notChecked": "未检查",
   "settings.resource.upToDate": "已是最新",
-  "settings.resource.hasUpdate": "有新版本（本地 {0} → 远端 {1}）",
+  "settings.resource.hasUpdate": "发现新版本（远端 {0}）",
   "settings.resource.update": "更新",
   "settings.resource.updating": "下载更新中…",
   "settings.resource.updated": "已更新，相关数据自动重算",

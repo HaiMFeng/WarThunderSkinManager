@@ -673,7 +673,7 @@ public partial class MainViewModel : ObservableObject
                 _resourceChecks[item.FileName] = result;
                 item.HasUpdate = result.HasUpdate;
                 item.StatusText = result.HasUpdate
-                    ? Loc.Format("settings.resource.hasUpdate", result.LocalVersion ?? "?", result.RemoteVersion)
+                    ? Loc.Format("settings.resource.hasUpdate", result.RemoteVersion)
                     : Loc["settings.resource.upToDate"];
             }
             catch (Exception ex)

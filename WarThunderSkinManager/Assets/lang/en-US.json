@@ -54,7 +54,7 @@
   "settings.resource.checking": "Checking…",
   "settings.resource.notChecked": "Not checked",
   "settings.resource.upToDate": "Up to date",
-  "settings.resource.hasUpdate": "Update available (local {0} → remote {1})",
+  "settings.resource.hasUpdate": "Update available (remote {0})",
   "settings.resource.update": "Update",
   "settings.resource.updating": "Downloading update…",
   "settings.resource.updated": "Updated; related data recalculated",
