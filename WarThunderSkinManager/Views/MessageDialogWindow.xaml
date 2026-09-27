@@ -1,11 +1,11 @@
-<Window x:Class="WarThunderSkinManager.Views.MessageDialogWindow"
+﻿<Window x:Class="WarThunderSkinManager.Views.MessageDialogWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         ShowInTaskbar="False"
         Width="460" SizeToContent="Height" MaxHeight="640"
         WindowStyle="None" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/icons.ttf/#indicators"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">

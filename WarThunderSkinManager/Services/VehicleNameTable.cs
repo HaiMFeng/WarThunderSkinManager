@@ -233,12 +233,13 @@ public static class VehicleNameTable
     }
 
     /// <summary>
-    /// 清理译名：
+    /// 清理译名（**只处理不可见字符**）：
     /// <list type="number">
     /// <item>删掉**不可见字符**：源表在 CJK 字符之间夹了大量零宽空格（U+200B），
-    /// 保留会把词拆开（如 `四​联​机​枪`），也会让复制/比较出问题。</item>
-    /// <item>去掉**国旗占位符**：游戏用一组特殊字形（私用区、块元素、几何图形、控制图形、杂项符号）
-    /// 在自定义字库里画成"该载具隶属某国"的小国旗，普通字体下就是 `▄` 这类乱码 → 替换为空格，避免把前后单词粘连。</item>
+    /// 保留会把词拆开（如 `四​联​机​枪`），也会让复制 / 搜索 / 比较出问题。</item>
+    /// <item>**国旗占位符保留**：程序以游戏图标字体（根目录 <c>icons.ttf</c>，族名
+    /// <c>indicators</c>）作为**回退字体**——这些特殊字形（私用区、块元素、几何图形等）
+    /// 会被渲染成国旗 / 弹药图标，与游戏内一致；普通字体缺字时才依赖该字体补位。</item>
     /// <item>折叠空白（含不换行空格）并去首尾。</item>
     /// </list>
     /// </summary>
@@ -247,24 +248,30 @@ public static class VehicleNameTable
         var sb = new StringBuilder(value.Length);
 
         foreach (var ch in value)
-        {
-            if (IsInvisible(ch)) continue;              // 直接删除
-            sb.Append(IsFlagGlyph(ch) ? ' ' : ch);      // 国旗符号 → 空格
-        }
+            if (!IsInvisible(ch))
+                sb.Append(ch);
 
         return CollapseWhitespace(sb.ToString());
     }
 
-    /// <summary>
-    /// 是否仍含**不可渲染的字符**（国旗占位符 / 不可见字符）——用于数据质量自检：
-    /// 查表结果里不应再出现这类字符。
-    /// </summary>
-    public static bool HasUnrenderableGlyph(string? value)
+    /// <summary>是否含**图标占位符**（国旗 / 弹药等，由 icons.ttf 渲染）——数据质量自检用。</summary>
+    public static bool HasIconGlyph(string? value)
     {
         if (string.IsNullOrEmpty(value)) return false;
 
         foreach (var ch in value)
-            if (IsFlagGlyph(ch) || IsInvisible(ch)) return true;
+            if (IsFlagGlyph(ch)) return true;
+
+        return false;
+    }
+
+    /// <summary>是否仍含**不可见字符**（零宽等）——数据质量自检：查表结果里不应残留。</summary>
+    public static bool HasInvisibleGlyph(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return false;
+
+        foreach (var ch in value)
+            if (IsInvisible(ch)) return true;
 
         return false;
     }

@@ -1,4 +1,4 @@
-<Window x:Class="WarThunderSkinManager.Views.SetupWizardWindow"
+﻿<Window x:Class="WarThunderSkinManager.Views.SetupWizardWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
@@ -6,7 +6,7 @@
         Width="580" SizeToContent="Height"
         WindowStyle="None" ShowInTaskbar="False" ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
-        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/icons.ttf/#indicators"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <WindowChrome.WindowChrome>

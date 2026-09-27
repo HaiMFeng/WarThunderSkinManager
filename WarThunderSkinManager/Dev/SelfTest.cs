@@ -235,10 +235,12 @@ internal static class SelfTest
             log.AppendLine($"带国旗·英文         : {VehicleNameTable.Lookup("germ_t_34_747", "en-US") ?? "(未命中)"}");
             log.AppendLine($"带国旗·简体         : {VehicleNameTable.Lookup("jp_halftrack_m16", "zh-CN") ?? "(未命中)"}");
 
-            // 全表校验：含国旗 / 零宽字符的译名，查表结果里不应再残留这类字符
+            // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
+            // （UI 字体链以 icons.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;
-            var leftover = 0;
-            var leftoverSample = "";
+            var invisibleLeft = 0;
+            var flagLost = 0;
+            var flagLostSample = "";
             using (var rawCsv = typeof(VehicleNameTable).Assembly
                        .GetManifestResourceStream("WarThunderSkinManager.Assets.units.csv"))
             {
@@ -251,21 +253,27 @@ internal static class SelfTest
                     {
                         var fields = row.Split(';');
                         if (fields.Length < 11) continue;
-                        if (!VehicleNameTable.HasUnrenderableGlyph(fields[10])) continue;
+                        var rawName = fields[10];
+                        if (!VehicleNameTable.HasIconGlyph(rawName)
+                            && !VehicleNameTable.HasInvisibleGlyph(rawName)) continue;
 
                         flagged++;
                         var id = fields[0].Trim('"');
                         var name = VehicleNameTable.Lookup(id, "zh-CN");
-                        if (!VehicleNameTable.HasUnrenderableGlyph(name)) continue;
 
-                        leftover++;
-                        if (leftoverSample.Length == 0) leftoverSample = $"{id} → {name}";
+                        if (VehicleNameTable.HasInvisibleGlyph(name)) invisibleLeft++;
+                        if (VehicleNameTable.HasIconGlyph(rawName) && !VehicleNameTable.HasIconGlyph(name))
+                        {
+                            flagLost++;
+                            if (flagLostSample.Length == 0) flagLostSample = $"{id} → {name}";
+                        }
                     }
                 }
             }
 
-            log.AppendLine($"含国旗/零宽字符条目: {flagged} 条，查表后残留: {leftover} 条"
-                         + (leftoverSample.Length > 0 ? $"（例：{leftoverSample}）" : ""));
+            log.AppendLine($"含图标/零宽字符条目: {flagged} 条，零宽残留: {invisibleLeft}（应 0），"
+                         + $"国旗丢失: {flagLost}（应 0）"
+                         + (flagLostSample.Length > 0 ? $"（例：{flagLostSample}）" : ""));
 
             // ---- 贴图回收（无引用 blob，§6.5）----
             log.AppendLine();

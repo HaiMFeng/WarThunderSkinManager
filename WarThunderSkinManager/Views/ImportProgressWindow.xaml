@@ -1,4 +1,4 @@
-<Window x:Class="WarThunderSkinManager.Views.ImportProgressWindow"
+﻿<Window x:Class="WarThunderSkinManager.Views.ImportProgressWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
@@ -6,7 +6,7 @@
         Width="480" SizeToContent="Height"
         WindowStyle="None" ShowInTaskbar="False" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontFamily="Segoe UI, Microsoft YaHei UI, pack://application:,,,/Assets/icons.ttf/#indicators"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}">
     <WindowChrome.WindowChrome>
