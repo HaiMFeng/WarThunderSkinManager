@@ -266,15 +266,24 @@ public static class PartTagResolver
     }
 
     /// <summary>
-    /// 分段匹配部件词，并容忍**尾随编号**：<c>pylon1</c> → <c>pylon</c>、<c>aim9</c> → <c>aim</c>、
-    /// <c>gun2</c> → <c>gun</c>（WT 里多联装部件常带编号）。
+    /// 分段匹配部件词，容忍**尾随编号**与**复数 s**：
+    /// <c>pylon1</c> → <c>pylon</c>、<c>aim9</c> → <c>aim</c>、<c>gun2</c> → <c>gun</c>（WT 多联装部件常带编号）、
+    /// <c>pylons</c> → <c>pylon</c>、<c>wings</c> → <c>wing</c>、<c>pylons2</c> → <c>pylon</c>。
     /// </summary>
     private static bool SegmentMatches(string segment, string keyword)
     {
         if (string.Equals(segment, keyword, StringComparison.Ordinal)) return true;
 
+        // 1) 尾随编号：pylon1 → pylon、aim9 → aim
         var stripped = segment.TrimEnd(Digits);
-        return stripped.Length > 0 && stripped.Length < segment.Length
-            && string.Equals(stripped, keyword, StringComparison.Ordinal);
+        if (stripped.Length > 0 && stripped.Length < segment.Length
+            && string.Equals(stripped, keyword, StringComparison.Ordinal)) return true;
+
+        // 2) 复数 s：pylons → pylon（编号在前时 pylons2 → 先剥数字得 pylons，再剥 s）
+        if (!stripped.EndsWith("s", StringComparison.Ordinal)) return false;
+
+        var singular = stripped[..^1];
+        return singular.Length > 0
+            && string.Equals(singular, keyword, StringComparison.Ordinal);
     }
 }

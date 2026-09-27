@@ -365,6 +365,8 @@ internal static class SelfTest
                          ("su_30mkk_pylon1_c", "su_30mkk"),
                          // 多关键词：wing + pylon 都命中 → 机翼、挂架两个标签（按出现顺序）
                          ("f_15e_wing_pylon_c", "f_15e"),
+                         // 复数 s：pylons → pylon 也应命中挂架
+                         ("fa_18_wing_pylons_n", "fa_18"),
                          // 反例：同样以 _c / _n 结尾，但标识之后还有别的词 → 不给「载具主体」
                          ("su_30mkk_pylon1_n", "su_30mkk"), ("su_30mkk_gun1_c", "su_30mkk"),
                          ("f_15e_wing_l_c", "f_15e"), ("jp_type_90_c", "f_15e"), ("f_15e_cockpit_c", "f_15e")
