@@ -49,7 +49,7 @@
   "settings.gameSync.write": "立即写入",
   "settings.gameSync.overwrite": "覆写全部涂装选择",
   "settings.resourceUpdate": "更新资源",
-  "settings.resourceUpdate.hint": "以下数据表源自战争雷霆客户端解包（War-Thunder-Datamine 仓库），游戏更新后可能滞后。点击「检查更新」联网比对版本，有新版可下载更新（写入用户表，不影响手动修改判断）。上游仓库地址见 docs 参考文档。",
+  "settings.resourceUpdate.hint": "以下数据表源自战争雷霆客户端解包（War-Thunder-Datamine 仓库），游戏更新后可能滞后。点击「检查更新」联网比对版本（有缓存时未变更的表几乎不耗流量），有新版可下载更新（写入用户表，不影响手动修改判断）。",
   "settings.resource.check": "检查更新",
   "settings.resource.checking": "检查中…",
   "settings.resource.notChecked": "未检查",

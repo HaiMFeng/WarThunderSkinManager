@@ -49,7 +49,7 @@
   "settings.gameSync.write": "Write Now",
   "settings.gameSync.overwrite": "Overwrite All Selections",
   "settings.resourceUpdate": "Resource Updates",
-  "settings.resourceUpdate.hint": "The data tables below come from the War Thunder client unpack (War-Thunder-Datamine repository) and may lag behind game updates. Use \"Check Updates\" to compare versions online and download new ones (written to the user table; manual edits are still respected). See the docs reference files for upstream URLs.",
+  "settings.resourceUpdate.hint": "The data tables below come from the War Thunder client unpack (War-Thunder-Datamine repository) and may lag behind game updates. Use \"Check Updates\" to compare versions online (cached checks are nearly free when nothing changed); new versions can be downloaded and applied (written to the user table; manual edits are still respected).",
   "settings.resource.check": "Check Updates",
   "settings.resource.checking": "Checking…",
   "settings.resource.notChecked": "Not checked",
