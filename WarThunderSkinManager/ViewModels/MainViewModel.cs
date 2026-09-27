@@ -651,7 +651,7 @@ public partial class MainViewModel : ObservableObject
 
         foreach (var info in ResourceUpdateService.Resources)
         {
-            var item = new ResourceUpdateItem(info, Loc["settings.resource.notChecked"]);
+            var item = new ResourceUpdateItem(info, "settings.resource.notChecked");
 
             // 有上次检查的缓存 → 直接恢复状态（本地指纹比对，零网络）：重启后不必重新
             // 检查也能看到「已是最新 / 发现新版本」；缓存滞后由之后的 ETag 检查自然纠正
@@ -660,9 +660,9 @@ public partial class MainViewModel : ObservableObject
             {
                 _resourceChecks[item.FileName] = cached;
                 item.HasUpdate = cached.HasUpdate;
-                item.StatusText = cached.HasUpdate
-                    ? Loc.Format("settings.resource.hasUpdate", cached.RemoteVersion)
-                    : Loc["settings.resource.upToDate"];
+                item.SetStatus(cached.HasUpdate
+                    ? "settings.resource.hasUpdate"
+                    : "settings.resource.upToDate", cached.RemoteVersion);
             }
 
             items.Add(item);
@@ -684,21 +684,21 @@ public partial class MainViewModel : ObservableObject
 
         foreach (var item in ResourceItems)
         {
-            item.StatusText = Loc["settings.resource.checking"];
+            item.SetStatus("settings.resource.checking");
 
             try
             {
                 var result = await ResourceUpdateService.CheckAsync(item.Info, configDir);
                 _resourceChecks[item.FileName] = result;
                 item.HasUpdate = result.HasUpdate;
-                item.StatusText = result.HasUpdate
-                    ? Loc.Format("settings.resource.hasUpdate", result.RemoteVersion)
-                    : Loc["settings.resource.upToDate"];
+                item.SetStatus(result.HasUpdate
+                    ? "settings.resource.hasUpdate"
+                    : "settings.resource.upToDate", result.RemoteVersion);
             }
             catch (Exception ex)
             {
                 item.HasUpdate = false;
-                item.StatusText = ResourceFailText(ex);
+                item.SetStatus(ResourceFailKey(ex));
             }
         }
     }
@@ -714,7 +714,7 @@ public partial class MainViewModel : ObservableObject
 
         if (!_resourceChecks.TryGetValue(item.FileName, out var result) || !result.HasUpdate) return;
 
-        item.StatusText = Loc["settings.resource.updating"];
+        item.SetStatus("settings.resource.updating");
 
         try
         {
@@ -725,7 +725,7 @@ public partial class MainViewModel : ObservableObject
 
             await Task.Run(() => DataTables.ApplyUpdatedTable(result.Info.FileName, configDir, content));
             item.HasUpdate = false;
-            item.StatusText = Loc["settings.resource.updated"];
+            item.SetStatus("settings.resource.updated");
 
             // 新表生效（DataTables 按来源标记自动重建缓存）→ 库视图重算（译名 / 武器标签 / 国家归类）
             if (!string.IsNullOrWhiteSpace(Config.ResourceDirectory) && Directory.Exists(Config.ResourceDirectory))
@@ -733,16 +733,16 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            item.StatusText = ResourceFailText(ex);
+            item.SetStatus(ResourceFailKey(ex));
         }
     }
 
-    /// <summary>更新资源的网络异常 → 简短可读的失败文案（不把异常原文 / 堆栈直接上屏）。</summary>
-    private string ResourceFailText(Exception ex) => ex switch
+    /// <summary>更新资源的网络异常 → 简短可读的失败文案键（不把异常原文 / 堆栈直接上屏）。</summary>
+    private string ResourceFailKey(Exception ex) => ex switch
     {
-        TaskCanceledException or OperationCanceledException => Loc["settings.resource.failTimeout"],
-        System.Net.Http.HttpRequestException => Loc["settings.resource.failNetwork"],
-        _ => Loc["settings.resource.failed"],
+        TaskCanceledException or OperationCanceledException => "settings.resource.failTimeout",
+        System.Net.Http.HttpRequestException => "settings.resource.failNetwork",
+        _ => "settings.resource.failed",
     };
 
     /// <summary>配置变更：数据表目录跟随刷新；「多源复用」开关需要知会与回滚处理（§3.13）；
@@ -900,9 +900,9 @@ public partial class MainViewModel : ObservableObject
         Skins.ApplyLanguageChange();
         Vehicles.ApplyLanguageChange();
 
-        // 「更新资源」行条目的显示名跟随语言（§3.15）
+        // 「更新资源」行条目的显示名与状态文案跟随语言（§3.15）
         foreach (var item in ResourceItems)
-            item.RefreshName();
+            item.RefreshTexts();
 
         ShowStatus(Loc.Format("settings.language.changed", option.DisplayName));
     }
