@@ -646,9 +646,28 @@ public partial class MainViewModel : ObservableObject
 
     private void InitResourceItems()
     {
+        var configDir = Config.ConfigDirectory;
         var items = new System.Collections.ObjectModel.ObservableCollection<ResourceUpdateItem>();
+
         foreach (var info in ResourceUpdateService.Resources)
-            items.Add(new ResourceUpdateItem(info, Loc["settings.resource.notChecked"]));
+        {
+            var item = new ResourceUpdateItem(info, Loc["settings.resource.notChecked"]);
+
+            // 有上次检查的缓存 → 直接恢复状态（本地指纹比对，零网络）：重启后不必重新
+            // 检查也能看到「已是最新 / 发现新版本」；缓存滞后由之后的 ETag 检查自然纠正
+            var cached = ResourceUpdateService.PeekCached(info, configDir);
+            if (cached != null)
+            {
+                _resourceChecks[item.FileName] = cached;
+                item.HasUpdate = cached.HasUpdate;
+                item.StatusText = cached.HasUpdate
+                    ? Loc.Format("settings.resource.hasUpdate", cached.RemoteVersion)
+                    : Loc["settings.resource.upToDate"];
+            }
+
+            items.Add(item);
+        }
+
         ResourceItems = items;
     }
 
@@ -699,7 +718,12 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            await Task.Run(() => ResourceUpdateService.Apply(result, configDir));
+            // 正文可能在检查时未下载（304 / 缓存恢复路径）→ 更新时按需补取
+            var content = result.Content.Length > 0
+                ? result.Content
+                : await ResourceUpdateService.FetchAsync(result.Info, configDir);
+
+            await Task.Run(() => DataTables.ApplyUpdatedTable(result.Info.FileName, configDir, content));
             item.HasUpdate = false;
             item.StatusText = Loc["settings.resource.updated"];
 

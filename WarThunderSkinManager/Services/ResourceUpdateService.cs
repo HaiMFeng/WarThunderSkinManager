@@ -143,13 +143,13 @@ public static class ResourceUpdateService
             using var response = await Http.SendAsync(conditional, cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotModified)
             {
-                // 远端没变：本地指纹若与上次远端一致 → 已是最新（零下载）
-                // 本地漂移了（程序更新换了内置表 / 用户改过）→ 需要正文 → 落到下面的全量下载
-                if (string.Equals(local, cached.Fingerprint, StringComparison.Ordinal))
-                {
-                    return new ResourceCheckResult(info, local, cached.Fingerprint,
-                        HasUpdate: false, Content: Array.Empty<byte>(), ETag: cached.ETag);
-                }
+                // 远端没变，指纹已知，**无需正文**：
+                // - 本地与上次远端一致 → 已是最新；
+                // - 本地漂移（有新版本未更新 / 程序更新换了内置表）→ HasUpdate = true，
+                //   正文留给「更新」按钮按需下载（FetchAsync）——检查保持零下载
+                return new ResourceCheckResult(info, local, cached.Fingerprint,
+                    HasUpdate: !string.Equals(local, cached.Fingerprint, StringComparison.Ordinal),
+                    Content: Array.Empty<byte>(), ETag: cached.ETag);
             }
             else
             {
@@ -183,9 +183,46 @@ public static class ResourceUpdateService
             HasUpdate: !string.Equals(local, remote, StringComparison.Ordinal), content, etag);
     }
 
-    /// <summary>应用更新：写入用户表 + 基线（同步 IO，调用方放后台线程）。</summary>
-    public static void Apply(ResourceCheckResult result, string configDir)
-        => DataTables.ApplyUpdatedTable(result.Info.FileName, configDir, result.Content);
+    /// <summary>
+    /// 用**缓存**快速恢复上次检查的状态（不发网络请求）：重启后设置页据此直接显示
+    /// 「已是最新 / 发现新版本」，不必等一次检查。缓存不存在返回 <c>null</c>。
+    /// 缓存可能滞后（上次检查是很久以前）→ 之后的 ETag 条件请求会自然纠正。
+    /// </summary>
+    public static ResourceCheckResult? PeekCached(ResourceInfo info, string? configDir)
+    {
+        if (string.IsNullOrWhiteSpace(configDir)) return null;
+
+        var cache = LoadCache(configDir);
+        if (!cache.TryGetValue(info.FileName, out var cached)) return null;
+
+        var local = LocalVersion(info.FileName, configDir);
+        return new ResourceCheckResult(info, local, cached.Fingerprint,
+            HasUpdate: !string.Equals(local, cached.Fingerprint, StringComparison.Ordinal),
+            Content: Array.Empty<byte>(), ETag: cached.ETag);
+    }
+
+    /// <summary>按需下载资源全文（「更新」时正文缺失的补取），并刷新缓存。</summary>
+    public static async Task<byte[]> FetchAsync(
+        ResourceInfo info, string? configDir, CancellationToken cancellationToken = default)
+    {
+        using var response = await Http.GetAsync(info.RemoteUrl, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+
+        if (configDir != null)
+        {
+            var cache = LoadCache(configDir);
+            var etag = response.Headers.ETag?.Tag;
+            if (etag != null)
+            {
+                cache[info.FileName] = new CacheEntry(etag, VersionOf(content));
+                SaveCache(configDir, cache);
+            }
+        }
+
+        return content;
+    }
 
     /// <summary>版本指纹：剔除 <c>\r</c>（抵消 git checkout 的 CRLF 漂移）后 SHA-256 前 8 位十六进制。</summary>
     public static string VersionOf(byte[] content)
