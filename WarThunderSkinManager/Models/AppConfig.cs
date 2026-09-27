@@ -27,6 +27,12 @@ public partial class AppConfig : ObservableObject
     /// <summary>游戏内同步管理的账户（Saves 下的纯数字目录名；默认取 lastlogin.blk 的 uid，§3.14）</summary>
     [ObservableProperty] private string _managedAccountId = "";
 
+    /// <summary>
+    /// 数据方案版本标记（一次性迁移用）：1 = 载具国家自动归类已从前缀规则迁移到
+    /// 内置商店归属表（shop.blkx，§3.4）。旧版升级时由 <c>MigrateCountryOverrides</c> 置位并落盘。
+    /// </summary>
+    [ObservableProperty] private int _countrySchemeVersion;
+
     /// <summary>界面语言代码（对应 &lt;配置目录&gt;/lang/&lt;culture&gt;.json）</summary>
     [ObservableProperty] private string _language = "zh-CN";
 

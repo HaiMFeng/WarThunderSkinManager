@@ -722,11 +722,12 @@ internal static class SelfTest
                 log.AppendLine("⑦ 解锁资源包: 库中无 su_30mkk 包，跳过");
             }
 
-            // ⑧ 国家前缀校对（germ / sw / f 实测修复）
-            log.AppendLine($"⑧ 前缀校对: germ→{CountryResolver.Resolve("germ_t_34_85")}（应 de）"
-                         + $"，sw→{CountryResolver.Resolve("sw_t_90")}（应 se）"
-                         + $"，f→{CountryResolver.Resolve("f_mb_152")}（应 fr）"
-                         + $"，ch→{CountryResolver.Resolve("ch_unknown")}（应 unclassified）");
+            // ⑧ 国家归类（内置商店归属表 shop.blkx；前缀规则已移除，§3.4）
+            log.AppendLine($"⑧ shop 归类: f_15e→{CountryResolver.Resolve("f_15e")}（应 us，旧前缀误判 fr）"
+                         + $"，su_30mkk→{CountryResolver.Resolve("su_30mkk")}（应 cn，旧前缀误判 ussr）"
+                         + $"，a_26c→{CountryResolver.Resolve("a_26c")}（应 us，商店 id 为 a-26c，验证连字符归一化）"
+                         + $"，su-30sm→{CountryResolver.Resolve("su-30sm")}（应 ussr，涂装社区带连字符变体）"
+                         + $"，f_mb_152→{CountryResolver.Resolve("f_mb_152")}（应 unclassified，旧前缀误判 fr）");
 
             // ---- 压缩包导入（§3.1：拖入压缩包）----
             log.AppendLine();

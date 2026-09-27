@@ -227,7 +227,7 @@ public static class VehicleAggregator
         }
     }
 
-    /// <summary>国家判定：用户覆盖优先，否则按前缀自动归类。</summary>
+    /// <summary>国家判定：用户覆盖优先，否则按内置商店归属表自动归类（shop.blkx，§3.4）。</summary>
     private static string ResolveCountry(string vehicleId, IReadOnlyDictionary<string, string>? countryOverrides)
     {
         if (countryOverrides != null

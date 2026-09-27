@@ -155,9 +155,81 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 旧版兼容迁移（**一次性**，§3.4）：国家自动归类已从前缀规则改为内置商店归属表（shop.blkx）。
+    /// <c>vehicle_countries.json</c> 里「值恰好等于**旧前缀规则**解析值」的条目只是旧版把自动归类
+    /// 顺带固化了下来（或用户原样确认过默认值），并非主动纠正 → 删除，让其按新表重新归类；
+    /// 与旧自动值**不同**的条目（用户主动纠正过，如把 <c>f_15e</c> 从法国挪到美国）一律保留。
+    /// 版本号随 config.json 持久化，已迁移的安装不会再触发。
+    /// </summary>
+    private static void MigrateCountryOverrides(AppConfig config)
+    {
+        if (config.CountrySchemeVersion >= 1) return;
+
+        config.CountrySchemeVersion = 1; // 先置位：无论下面成败，本次进程内不再重复触发
+
+        var configDir = config.ConfigDirectory;
+        if (string.IsNullOrWhiteSpace(configDir)) return; // 尚无配置目录（首次启动向导未走完）→ 无迁移对象
+
+        try
+        {
+            var overrides = ConfigService.LoadVehicleCountries(configDir);
+            if (overrides.Count > 0)
+            {
+                var kept = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (vehicleId, country) in overrides)
+                {
+                    // 旧规则无法判定（null）或判定值 ≠ 存储值 → 用户主动选择，保留
+                    var oldAuto = ResolveByOldPrefix(vehicleId);
+                    if (oldAuto == null || !string.Equals(oldAuto, country, StringComparison.OrdinalIgnoreCase))
+                        kept[vehicleId] = country;
+                }
+
+                if (kept.Count != overrides.Count)
+                    ConfigService.SaveVehicleCountries(configDir, kept);
+            }
+
+            ConfigService.Save(configDir, config); // 版本号立即落盘（不依赖后续 AutoSave）
+        }
+        catch
+        {
+            // 迁移失败不影响启动：若发生在落盘前，下次启动会重试（本操作幂等）
+        }
+    }
+
+    /// <summary>
+    /// **旧版前缀归类规则**的私有副本（仅迁移判定用；运行时归类已改为 <see cref="CountryResolver"/> 查表）。
+    /// 返回 <c>null</c> = 旧规则无法判定。
+    /// </summary>
+    private static string? ResolveByOldPrefix(string vehicleId)
+    {
+        if (string.IsNullOrWhiteSpace(vehicleId)) return null;
+
+        var prefix = vehicleId;
+        var idx = vehicleId.IndexOf('_');
+        if (idx > 0) prefix = vehicleId[..idx];
+
+        return prefix.ToLowerInvariant() switch
+        {
+            "cn" => "cn",
+            "us" => "us",
+            "ussr" or "ru" => "ussr",
+            "germ" => "de",
+            "gb" or "uk" => "gb",
+            "jp" or "jpn" or "ijn" => "jp",
+            "fr" or "f" => "fr",
+            "it" or "ital" or "italy" => "it",
+            "sw" or "swe" => "se",
+            "il" => "il",
+            _ => null,
+        };
+    }
+
     public MainViewModel(AppConfig config)
     {
         Config = config;
+
+        MigrateCountryOverrides(config); // 旧版一次性迁移（须先于各页加载数据，§3.4）
 
         // 部件排除清单跟随配置目录（载具管理页手动删除部件，§3.10）
         PartExclusionService.Configure(config.ConfigDirectory);

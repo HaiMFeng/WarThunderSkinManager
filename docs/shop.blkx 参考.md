@@ -1,10 +1,11 @@
 # shop.blkx 参考（外部资料说明书）
 
-> **性质**：本文档是对《战争雷霆》客户端数据文件 `shop.blkx` 的调查记录与使用说明，
-> **与本项目当前代码无关**——程序尚未接入该文件，此处的解析方法与数据结论仅供
-> 后续功能设计（如载具国家自动归类的精准化）参考。
+> **性质**：本文档是对《战争雷霆》客户端数据文件 `shop.blkx` 的调查记录与使用说明。
+> 本项目已将其作为**嵌入资源**（`Assets/shop.blkx`）用于载具国家自动归类（§3.4，
+> `Services/CountryResolver`），本文保留解析方法与数据结论供维护参考。
 >
-> 数据快照位置：`docs/ref/shop.blkx`（来源见下，注意其内容会随游戏版本演进）。
+> 数据快照即嵌入资源本体（来源见下，注意其内容会随游戏版本演进——更新时直接替换
+> `WarThunderSkinManager/Assets/shop.blkx` 重新编译即可）。
 
 ---
 
@@ -28,13 +29,18 @@
 ```
 country_x（国家）
 └── force_y（军种：army / aviation / helicopters / ships / boats）
-    └── 载具id（叶子块）
-        └── rank = 数字（科技树等级）
-        └── …其他商店展示字段（价格、奖励倍率等，与本参考无关）
+    └── [分组节点]*
+        └── 载具id（叶子块）
+            └── rank = 数字（科技树等级）
+            └── …其他商店展示字段（价格、奖励倍率等，与本参考无关）
 ```
 
-**判定规则**：任何「键的值是一个含 `rank` 键的对象」即视为一个**载具条目**，键名即载具内部 id。
-军种块与国家块本身不含 `rank`，可据此与载具条目区分。
+**两个解析要点**：
+
+1. **军种 / 分组块的值可能是数组**（元素为单键的载具对象），不是纯对象树——
+   `aviation: [ { "f_15e": {...} }, … ]`，遍历必须同时处理 Object 与 Array；
+2. **判定规则**：任何「键的值是一个含 `rank` 键的对象」即视为一个**载具条目**，键名即载具内部 id；
+   国家 / 军种 / 分组块本身不含 `rank`（顶层国家键形如 `country_usa`）。
 
 实测数据规模（2025-09 快照）：
 
@@ -44,15 +50,15 @@ country_x（国家）
 | 国家数 | 10（`country_usa` / `country_germany` / `country_ussr` / `country_britain` / `country_japan` / `country_china` / `country_italy` / `country_france` / `country_israel` / `country_sweden`） |
 | 军种 | army（陆军）/ aviation（空军）/ helicopters（直升机）/ ships（海军主力）/ boats（海军近岸） |
 
-条目示例（简化）：
+条目示例（简化，注意 aviation 的值是**数组**）：
 
 ```json
 "country_usa": {
-  "aviation": {
-    "f_15e": { "rank": 8, "...": "..." },
-    "f_15a_iaf": { "rank": 7 }
-  },
-  "army": { "us_m2a4": { "rank": 1 } }
+  "aviation": [
+    { "f_15e": { "rank": 8, "...": "..." } },
+    { "f_15a_iaf": { "rank": 7 } }
+  ],
+  "army": [ { "us_m2a4": { "rank": 1 } } ]
 }
 ```
 
@@ -91,6 +97,8 @@ country_x（国家）
 | `f-84f_germany` | fr | **germany** / aviation（缴获 / 外销变体各自归国） |
 | `mig_23mla` / `mig_23mld` | 都 ussr | germany / ussr（分国正确） |
 
+商店表未收录的载具极少：中队 / 活动载具如 `j_20a` 不在表内（`su_30sm` / `su_30sm2` 在）。
+
 且涂装社区 id 与官方 id 高度一致（`f_15e`、`su_30mkk`、`yak-9k`、`la-7` 等实测全部命中）。
 
 ## 4. 解析方法
@@ -107,20 +115,21 @@ country_x（国家）
 
 C# 侧可用 `System.Text.Json` 的 `JsonDocument` 流式遍历，无需实体类。
 
-## 5. 使用方式（设计意图，尚未实现）
+## 5. 使用方式（已实现：载具国家自动归类，§3.4）
 
-**精准国籍查表**，替换 / 兜底现行前缀规则：
+`Services/CountryResolver` 启动后解析嵌入表一次并缓存，`Resolve(vehicleId)` 精确查表：
 
 ```
-查表顺序：
-1. shop 映射精确命中（含 _ / - 归一化）→ 直接采用（含军种）
-2. 未命中（如中队载具 su-30sm、j-20a 不在 shop）→ 回退现行前缀表
-3. 仍无 → unclassified
+匹配流程：
+1. id 归一化（小写 + - → _）→ 商店映射命中 → 返回对应国家 Id（如 country_usa → us）
+2. 未命中（如中队载具 j_20a 不在商店）→ unclassified，用户可在载具管理手动归类
 ```
 
-- 收益：消除前缀表的系统性误判（`f_15e`→fr、`su_30mkk`→ussr 这类），
-  且附带获得**军种**信息（陆 / 空 / 直升机 / 海军）；
-- 代价：需随游戏版本更新快照（可从上游仓库拉取，或让用户自行替换 `docs/ref/shop.blkx`）；
+- **前缀规则已移除**：旧规则（`f`→fr、`su`→ussr）存在系统性误判，不再回退使用；
+  其私有副本仅保留在升级迁移判定中（MainViewModel.MigrateCountryOverrides，见下）；
+- **旧版升级迁移（一次性）**：旧版会把前缀解析值固化进 `vehicle_countries.json`——
+  「值 = 旧前缀解析值」的条目删除并按新表重新归类；用户主动纠正过的（值 ≠ 旧自动值）保留；
+- 收益：消除前缀表误判，且表内自带**军种**信息（陆 / 空 / 直升机 / 海军），后续功能可扩展；
 - 不影响译名链路：显示名仍走 units.csv（§3.1 的后缀规则）。
 
 ## 6. 注意事项
