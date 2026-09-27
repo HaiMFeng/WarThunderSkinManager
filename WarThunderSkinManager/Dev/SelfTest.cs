@@ -1132,6 +1132,16 @@ internal static class SelfTest
                          + $"第三方清除 = {!overwrittenBlk.Contains("thirdparty/OldSkin")}，"
                          + $"嵌套块完好 = {overwrittenBlk.Contains("nested:t=\"x\"")}");
 
+            // ---- 更新资源落盘不被启动机制回滚（§3.15：只写用户表，绝不动基线）----
+            var tablesDir = Path.Combine(workDir, "cfg-tables");
+            DataTables.EnsureUserTables(tablesDir); // 首次启动：导出内置表 + 写基线
+            var remoteUnits = Encoding.UTF8.GetBytes("remote,fake,table\n"); // 模拟远端新表（与内置不同）
+            DataTables.ApplyUpdatedTable(DataTables.Vehicles, tablesDir, remoteUnits);
+            DataTables.EnsureUserTables(tablesDir); // 模拟下次启动：不应被内置表覆写
+            var tablesAfterRestart = File.ReadAllBytes(DataTables.UserFile(DataTables.Vehicles, tablesDir));
+            log.AppendLine($"⑨ 更新资源保持: 模拟重启后用户表仍为远端内容 = "
+                         + $"{tablesAfterRestart.SequenceEqual(remoteUnits)}（应 True）");
+
             log.AppendLine();
             log.AppendLine("---- WT Live 解析（§3.15） ----");
             var sampleJson = """

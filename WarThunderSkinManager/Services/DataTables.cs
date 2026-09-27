@@ -204,8 +204,11 @@ public static class DataTables
     }
 
     /// <summary>
-    /// 「更新资源」（§3.15）：把在线下载的新表写入用户表，并把**基线一并写成同内容**——
-    /// 基线 = 用户表 = 新表，未来程序发布更新的内置表时仍按「用户没改过」正常跟随更新。
+    /// 「更新资源」（§3.15）：把在线下载的新表写入用户表。**绝不动基线**——
+    /// 若基线被写成下载内容（≠ 内置表），下次启动 <see cref="EnsureUserTables"/> 会把
+    /// 「用户表 == 基线 ≠ 内置表」误读为「程序发布了新表、用户没改过」→ 用旧内置表覆写，
+    /// 更新就只有本次运行有效。基线保持 = 内置表时，启动逻辑两分支都不触发，用户表安然保留；
+    /// 程序未来发布更新的内置表时，用户表（≠ 基线）也会被正确视为「用户数据」不覆盖。
     /// </summary>
     public static void ApplyUpdatedTable(string fileName, string configDir, byte[] content)
     {
@@ -214,7 +217,6 @@ public static class DataTables
 
         System.IO.Directory.CreateDirectory(UserDirectory(configDir));
         AtomicFile.WriteAllBytes(UserFile(fileName, configDir), content);
-        AtomicFile.WriteAllBytes(BaselineFile(fileName, configDir), content);
     }
 
     /// <summary>把内置表写成基线文件（记录"上一次随程序发布的内置表"）。</summary>
