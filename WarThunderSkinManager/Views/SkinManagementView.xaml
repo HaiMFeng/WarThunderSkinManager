@@ -147,10 +147,7 @@
                         <Button Style="{StaticResource ChipButton}" Margin="0,0,8,0"
                                 Command="{Binding DataContext.Skins.SelectCountryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding Name}"/>
-                                <TextBlock Text="{Binding Count}" Margin="6,0,0,0" Opacity="0.65"/>
-                            </StackPanel>
+                            <TextBlock Text="{Binding Name}"/>
                         </Button>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
