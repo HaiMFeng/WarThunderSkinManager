@@ -231,6 +231,7 @@ public partial class MainViewModel : ObservableObject
 
         MigrateCountryOverrides(config); // 旧版一次性迁移（须先于各页加载数据，§3.4）
         InitResourceItems(); // 设置页「更新资源」行条目（§3.15）
+        _ = Task.Run(CountryResolver.Prewarm); // 商店表索引后台预热，避免首次投影 UI 卡顿（§3.4）
 
         // 部件排除清单跟随配置目录（载具管理页手动删除部件，§3.10）
         PartExclusionService.Configure(config.ConfigDirectory);
@@ -684,6 +685,8 @@ public partial class MainViewModel : ObservableObject
 
         foreach (var item in ResourceItems)
         {
+            if (item.IsUpdating) continue; // 该行正在下载 / 落盘 → 不动它的状态（下轮检查自然覆盖）
+
             item.SetStatus("settings.resource.checking");
 
             try
@@ -691,9 +694,10 @@ public partial class MainViewModel : ObservableObject
                 var result = await ResourceUpdateService.CheckAsync(item.Info, configDir);
                 _resourceChecks[item.FileName] = result;
                 item.HasUpdate = result.HasUpdate;
-                item.SetStatus(result.HasUpdate
-                    ? "settings.resource.hasUpdate"
-                    : "settings.resource.upToDate", result.RemoteVersion);
+                if (result.HasUpdate)
+                    item.SetStatus("settings.resource.hasUpdate", result.RemoteVersion);
+                else
+                    item.SetStatus("settings.resource.upToDate");
             }
             catch (Exception ex)
             {
@@ -715,6 +719,7 @@ public partial class MainViewModel : ObservableObject
         if (!_resourceChecks.TryGetValue(item.FileName, out var result) || !result.HasUpdate) return;
 
         item.SetStatus("settings.resource.updating");
+        item.IsUpdating = true;
 
         try
         {
@@ -722,6 +727,21 @@ public partial class MainViewModel : ObservableObject
             var content = result.Content.Length > 0
                 ? result.Content
                 : await ResourceUpdateService.FetchAsync(result.Info, configDir);
+
+            // 304 / 缓存恢复路径下「有更新」仅因本地指纹漂移——可能是用户手改过用户表 → 落盘前确认
+            if (result.Content.Length == 0)
+            {
+                var confirmed = MessageDialog.Confirm(
+                    Loc.Format("settings.resource.overwriteConfirm", result.Info.FileName),
+                    Loc["settings.resource.overwriteTitle"],
+                    Loc["common.continue"], Loc["common.cancel"],
+                    icon: DialogIcon.Warning);
+                if (!confirmed)
+                {
+                    item.SetStatus("settings.resource.hasUpdate", result.RemoteVersion);
+                    return;
+                }
+            }
 
             await Task.Run(() => DataTables.ApplyUpdatedTable(result.Info.FileName, configDir, content));
             item.HasUpdate = false;
@@ -734,6 +754,10 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             item.SetStatus(ResourceFailKey(ex));
+        }
+        finally
+        {
+            item.IsUpdating = false;
         }
     }
 
@@ -755,6 +779,7 @@ public partial class MainViewModel : ObservableObject
                 PartExclusionService.Configure(Config.ConfigDirectory);
                 DataTables.Configure(Config.ConfigDirectory); // 译名 / 武器表跟随配置目录（§3.6 / §3.7）
                 OnPropertyChanged(nameof(DataTablesDirectory));
+                OnPropertyChanged(nameof(ResourceBlockEnabled)); // 「更新资源」卡随目录就绪启停（§3.15）
                 break;
 
             case nameof(AppConfig.PartReuseEnabled):
@@ -903,6 +928,9 @@ public partial class MainViewModel : ObservableObject
         // 「更新资源」行条目的显示名与状态文案跟随语言（§3.15）
         foreach (var item in ResourceItems)
             item.RefreshTexts();
+
+        // 游戏内同步的结果文案是拼接快照，无法逐键重建 → 清空（卡片本就无内容时收起，§3.14）
+        GameSyncStatus = "";
 
         ShowStatus(Loc.Format("settings.language.changed", option.DisplayName));
     }
@@ -1255,10 +1283,14 @@ public partial class MainViewModel : ObservableObject
 
     // ---------- 资源库维护（§4：外部改动的手动全量同步）----------
 
+    /// <summary>重建进行中标志（0/1）：手动重建与「更新资源」自动重建共用，进行中则忽略新触发。</summary>
+    private int _rebuilding;
+
     /// <summary>
     /// 设置页「全量重建资源库」：程序外部的增删与修改不会即时反映，
     /// 这里**手动全量同步**——重新扫描并解析全库、重写索引快照、重算部件表、刷新两个页面。
     /// 扫库在**后台线程**执行（几百个包是秒级到十秒级），完成后回 UI 线程应用结果。
+    /// 进行中重复触发（含「更新资源」的自动重建）直接忽略，避免并发写索引快照。
     /// </summary>
     [RelayCommand]
     private void RebuildLibrary()
@@ -1268,6 +1300,8 @@ public partial class MainViewModel : ObservableObject
             ShowStatus(Loc["settings.rebuild.needResource"]);
             return;
         }
+
+        if (Interlocked.Exchange(ref _rebuilding, 1) == 1) return; // 已有重建在进行 → 合并忽略
 
         ShowStatus(Loc["settings.rebuild.running"]);
 
@@ -1279,6 +1313,8 @@ public partial class MainViewModel : ObservableObject
             // Background 优先级：全量重建结果重排两个页面，不与进行中的动画 / 渲染抢 UI 线程
             Application.Current?.Dispatcher.BeginInvoke(() =>
             {
+                Interlocked.Exchange(ref _rebuilding, 0);
+
                 if (t.IsFaulted)
                 {
                     ShowStatus(Loc.Format("settings.rebuild.failed",

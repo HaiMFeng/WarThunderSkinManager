@@ -20,6 +20,9 @@ public partial class ResourceUpdateItem : ObservableObject
     /// <summary>最近一次检查发现有新版本 → 显示「更新」按钮。</summary>
     [ObservableProperty] private bool _hasUpdate;
 
+    /// <summary>正在下载 / 落盘该资源的更新（检查循环据此跳过，避免状态互相覆盖）。</summary>
+    [ObservableProperty] private bool _isUpdating;
+
     // 最近一次状态的语言键 + 参数：语言切换时据此重建文案
     private string? _statusKey;
     private string[] _statusArgs = Array.Empty<string>();

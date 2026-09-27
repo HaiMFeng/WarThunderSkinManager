@@ -732,7 +732,7 @@ internal static class SelfTest
 
             // ⑧ 国家归类（内置商店归属表 shop.blkx；前缀规则已移除，§3.4）
             log.AppendLine($"⑧ shop 归类: f_15e→{CountryResolver.Resolve("f_15e")}（应 us，旧前缀误判 fr）"
-                         + $"，su_30mkk→{CountryResolver.Resolve("su_30mkk")}（应 cn，旧前缀误判 ussr）"
+                         + $"，su_30mkk→{CountryResolver.Resolve("su_30mkk")}（应 cn，旧前缀无法判定）"
                          + $"，a_26c→{CountryResolver.Resolve("a_26c")}（应 us，商店 id 为 a-26c，验证连字符归一化）"
                          + $"，su-30sm→{CountryResolver.Resolve("su-30sm")}（应 ussr，涂装社区带连字符变体）"
                          + $"，f_mb_152→{CountryResolver.Resolve("f_mb_152")}（应 unclassified，旧前缀误判 fr）");

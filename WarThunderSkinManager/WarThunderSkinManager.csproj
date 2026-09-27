@@ -33,7 +33,8 @@
       <Resource Include="Assets\app.ico" />
       <Resource Include="Assets\logo-outline.png" />
       <!-- 游戏符号字体（族名 symbols_skyquake，仅 15 个符号字形）：国旗 / 弹药等占位符的渲染源
-           （源文件在仓库根目录，Link 引用；作为窗口字体链的**末位回退**，正常字符永远落在前面） -->
+           （源文件在仓库根目录，Link 引用；窗口字体链的**首位**——特殊字形被它截住渲染成图标，
+           正常字符回退到 Segoe UI / 雅黑；未安装的机器由 IconFontLoader 私有注册嵌入副本） -->
       <Resource Include="..\symbols_skyquake.ttf" Link="Assets\symbols_skyquake.ttf" />
     </ItemGroup>
 

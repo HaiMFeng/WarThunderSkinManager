@@ -59,6 +59,8 @@
   "settings.resource.updating": "Downloading update…",
   "settings.resource.updated": "Updated; related data recalculated",
   "settings.resource.failed": "Check failed",
+  "settings.resource.overwriteTitle": "Overwrite Local Changes",
+  "settings.resource.overwriteConfirm": "\"{0}\" has been modified locally (possibly your customizations); updating will overwrite it with the remote version. Continue?",
   "settings.resource.failTimeout": "Connection timed out; try again later",
   "settings.resource.failNetwork": "Network error: cannot reach the upstream repository",
   "resource.units": "Vehicle names (units.csv)",

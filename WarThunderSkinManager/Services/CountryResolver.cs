@@ -13,7 +13,7 @@ namespace WarThunderSkinManager.Services;
 /// <para>
 /// 表即游戏科技树商店配置（国家 → 军种 → 载具），载具 id 与涂装社区的内部标识高度一致，
 /// 且外销 / 缴获变体各自归国（<c>f_15e</c>→美国、<c>su_30mkk</c>→中国、<c>f-84f_germany</c>→德国），
-/// 不存在旧前缀规则的系统性误判（<c>f_</c>→法国、<c>su</c>→苏联那类）。
+/// 消除了旧前缀规则的系统性误判（<c>f_</c>→法国那类；<c>su_30mkk</c> 旧为未分类、新表归中国）。
 /// </para>
 /// <para>
 /// **id 归一化**：匹配前把 <c>-</c> 与 <c>_</c> 视为等价并转小写——商店侧 <c>a-26c</c> 与
@@ -49,11 +49,17 @@ public static class CountryResolver
 
     /// <summary>解析载具内部标识所属国家 Id；商店表未收录返回 <see cref="Unclassified"/>。</summary>
     public static string Resolve(string vehicleId)
+        => ResolveCore(vehicleId) ?? Unclassified;
+
+    /// <summary>预热：后台提前解析商店表建索引，避免首次投影在 UI 线程承担解析开销。</summary>
+    public static void Prewarm() => Index();
+
+    private static string? ResolveCore(string vehicleId)
     {
-        if (string.IsNullOrWhiteSpace(vehicleId)) return Unclassified;
+        if (string.IsNullOrWhiteSpace(vehicleId)) return null;
 
         var index = Index();
-        return index.TryGetValue(Normalize(vehicleId), out var country) ? country : Unclassified;
+        return index.TryGetValue(Normalize(vehicleId), out var country) ? country : null;
     }
 
     /// <summary>归一化载具 id：小写 + <c>-</c> → <c>_</c>（仅查表用）。</summary>

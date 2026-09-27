@@ -59,6 +59,8 @@
   "settings.resource.updating": "下载更新中…",
   "settings.resource.updated": "已更新，相关数据自动重算",
   "settings.resource.failed": "检查失败",
+  "settings.resource.overwriteTitle": "覆盖本地修改",
+  "settings.resource.overwriteConfirm": "「{0}」在本地被修改过（可能是你的自定义内容），更新将用远端版本覆盖它。继续？",
   "settings.resource.failTimeout": "连接超时，请稍后重试",
   "settings.resource.failNetwork": "网络错误，无法连接上游仓库",
   "resource.units": "载具译名表（units.csv）",

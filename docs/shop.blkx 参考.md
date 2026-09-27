@@ -94,7 +94,7 @@ country_x（国家）
 | 载具 id | 前缀表判定（错误） | shop.blkx 实际 |
 |---|---|---|
 | `f_15e` | fr（`f_` 被当成法系飞机前缀） | **usa** / aviation |
-| `su_30mkk` | ussr | **china** / aviation |
+| `su_30mkk` | unclassified（旧表无 `su` 前缀） | **china** / aviation |
 | `f-84f_germany` | fr | **germany** / aviation（缴获 / 外销变体各自归国） |
 | `mig_23mla` / `mig_23mld` | 都 ussr | germany / ussr（分国正确） |
 
