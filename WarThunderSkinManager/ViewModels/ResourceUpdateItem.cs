@@ -9,8 +9,8 @@ public partial class ResourceUpdateItem : ObservableObject
     /// <summary>所属资源描述（服务层记录）。</summary>
     public ResourceInfo Info { get; }
 
-    /// <summary>显示名（语言键 resource.*）。</summary>
-    public string Name { get; }
+    /// <summary>显示名（语言键 resource.*，随界面语言刷新）。</summary>
+    [ObservableProperty] private string _name;
 
     /// <summary>本地文件名（= Info.FileName，便于诊断展示）。</summary>
     public string FileName => Info.FileName;
@@ -23,7 +23,10 @@ public partial class ResourceUpdateItem : ObservableObject
     public ResourceUpdateItem(ResourceInfo info, string initialStatus)
     {
         Info = info;
-        Name = Services.LocalizationManager.Instance[info.NameKey];
+        _name = Services.LocalizationManager.Instance[info.NameKey];
         _statusText = initialStatus;
     }
+
+    /// <summary>界面语言切换后重取显示名（由 MainViewModel 触发）。</summary>
+    public void RefreshName() => Name = Services.LocalizationManager.Instance[Info.NameKey];
 }

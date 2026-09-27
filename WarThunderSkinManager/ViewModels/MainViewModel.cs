@@ -900,6 +900,10 @@ public partial class MainViewModel : ObservableObject
         Skins.ApplyLanguageChange();
         Vehicles.ApplyLanguageChange();
 
+        // 「更新资源」行条目的显示名跟随语言（§3.15）
+        foreach (var item in ResourceItems)
+            item.RefreshName();
+
         ShowStatus(Loc.Format("settings.language.changed", option.DisplayName));
     }
 
