@@ -99,14 +99,27 @@ public static class PartCatalog
             // 与内存快照实例绑定：快照被重建（导入 / 全量重建等）→ 旧表自动失效
             if (_built && string.Equals(_resourceDir, dir, StringComparison.OrdinalIgnoreCase)
                 && ReferenceEquals(_builtFrom, LibraryService.Cached)) return _table;
+        }
 
-            _table = Build(dir);
+        // **在锁外构建**（几百个包的解析是秒级到十秒级）：锁内构建会让 UI 线程的查表
+        // 在整个构建期间阻塞 → 界面「无响应」
+        var table = Build(dir);
+
+        lock (Gate)
+        {
+            _table = table;
             _resourceDir = dir;
             _built = true;
             _builtFrom = LibraryService.Cached;
             return _table;
         }
     }
+
+    /// <summary>
+    /// 预热部件表（**后台线程**调用）：全量重建 / 「更新资源」之后先建好，
+    /// 否则首次打开多源复用页或属性页时会在 UI 线程上重扫全库 → 界面「无响应」。
+    /// </summary>
+    public static void Prewarm(string resourceDir) => _ = Table(resourceDir);
 
     /// <summary>
     /// 按 <c>from</c> 建索引。数据源优先**内存索引快照**（§4：包与映射已解析好 → 纯内存、毫秒级）；

@@ -104,10 +104,11 @@ public static class VehicleNameTable
     {
         var code = string.IsNullOrWhiteSpace(culture) ? "zh-CN" : culture!;
 
+        // 表来源变了（用户替换了 units.csv）→ 全部重建
+        var stamp = DataTables.Stamp(DataTables.Vehicles);
+
         lock (Gate)
         {
-            // 表来源变了（用户替换了 units.csv）→ 全部重建
-            var stamp = DataTables.Stamp(DataTables.Vehicles);
             if (!string.Equals(stamp, _cacheStamp, StringComparison.Ordinal))
             {
                 Cache.Clear();
@@ -115,12 +116,30 @@ public static class VehicleNameTable
             }
 
             if (Cache.TryGetValue(code, out var cached)) return cached;
-
-            var table = Load(ColumnFor(code));
-            Cache[code] = table; // null 也缓存，避免每次重复尝试解析
-            return table;
         }
+
+        // **在锁外解析**（units.csv 6 MB，解析一次是秒级）：锁内解析会让其它线程
+        // （尤其 UI 线程的查表）在整个解析期间阻塞 → 界面「无响应」
+        var table = Load(ColumnFor(code));
+
+        lock (Gate)
+        {
+            // 解析期间表又被替换（stamp 变了）→ 本次结果作废，不写进缓存
+            if (!string.Equals(DataTables.Stamp(DataTables.Vehicles), _cacheStamp, StringComparison.Ordinal))
+                return table;
+
+            Cache[code] = table; // null 也缓存，避免每次重复尝试解析
+        }
+
+        return table;
     }
+
+    /// <summary>
+    /// 预热当前界面语言的译名索引（**后台线程**调用）。
+    /// units.csv 有 6 MB、解析一次是秒级——「更新资源」换表后必须先在后台重建，
+    /// 否则随后的界面刷新会在 UI 线程上承担这次解析（表现为界面「无响应」）。
+    /// </summary>
+    public static void Prewarm() => _ = TableFor(LocalizationManager.Instance.Culture);
 
     /// <summary>界面语言 → CSV 列名。</summary>
     private static string ColumnFor(string culture)

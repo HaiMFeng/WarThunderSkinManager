@@ -98,11 +98,11 @@ public partial class PartRow : ObservableObject
     /// <summary>本包在该部件位置使用的贴图；IsNone 项 = 不设置（该位置的块不输出）</summary>
     [ObservableProperty] private PartCandidate? _selectedCandidate;
 
-    /// <summary>本包在该位置的块（继承块 + 新增块）；进阶模式可逐块编辑原文 / 删除</summary>
+    /// <summary>
+    /// 本包在该位置的块（继承块 + 新增块）；进阶模式点「编辑 blk 块」**在窗口里**逐块编辑原文 / 标记不输出
+    /// （窗口只读副本，确定才写回这里；见 <c>BlkEditorViewModel</c>）。
+    /// </summary>
     public ObservableCollection<BlkBlockRow> Blocks { get; } = new();
-
-    /// <summary>进阶：是否展开该位置的块编辑器（「编辑 blk 块」按钮切换）</summary>
-    [ObservableProperty] private bool _isEditingBlocks;
 
     /// <summary>块数提示（界面文案「该位置有 N 条 blk 块」）</summary>
     public string BlockCountText => Loc.Format("pkg.editor.blocks.count", Blocks.Count);

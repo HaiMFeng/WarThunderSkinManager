@@ -161,18 +161,85 @@ public partial class PackageEditorViewModel : ObservableObject
         ApplyBlocks();
     }
 
-    // ---------- 进阶：编辑 blk 块（§7.3）----------
+    // ---------- 进阶：编辑 blk 块（§7.3，**窗口级交互**）----------
 
     /// <summary>
-    /// 「编辑 blk 块」：展开 / 收起该位置的块编辑器（直接改块原文，其余块不受影响）。
+    /// 「编辑 blk 块」：**开窗口**编辑该位置名下的块原文（逐块可改 / 标记「不输出该块」）。
+    /// 窗口只改副本，确定才写回本页；属性页点「确定」时才落盘。
     /// 仅在设置里开启「手动编辑 blk」且非资源包时可用。
     /// </summary>
     [RelayCommand]
     private void EditBlocks(PartRow? row)
     {
         if (row == null || !CanEditBlkBlocks) return;
-        row.IsEditingBlocks = !row.IsEditingBlocks;
+
+        var editor = new BlkEditorViewModel
+        {
+            Title = Loc.Format("pkg.editor.blkEditor.title", row.From),
+            Hint = Loc["pkg.editor.blkEditor.hint"],
+            ShowBlocks = true
+        };
+
+        foreach (var block in row.Blocks)
+            editor.Blocks.Add(Clone(block));
+
+        if (!ShowEditor(editor)) return;
+
+        for (var i = 0; i < row.Blocks.Count && i < editor.Blocks.Count; i++)
+        {
+            row.Blocks[i].Text = editor.Blocks[i].Text;
+            row.Blocks[i].Deleted = editor.Blocks[i].Deleted;
+        }
     }
+
+    /// <summary>「编辑额外参数块」：开窗口编辑包级额外参数块（单文本框；清空即删除）。</summary>
+    [RelayCommand]
+    private void EditExtraBlk()
+    {
+        if (!CanEditBlkBlocks) return;
+
+        var editor = new BlkEditorViewModel
+        {
+            Title = Loc["pkg.editor.extraBlk"],
+            Hint = Loc["pkg.editor.extraBlk.hint"],
+            ShowExtra = true,
+            ExtraBlkText = ExtraBlkText
+        };
+
+        if (!ShowEditor(editor)) return;
+        ExtraBlkText = editor.ExtraBlkText;
+    }
+
+    /// <summary>额外参数块的界面摘要（属性页上只显示这行，编辑在窗口里做）。</summary>
+    public string ExtraBlkSummary => string.IsNullOrWhiteSpace(ExtraBlkText)
+        ? Loc["pkg.editor.extraBlk.empty"]
+        : Loc.Format("pkg.editor.extraBlk.summary", ExtraBlkText.Trim().Length);
+
+    partial void OnExtraBlkTextChanged(string value) => OnPropertyChanged(nameof(ExtraBlkSummary));
+
+    /// <summary>打开 blk 编辑窗口；返回是否点了「确定」。</summary>
+    private static bool ShowEditor(BlkEditorViewModel editor)
+    {
+        var window = new BlkEditorWindow
+        {
+            DataContext = editor,
+            Owner = Application.Current?.MainWindow
+        };
+
+        return window.ShowDialog() == true;
+    }
+
+    /// <summary>克隆一条块（窗口编辑副本：取消即丢弃）。</summary>
+    private static BlkBlockRow Clone(BlkBlockRow block) => new()
+    {
+        Index = block.Index,
+        AddedIndex = block.AddedIndex,
+        From = block.From,
+        To = block.To,
+        Text = block.Text,
+        OriginalText = block.OriginalText,
+        Deleted = block.Deleted
+    };
 
     // ---------- 部件贴图（§3.5 / §3.6 / §7）----------
 

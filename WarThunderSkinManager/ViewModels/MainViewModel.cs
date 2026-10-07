@@ -723,25 +723,30 @@ public partial class MainViewModel : ObservableObject
         var items = new System.Collections.ObjectModel.ObservableCollection<ResourceUpdateItem>();
 
         foreach (var info in ResourceUpdateService.Resources)
-        {
-            var item = new ResourceUpdateItem(info, "settings.resource.notChecked");
-
-            // 有上次检查的缓存 → 直接恢复状态（本地指纹比对，零网络）：重启后不必重新
-            // 检查也能看到「已是最新 / 发现新版本」；缓存滞后由之后的 ETag 检查自然纠正
-            var cached = ResourceUpdateService.PeekCached(info, configDir);
-            if (cached != null)
-            {
-                _resourceChecks[item.FileName] = cached;
-                item.HasUpdate = cached.HasUpdate;
-                item.SetStatus(cached.HasUpdate
-                    ? "settings.resource.hasUpdate"
-                    : "settings.resource.upToDate", cached.RemoteVersion);
-            }
-
-            items.Add(item);
-        }
+            items.Add(new ResourceUpdateItem(info, "settings.resource.notChecked"));
 
         ResourceItems = items;
+
+        // 恢复上次检查的状态要**读整张表算指纹**（units.csv 6 MB）→ 放**后台**做，完成后回 UI 应用；
+        // 留在构造线程上会把首屏卡住（启动即「无响应」）
+        Task.Run(() => items
+                .Select(item => (Item: item, Cached: ResourceUpdateService.PeekCached(item.Info, configDir)))
+                .ToList())
+            .ContinueWith(t => Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                if (t.IsFaulted) return;
+
+                foreach (var (item, cached) in t.Result)
+                {
+                    if (cached == null) continue;
+
+                    _resourceChecks[item.FileName] = cached;
+                    item.HasUpdate = cached.HasUpdate;
+                    item.SetStatus(cached.HasUpdate
+                        ? "settings.resource.hasUpdate"
+                        : "settings.resource.upToDate", cached.RemoteVersion);
+                }
+            }), TaskScheduler.Default);
     }
 
     /// <summary>逐个资源下载远端并比对版本指纹（顺序执行，避免带宽争抢；单资源失败不影响其余）。</summary>
@@ -800,8 +805,10 @@ public partial class MainViewModel : ObservableObject
                 ? result.Content
                 : await ResourceUpdateService.FetchAsync(result.Info, configDir);
 
-            // 304 / 缓存恢复路径下「有更新」仅因本地指纹漂移——可能是用户手改过用户表 → 落盘前确认
-            if (result.Content.Length == 0)
+            // 只有**本地用户表确实被改过**（既不同于远端、也不是内置表）才做覆盖提醒。
+            // 原先按"检查结果没带正文"（304 / 缓存恢复）判断，会把「用户表就是内置表」
+            // 「本地表一时读不到（被占用 / 权限）」都误报成"你改过这张表"。
+            if (ResourceUpdateService.IsLocallyModified(result.Info.FileName, result, configDir))
             {
                 var confirmed = MessageDialog.Confirm(
                     Loc.Format("settings.resource.overwriteConfirm", result.Info.FileName),
@@ -815,7 +822,10 @@ public partial class MainViewModel : ObservableObject
                 }
             }
 
-            await Task.Run(() => DataTables.ApplyUpdatedTable(result.Info.FileName, configDir, content));
+            // 落盘 + **在后台重建索引**（译名 / 武器 / 商店归属）：新表生效必须先在后台完成，
+            // 否则随后的界面刷新会在 UI 线程上解析整张 units.csv（6 MB）→ 界面「无响应」
+            await Task.Run(() => ResourceUpdateService.ApplyAndPrewarm(
+                result.Info.FileName, configDir, content));
             item.HasUpdate = false;
             item.SetStatus("settings.resource.updated");
 
@@ -1406,6 +1416,12 @@ public partial class MainViewModel : ObservableObject
         PartCatalog.Invalidate(); // 部件表一并重算：多源复用页与属性页候选不能拿旧数据
         Skins.ApplySnapshot(snapshot);
         Vehicles.ApplySnapshot(snapshot);
+
+        // 部件表**在后台**建好（几百个包是秒级～十秒级）：留给 UI 线程首次查表会在
+        // 打开多源复用页 / 属性页时卡住界面（与「更新资源」后卡死同一类问题）
+        var resourceDir = Config.ResourceDirectory;
+        if (!string.IsNullOrWhiteSpace(resourceDir))
+            _ = Task.Run(() => PartCatalog.Prewarm(resourceDir));
     }
 
     /// <summary>清除数据后全量重建并刷新两个页面（同步执行；调用点已在 UI 线程）。</summary>

@@ -128,7 +128,9 @@ public static class ResourceUpdateService
     public static async Task<ResourceCheckResult> CheckAsync(
         ResourceInfo info, string? configDir, CancellationToken cancellationToken = default)
     {
-        var local = LocalVersion(info.FileName, configDir);
+        // 本地指纹要读整张表并算 SHA-256（units.csv 6 MB）→ **放到后台**，
+        // 否则这段同步读盘会落在调用它的 UI 线程上（检查时界面卡一下）
+        var local = await Task.Run(() => LocalVersion(info.FileName, configDir), cancellationToken);
         var cache = configDir == null
             ? new Dictionary<string, CacheEntry>(StringComparer.Ordinal)
             : LoadCache(configDir);
@@ -201,6 +203,28 @@ public static class ResourceUpdateService
             Content: Array.Empty<byte>(), ETag: cached.ETag);
     }
 
+    /// <summary>
+    /// 「更新资源」的**落盘 + 后台预热**（**必须在后台线程调用**）。
+    /// </summary>
+    /// <remarks>
+    /// 顺序不可颠倒：写用户表 → **丢弃来源标记缓存** → 重建按来源缓存的索引
+    /// （译名 / 武器 / 商店归属）。
+    /// <list type="bullet">
+    /// <item>不丢弃来源标记（它带 1 秒 TTL）时，紧接着的重建会读到旧标记 → 索引不重建，
+    /// 等 TTL 过期后由 **UI 线程**上的首次查表承担整表解析（units.csv 6 MB）→ 界面「无响应」；</item>
+    /// <item>预热留在 UI 线程上做同样会卡死，因此本方法整段都应在 <see cref="Task.Run(Action)"/> 里跑。</item>
+    /// </list>
+    /// </remarks>
+    public static void ApplyAndPrewarm(string fileName, string configDir, byte[] content)
+    {
+        DataTables.ApplyUpdatedTable(fileName, configDir, content);
+        DataTables.InvalidateStamp();
+
+        VehicleNameTable.Prewarm();
+        WeaponCatalog.Prewarm();
+        CountryResolver.Prewarm();
+    }
+
     /// <summary>按需下载资源全文（「更新」时正文缺失的补取），并刷新缓存。</summary>
     public static async Task<byte[]> FetchAsync(
         ResourceInfo info, string? configDir, CancellationToken cancellationToken = default)
@@ -222,6 +246,49 @@ public static class ResourceUpdateService
         }
 
         return content;
+    }
+
+    /// <summary>内置表（程序自带）的版本指纹；取不到返回 <c>null</c>。</summary>
+    public static string? EmbeddedVersion(string fileName)
+    {
+        try
+        {
+            using var stream = DataTables.OpenEmbedded(fileName);
+            if (stream == null) return null;
+
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return VersionOf(ms.ToArray());
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 本地用户表是否**确实被改过**——只有这一种情况才值得在覆盖前提醒用户。
+    /// </summary>
+    /// <remarks>
+    /// 不能拿"这次检查没带正文"（304 / 缓存恢复）当依据：那只是说明远端没变或正文没下载，
+    /// 与"用户改过"无关。真实的判定要看**指纹**，以下情形一律**不算**被改过：
+    /// <list type="bullet">
+    /// <item>用户表不存在（还没写过）——谈不上"被你改过"；</item>
+    /// <item>本地指纹读不到（文件被占用 / 权限不足）——不能把"读不到"当成"你改过"；</item>
+    /// <item>本地 == 远端（就是上次更新的内容）；</item>
+    /// <item>本地 == 内置表（用户表只是首次启动写出的默认表，从未改过）。</item>
+    /// </list>
+    /// </remarks>
+    public static bool IsLocallyModified(string fileName, ResourceCheckResult result, string? configDir)
+    {
+        if (string.IsNullOrWhiteSpace(configDir)) return false;
+        if (!File.Exists(DataTables.UserFile(fileName, configDir))) return false;
+        if (string.IsNullOrEmpty(result.LocalVersion)) return false;
+
+        if (string.Equals(result.LocalVersion, result.RemoteVersion, StringComparison.Ordinal)) return false;
+
+        var embedded = EmbeddedVersion(fileName);
+        return embedded == null || !string.Equals(result.LocalVersion, embedded, StringComparison.Ordinal);
     }
 
     /// <summary>版本指纹：剔除 <c>\r</c>（抵消 git checkout 的 CRLF 漂移）后 SHA-256 前 8 位十六进制。</summary>

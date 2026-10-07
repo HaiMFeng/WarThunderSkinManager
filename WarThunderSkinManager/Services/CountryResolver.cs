@@ -72,15 +72,24 @@ public static class CountryResolver
     /// </summary>
     private static Dictionary<string, string> Index()
     {
+        var stamp = DataTables.Stamp(DataTables.Shop);
+
         lock (Gate)
         {
-            var stamp = DataTables.Stamp(DataTables.Shop);
-            if (_index == null || !string.Equals(stamp, _stamp, StringComparison.Ordinal))
-            {
-                _index = BuildIndex();
-                _stamp = stamp;
-            }
+            if (_index != null && string.Equals(stamp, _stamp, StringComparison.Ordinal))
+                return _index;
+        }
 
+        // **在锁外解析**（商店表是 MB 级）：锁内解析会让其它线程的国家判定阻塞
+        var index = BuildIndex();
+
+        lock (Gate)
+        {
+            if (_index != null && string.Equals(stamp, _stamp, StringComparison.Ordinal))
+                return _index; // 已被其它线程建好
+
+            _index = index;
+            _stamp = stamp;
             return _index;
         }
     }

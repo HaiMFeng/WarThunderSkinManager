@@ -170,9 +170,9 @@
 
                     <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="190"/>
-                            <ColumnDefinition Width="300"/>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="130"/>
+                            <ColumnDefinition Width="4*"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{loc:Loc pkg.editor.col.part}"
                                    Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
@@ -189,9 +189,9 @@
                                   <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="190"/>
-                                            <ColumnDefinition Width="300"/>
+                                            <ColumnDefinition Width="3*"/>
+                                            <ColumnDefinition Width="130"/>
+                                            <ColumnDefinition Width="4*"/>
                                         </Grid.ColumnDefinitions>
 
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
@@ -290,51 +290,6 @@
                                         </ComboBox>
                                     </Grid>
 
-                                    <!-- 块编辑器（进阶）：逐块编辑原文 / 标记删除（改动只作用于这一条块） -->
-                                    <ItemsControl ItemsSource="{Binding Blocks}" Margin="0,6,0,0">
-                                        <ItemsControl.Style>
-                                            <Style TargetType="ItemsControl">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsEditingBlocks}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </ItemsControl.Style>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid Margin="0,4,0,0">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBox Grid.Column="0"
-                                                             Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
-                                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52"
-                                                             FontSize="11" FontFamily="Consolas"
-                                                             Style="{StaticResource BaseTextBox}"/>
-                                                    <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Top">
-                                                        <TextBlock Text="{loc:Loc pkg.editor.blocks.changed}" FontSize="11"
-                                                                   Foreground="{StaticResource BrushDanger}">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsChanged}" Value="True">
-                                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
-                                                        <CheckBox Content="{loc:Loc pkg.editor.blocks.delete}"
-                                                                  IsChecked="{Binding Deleted}" Margin="0,4,0,0"/>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
                                   </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -355,10 +310,16 @@
                         </StackPanel.Style>
                         <TextBlock Text="{loc:Loc pkg.editor.extraBlk}" Style="{StaticResource FieldLabel}"/>
                         <TextBlock Text="{loc:Loc pkg.editor.extraBlk.hint}" Style="{StaticResource PageSubtitle}"
-                                   TextWrapping="Wrap" Margin="0,4,0,6"/>
-                        <TextBox Text="{Binding ExtraBlkText, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
-                                 FontSize="11" FontFamily="Consolas" Style="{StaticResource BaseTextBox}"/>
+                                   TextWrapping="Wrap" Margin="0,4,0,8"/>
+                        <!-- 编辑在**窗口**里做（§7.3）：这里只显示按钮 + 摘要 -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="{loc:Loc pkg.editor.extraBlk.edit}"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding EditExtraBlkCommand}"/>
+                            <TextBlock Text="{Binding ExtraBlkSummary}" VerticalAlignment="Center"
+                                       Margin="10,0,0,0" Foreground="{StaticResource BrushTextMuted}"
+                                       FontSize="12"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <TextBlock Text="{Binding StatusMessage}" Margin="0,10,0,0" TextWrapping="Wrap"

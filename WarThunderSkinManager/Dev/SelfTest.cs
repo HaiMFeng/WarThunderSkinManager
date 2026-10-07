@@ -1180,6 +1180,33 @@ internal static class SelfTest
             log.AppendLine($"⑨ 更新资源保持: 模拟重启后用户表仍为远端内容 = "
                          + $"{tablesAfterRestart.SequenceEqual(remoteUnits)}（应 True）");
 
+            // ---- 「更新资源」卡死修复的关键机制（§3.15）----
+            // 来源标记（DataTables.Stamp）带 1 秒 TTL：写表后若不主动丢弃，紧随其后的索引重建
+            // 会读到**旧标记** → 译名 / 武器 / 商店索引都不重建，等 TTL 过期后由 **UI 线程**上的
+            // 首次查表承担整表解析（units.csv 6 MB）→ 界面「无响应」。
+            // 因此 ApplyAndPrewarm 的顺序是：写用户表 → InvalidateStamp() → 后台预热三个索引。
+            DataTables.InvalidateStamp();
+            var stampAfterUpdate = DataTables.Stamp(DataTables.Vehicles, tablesDir);
+            log.AppendLine($"⑨ 来源标记刷新: 写表后立即指向用户表 = "
+                         + $"{stampAfterUpdate.StartsWith(DataTables.UserFile(DataTables.Vehicles, tablesDir), StringComparison.OrdinalIgnoreCase)}（应 True，"
+                         + "否则索引不重建 → UI 线程首次查表解析整表 → 无响应）");
+
+            // ---- 「更新」前的覆盖提醒：只针对**真的被改过**的本地表（§3.15）----
+            // 原先按"检查结果没带正文"判断 → 「用户表就是内置表」「本地表一时读不到」都会被误报成"你改过"
+            var unitsInfo = ResourceUpdateService.Resources.First(r => r.FileName == DataTables.Vehicles);
+            var remoteFp = ResourceUpdateService.VersionOf(remoteUnits);           // 刚写进用户表的内容
+            var embeddedFp = ResourceUpdateService.EmbeddedVersion(DataTables.Vehicles) ?? "?";
+
+            var asRemote = new ResourceCheckResult(unitsInfo, remoteFp, remoteFp, false, remoteUnits, "etag");
+            var asEmbedded = new ResourceCheckResult(unitsInfo, embeddedFp, remoteFp, true, Array.Empty<byte>(), "etag");
+            var handEdited = new ResourceCheckResult(unitsInfo, "deadbeef", remoteFp, true, Array.Empty<byte>(), "etag");
+            var unreadable = new ResourceCheckResult(unitsInfo, null, remoteFp, true, Array.Empty<byte>(), "etag");
+
+            log.AppendLine($"⑨ 覆盖提醒判定: 本地=远端 → {ResourceUpdateService.IsLocallyModified(unitsInfo.FileName, asRemote, tablesDir)}（应 False），"
+                         + $"本地=内置 → {ResourceUpdateService.IsLocallyModified(unitsInfo.FileName, asEmbedded, tablesDir)}（应 False），"
+                         + $"本地读不到 → {ResourceUpdateService.IsLocallyModified(unitsInfo.FileName, unreadable, tablesDir)}（应 False），"
+                         + $"本地被手改 → {ResourceUpdateService.IsLocallyModified(unitsInfo.FileName, handEdited, tablesDir)}（应 True）");
+
             log.AppendLine();
             log.AppendLine("---- WT Live 解析（§3.15） ----");
             var sampleJson = """

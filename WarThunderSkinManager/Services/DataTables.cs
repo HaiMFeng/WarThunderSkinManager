@@ -114,6 +114,19 @@ public static class DataTables
         return stamp;
     }
 
+    /// <summary>
+    /// 丢弃来源标记缓存（**写入用户表之后必须调用**）。
+    /// <see cref="Stamp"/> 带 1 秒 TTL：不主动丢弃的话，紧随其后的索引重建会读到**旧标记** →
+    /// 索引不重建，等 TTL 过期后由**UI 线程**上的首次查表承担整表解析（界面「无响应」）。
+    /// </summary>
+    public static void InvalidateStamp()
+    {
+        lock (StampGate)
+        {
+            StampCache.Clear();
+        }
+    }
+
     private static readonly object StampGate = new();
     private static readonly Dictionary<string, (string Stamp, DateTime CachedAt)> StampCache =
         new(StringComparer.Ordinal);
@@ -285,7 +298,7 @@ public static class DataTables
     }
 
     /// <summary>从程序集取内置表（资源名 = <c>&lt;根命名空间&gt;.Assets.&lt;文件名&gt;</c>，由 .csproj 的 LogicalName 指定）。</summary>
-    private static Stream? OpenEmbedded(string fileName)
+    internal static Stream? OpenEmbedded(string fileName)
     {
         var assembly = typeof(DataTables).Assembly;
         var names = assembly.GetManifestResourceNames();

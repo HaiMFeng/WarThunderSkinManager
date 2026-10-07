@@ -63,12 +63,23 @@ public static class WeaponCatalog
         lock (Gate)
         {
             if (string.Equals(stamp, _stamp, StringComparison.Ordinal)) return _index;
+        }
 
-            _index = BuildIndex();
+        // **在锁外解析**：锁内解析会让其它线程（尤其 UI 线程的标签解析）解析期间阻塞
+        var index = BuildIndex();
+
+        lock (Gate)
+        {
+            if (string.Equals(stamp, _stamp, StringComparison.Ordinal)) return _index; // 已被其它线程建好
+
+            _index = index;
             _stamp = stamp;
             return _index;
         }
     }
+
+    /// <summary>预热武器索引（**后台线程**调用：「更新资源」换表后先重建，避免 UI 线程首次查表卡顿）。</summary>
+    public static void Prewarm() => _ = Index();
 
     /// <summary>
     /// 判断**已去掉贴图类型后缀**的部件位置是否指向武器。
