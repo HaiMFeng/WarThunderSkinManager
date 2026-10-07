@@ -199,10 +199,12 @@ internal static class SelfTest
                     log.AppendLine($"重建映射   : {rebuiltMappings} 条（应与写回条数一致）");
 
                     // 写入方式（滑块）验证：把第一条改为 set_tex → 输出 blk 应出现 set_tex + param
+                    // （补 param 是**属性页**的规则：用户显式切到 set 时补标准值，见 ApplyParts；
+                    //   BlkWriter 往返既有 blk 时绝不补）
                     if (entries.Count > 0)
                     {
                         entries[0].Mode = MappingMode.Set;
-                        entries[0].Param = null;
+                        entries[0].Param = BlkWriter.CamoSkinTexParam;
                         meta.Parts = entries;
                         PackageStore.SaveMeta(resourceDir, meta);
 
@@ -1263,8 +1265,12 @@ internal static class SelfTest
             var robustSync = OutputService.SyncVehicle(robustUserSkins, robustLib, "cn_ztz_96b",
                 LoadoutService.BuildLoadout(robustDeconstruct.Package));
             var robustOutBlk = File.ReadAllText(robustSync.BlkPath, Encoding.UTF8);
+            // 源里 turret_c 的 set_tex **没有 param** → 输出也不得凭空补（补了会改变渲染语义）
+            var turretBlock = robustOutBlk.Split('}')
+                .FirstOrDefault(b => b.Contains("cn_ztz_96b_turret_c"));
             log.AppendLine($"输出往返: 条目 = {robustSync.BlkEntries}（应 7），"
                          + $"param 保留 = {robustOutBlk.Contains("param:t=\"alpha\"")}（应 True），"
+                         + $"缺 param 的 set_tex 未被补默认值 = {turretBlock != null && !turretBlock.Contains("param")}（应 True），"
                          + $"set/replace 配对都在 = {robustOutBlk.Contains("set_tex {") && robustOutBlk.Contains("replace_tex {")}（应 True），"
                          + $"本体资源条目保留 = {robustOutBlk.Contains("game_texture.tga")}（应 True）");
 

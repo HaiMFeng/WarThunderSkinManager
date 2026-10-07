@@ -428,7 +428,7 @@
   "parser.warn.caseMismatch": "大小写不一致（实际 {0}）",
   "parser.warn.noWildcard": "from 缺少通配符 *",
   "parser.warn.noExtension": "to 缺少 .dds/.tga 扩展名",
-  "parser.warn.setTexParam": "set_tex 缺少 param:t=\"camo_skin_tex\"",
+  "parser.warn.setTexParam": "set_tex 未写 param（按原样保留：带 param 才按「固定涂装」语义生效，不带则贴图仍替换但不吃贴花）",
   "pkg.editor.saveFailed": "涂装包保存失败（本次改动未生效）：{0}",
   "blobgc.unreadableMeta": "有 {0} 个涂装包的 meta.json 无法解析，本次跳过贴图回收（避免误删仍被引用的贴图）",
   "parser.warn.replaceTexParam": "replace_tex 里出现 param（非标准写法，已原样保留，不会丢弃）",

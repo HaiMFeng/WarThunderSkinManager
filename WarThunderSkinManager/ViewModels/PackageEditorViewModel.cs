@@ -562,7 +562,12 @@ public partial class PackageEditorViewModel : ObservableObject
                 From = choice.IsMultiSource || string.IsNullOrWhiteSpace(choice.From) ? row.From : choice.From,
                 Mode = mode,
                 To = assignedTo,
-                Param = choice.Param // param 两种命令都保留（透明度语义与命令绑定，丢弃会改变渲染）
+                // param 原样保留（透明度语义与命令绑定，丢弃会改变渲染）。
+                // 例外：**用户显式把滑块切到 set_tex** 时该模式必须带 param 才按「固定涂装」生效
+                // （候选多来自 replace 条目、Param 为空）→ 补标准值；往返既有 blk 时绝不补（见 BlkWriter）
+                Param = mode == MappingMode.Set && string.IsNullOrWhiteSpace(choice.Param)
+                    ? BlkWriter.CamoSkinTexParam
+                    : choice.Param
             });
 
             var entry = textures.FirstOrDefault(t => string.Equals(t.To, assignedTo, StringComparison.OrdinalIgnoreCase));

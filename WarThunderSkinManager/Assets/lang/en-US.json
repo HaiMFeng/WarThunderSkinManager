@@ -428,7 +428,7 @@
   "parser.warn.caseMismatch": "Case mismatch (actual {0})",
   "parser.warn.noWildcard": "from is missing the wildcard *",
   "parser.warn.noExtension": "to is missing the .dds/.tga extension",
-  "parser.warn.setTexParam": "set_tex is missing param:t=\"camo_skin_tex\"",
+  "parser.warn.setTexParam": "set_tex has no param (preserved as-is: with param it acts as a fixed skin; without it the texture is still replaced but decals are not supported)",
   "pkg.editor.saveFailed": "Failed to save the package (changes were not applied): {0}",
   "blobgc.unreadableMeta": "{0} package meta.json file(s) could not be parsed; texture collection was skipped this time (to avoid deleting blobs still in use)",
   "parser.warn.replaceTexParam": "param found on replace_tex (non-standard, preserved verbatim rather than dropped)",
