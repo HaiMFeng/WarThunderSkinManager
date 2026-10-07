@@ -1272,6 +1272,26 @@ internal static class SelfTest
             log.AppendLine($"HTML 剥离: 首行 = \"{htmlText.Split('\n')[0]}\"（应 First line），行数 = {htmlText.Split('\n').Length}（应 3），"
                          + $"实体解码 = {htmlText.Contains("&more", StringComparison.Ordinal) == false && htmlText.Contains("& more", StringComparison.Ordinal)}");
 
+            // ---- 下载阶段进度与重试节奏（§3.15：预览图是下载的一部分，独占 20%）----
+            var progressCases = new (double Zip, double Preview, bool HasPreview, double Expect)[]
+            {
+                (1, 0, true, 0.8),      // 压缩包下完全部 → 80%
+                (0.5, 0.5, true, 0.5),  // 包 0.5×0.8 + 预览 0.5×0.2 = 0.5
+                (1, 1, true, 1),        // 两者都完成 → 100%（才允许进入安装）
+                (0.5, 0, false, 0.5)    // 无预览图 → 压缩包即全部
+            };
+
+            var progressOk = progressCases.All(c =>
+                Math.Abs(WTLiveService.CombinedProgress(c.Zip, c.Preview, c.HasPreview) - c.Expect) < 0.0001);
+
+            log.AppendLine($"下载进度   : 压缩包 80% + 预览图 20% = {progressOk}（应 True；"
+                         + $"包完成 {WTLiveService.CombinedProgress(1, 0, true):P0} / "
+                         + $"全部完成 {WTLiveService.CombinedProgress(1, 1, true):P0} / "
+                         + $"无预览 {WTLiveService.CombinedProgress(1, 0, false):P0}）");
+            log.AppendLine($"重试节奏   : 次数 = {WTLiveService.DownloadAttempts}（应 5），"
+                         + $"间隔 = {WTLiveService.RetryDelay.TotalSeconds} 秒（应 1，固定不退避），"
+                         + $"停滞超时 = {WTLiveService.StallTimeout.TotalSeconds} 秒（应 30）");
+
             // ---- blk 解析 / 输出健壮性（§3.5 / §3.6）----
             // 覆盖：replace_tex 的 param 保留、同一 to 被多个 from 复用、单行块 / 块内多 from、缺字段块告警
             log.AppendLine();

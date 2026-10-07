@@ -95,13 +95,34 @@
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
                                                            ToolTip="{Binding FileName}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding StateText}"
                                                            Style="{StaticResource PageSubtitle}" Margin="12,0,0,0"/>
+                                                <!-- 常驻「重试」：下载中也能点 = 掐断当前下载并重跑（察觉卡死时直接掐断）。
+                                                     导入中 / 已完成后没有可重试的下载 → 隐藏（避免重复导入同一份压缩包） -->
+                                                <Button Grid.Column="2" Margin="10,0,0,0" Padding="8,2"
+                                                        Content="{loc:Loc wtlive.list.retry}"
+                                                        ToolTip="{loc:Loc wtlive.list.retryHint}"
+                                                        Command="{Binding DataContext.Skins.RetryWtLiveDownloadCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                                            <Setter Property="FontSize" Value="11"/>
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanRetry}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
                                             </Grid>
-                                            <!-- 进度指示条：ScaleX 绑定 0..1 比例（ProgressBar 最小模板的 PART_Indicator 不会自动变宽） -->
+                                            <!-- 进度指示条：下载阶段总进度（压缩包 80% + 预览图 20%）；
+                                                 ScaleX 绑定 0..1 比例（ProgressBar 最小模板的 PART_Indicator 不会自动变宽） -->
                                             <Grid Height="4" Margin="0,4,0,0">
                                                 <Border Background="{StaticResource BrushSurface2}" CornerRadius="2"/>
                                                 <Border Background="{StaticResource BrushPrimary}" CornerRadius="2"

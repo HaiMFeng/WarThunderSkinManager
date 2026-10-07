@@ -111,93 +111,149 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 后台下载 WT Live 附件 → 完成后自动进入常规导入流程（扫描 → 预览 → 解构），
-    /// 并把网页解析的显示名 / 首张预览图应用到导入的涂装包（§3.15）。
+    /// 创建下载项并开始下载（压缩包 + 预览图；两者都完成才进入导入，§3.15）。
     /// </summary>
-    private async void StartWtLiveDownload(WTLivePost post)
+    private void StartWtLiveDownload(WTLivePost post)
     {
         if (post.File == null) return; // 弹窗侧已拦截
 
         var item = new WtLiveDownloadItem(post.LangGroup,
             $"https://live.warthunder.com/post/{post.LangGroup}/en/",
             post.File.Name, post.Author, post.DisplayName,
+            post.File.Link, post.File.Size,
             post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null);
 
         WtLiveDownloads.Add(item);
 
         // 主窗口顶部通用提示：明确当前开始下载哪个文件
         ShowStatus(Loc.Format("wtlive.started", post.File.Name));
+        RunWtLiveDownload(item);
+    }
 
+    /// <summary>
+    /// 列表右侧常驻的「重试」：**掐断当前下载**（若有）→ 等这一轮收尾 → 整条重跑
+    /// （压缩包与预览图都重新下载）。用户察觉卡死时可直接点它，不必等自动重试跑完。
+    /// </summary>
+    [RelayCommand]
+    private async Task RetryWtLiveDownload(WtLiveDownloadItem? item)
+    {
+        if (item == null) return;
+
+        item.Cts?.Cancel(); // 掐断本轮（取消会走 catch → 标记「已取消」，随即被重跑覆盖）
+
+        if (item.Running != null)
+        {
+            try { await item.Running; }
+            catch { /* 本轮自己的异常已在内部处理 */ }
+        }
+
+        ShowStatus(Loc.Format("wtlive.started", item.FileName));
+        RunWtLiveDownload(item);
+    }
+
+    /// <summary>启动一轮下载 / 导入（每轮独立取消源，与程序退出联动）。</summary>
+    private void RunWtLiveDownload(WtLiveDownloadItem item)
+    {
+        item.Cts?.Dispose();
+        item.Cts = CancellationTokenSource.CreateLinkedTokenSource(_downloadsCts.Token);
+
+        // 任务内部已吞掉所有异常 → 这里持有的 Task 不会以 Faulted 收尾，重试时可直接 await
+        item.Running = DownloadAndImportAsync(item, item.Cts.Token);
+    }
+
+    /// <summary>
+    /// 下载压缩包 + 预览图（**并行**；进度 = 压缩包 80% + 预览图 20%）→ 两者都完成后进入常规导入流程
+    /// （扫描 → 预览 → 解构），并把网页解析的显示名 / 预览图应用到导入的涂装包（§3.15）。
+    /// </summary>
+    private async Task DownloadAndImportAsync(WtLiveDownloadItem item, CancellationToken ct)
+    {
         // 本流程的暂存产物（与其他下载互不相交；结束只清理自己的，不整区清扫）
         string? zipPath = null, extracted = null, previewImagePath = null;
+
+        // 两路下载任务提到 try 之外：**finally 里要等它们收尾再删暂存**——
+        // 任一路失败时另一路可能仍在写盘，先删文件会「删了又被写回」，留下孤儿文件
+        Task? zipTask = null;
         Task? previewTask = null;
+
+        var resourceDir = _config.ResourceDirectory;
+        var wtliveDir = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive");
+        var hasPreview = !string.IsNullOrWhiteSpace(item.PreviewUrl);
+
+        zipPath = Path.Combine(wtliveDir,
+            $"{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}-{Path.GetFileName(item.FileName)}");
+
+        if (hasPreview)
+            previewImagePath = Path.Combine(wtliveDir,
+                $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+
+        // 两路进度合成总进度（**预览图独占 20%**）：任一进展都刷新同一根进度条
+        var zipFraction = 0d;
+        var previewFraction = 0d;
+
+        var zipProgress = new Progress<ImportProgress>(p =>
+        {
+            zipFraction = p.Fraction ?? 0;
+            ReportProgress();
+        });
+
+        var previewProgress = new Progress<ImportProgress>(p =>
+        {
+            previewFraction = p.Fraction ?? 0;
+            ReportProgress();
+        });
+
+        void ReportProgress()
+        {
+            item.Progress = WTLiveService.CombinedProgress(zipFraction, previewFraction, hasPreview);
+            var percent = $"{item.Progress:P0}";
+
+            item.StateText = zipFraction >= 1 && hasPreview && previewFraction < 1
+                ? Loc.Format("wtlive.state.downloadingPreview", percent)
+                : Loc.Format("wtlive.state.downloading", percent);
+        }
+
+        // 自动重试不静默：第 N 次尝试写进状态文字（列表右侧也有常驻「重试」可随时掐断）
+        void ReportAttempt(int attempt)
+        {
+            if (attempt > 1)
+                item.StateText = Loc.Format("wtlive.state.retrying", attempt, WTLiveService.DownloadAttempts);
+        }
 
         try
         {
-            var resourceDir = _config.ResourceDirectory;
-            var wtliveDir = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive");
-            zipPath = Path.Combine(wtliveDir,
-                $"{post.LangGroup}-{Guid.NewGuid().ToString("N")[..8]}-{Path.GetFileName(post.File.Name)}");
-
-            // 下载（后台，按字节报比例；随程序退出统一取消）
+            item.State = WtLiveDownloadState.Downloading;
+            item.Progress = 0;
             item.StateText = Loc["wtlive.state.downloading0"];
-            var reporter = new Progress<ImportProgress>(p =>
-            {
-                item.Progress = p.Fraction ?? 0;
-                item.StateText = Loc.Format("wtlive.state.downloading", $"{item.Progress:P0}");
-            });
 
-            var zipTask = Task.Run(() => WTLiveService.DownloadFileAsync(
-                post.File.Link, zipPath, post.File.Size, reporter, _downloadsCts.Token));
+            zipTask = Task.Run(() => WTLiveService.DownloadFileAsync(
+                item.FileLink, zipPath, item.FileSize, zipProgress, ct, ReportAttempt), ct);
 
-            // 预览原图与 zip **并行**下载（国内网络差 → 越早开始越可能在导入完成前就绪；
-            // 即使失败也不影响导入结果，仅丢预览）
-            if (!string.IsNullOrWhiteSpace(item.PreviewUrl))
-            {
-                previewImagePath = Path.Combine(wtliveDir,
-                    $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+            previewTask = hasPreview
+                ? Task.Run(() => WTLiveService.DownloadFileAsync(
+                    item.PreviewUrl!, previewImagePath!, null, previewProgress, ct, ReportAttempt), ct)
+                : Task.CompletedTask;
 
-                previewTask = Task.Run(() => WTLiveService.DownloadFileAsync(
-                    item.PreviewUrl!, previewImagePath, null, null, _downloadsCts.Token));
-            }
-
-            await zipTask;
+            // **预览图与压缩包都下载完成**才进入安装（预览图是下载的一部分，失败即本项失败 → 可重试）
+            await Task.WhenAll(zipTask, previewTask);
 
             // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
             item.State = WtLiveDownloadState.Importing;
             item.StateText = Loc["wtlive.state.importing"];
 
-            extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir));
-            var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, post.File!.Name));
+            extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir), ct);
+            var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, item.FileName), ct);
 
             // 同一帖子内的载具互通 → 显示名应用于全部候选（预览窗可再改）
-            if (post.DisplayName.Length > 0)
+            if (item.DisplayName.Length > 0)
                 foreach (var candidate in candidates)
-                    candidate.SuggestedName = post.DisplayName;
+                    candidate.SuggestedName = item.DisplayName;
 
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath);
 
-            // 导入成功 → 预览图应用于**全部**导入的涂装包（互通 → 同一张图）
+            // 导入成功 → 预览图（已下载完）应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
             {
-                // 等预览图就绪（通常 zip 下载期间就已下完）：任何失败（含退出取消）
-                // 都不影响「导入已完成」的事实——只丢预览
-                var previewReady = false;
-                if (previewTask != null)
-                {
-                    try
-                    {
-                        await previewTask;
-                        previewReady = File.Exists(previewImagePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        ShowStatus(Loc["wtlive.previewFailed"]);
-                        System.Diagnostics.Debug.WriteLine($"WTLive preview failed: {ex.Message}");
-                    }
-                }
-
-                if (previewReady && previewImagePath != null)
+                if (previewImagePath != null && File.Exists(previewImagePath))
                 {
                     foreach (var package in result.Packages)
                         PreviewStore.SaveFromFile(_config.ConfigDirectory, package.Id, previewImagePath);
@@ -222,32 +278,49 @@ public partial class SkinsViewModel : ObservableObject
                 item.StateText = Loc["wtlive.state.nothing"];
             }
         }
+        catch (OperationCanceledException) when (_downloadsCts.IsCancellationRequested)
+        {
+            // 程序退出主动取消
+            item.State = WtLiveDownloadState.Failed;
+            item.StateText = Loc["wtlive.state.canceled"];
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 用户点了「重试」掐断本轮（重试逻辑随后会重跑，这里只做即时反馈）
+            item.State = WtLiveDownloadState.Failed;
+            item.StateText = Loc["wtlive.state.canceled"];
+        }
         catch (OperationCanceledException)
         {
-            // 区分「程序退出主动取消」与网络级超时（后者是 OCE 子类）
-            if (_downloadsCts.IsCancellationRequested)
-            {
-                item.State = WtLiveDownloadState.Failed;
-                item.StateText = Loc["wtlive.state.canceled"];
-            }
-            else
-            {
-                item.State = WtLiveDownloadState.Failed;
-                item.StateText = Loc.Format("wtlive.state.failed", "timeout");
-            }
+            // 读取停滞 / 服务器超时，且自动重试用尽
+            item.State = WtLiveDownloadState.Failed;
+            item.StateText = Loc.Format("wtlive.state.failed", Loc["wtlive.state.stalled"]);
         }
         catch (Exception ex)
         {
+            var reason = ex.GetBaseException().Message;
+
+            // 只有预览图失败（压缩包已下好）→ 给出更准确的原因与指引
+            var previewOnly = hasPreview && previewTaskFailed();
+
             item.State = WtLiveDownloadState.Failed;
-            item.StateText = Loc.Format("wtlive.state.failed", ex.Message);
-            ShowStatus(Loc.Format("wtlive.downloadFailed", ex.Message));
+            item.StateText = previewOnly
+                ? Loc.Format("wtlive.state.previewFailed", reason)
+                : Loc.Format("wtlive.state.failed", reason);
+
+            ShowStatus(previewOnly ? Loc["wtlive.previewFailed"] : Loc.Format("wtlive.downloadFailed", reason));
+
+            bool previewTaskFailed() => previewImagePath != null && !File.Exists(previewImagePath);
         }
         finally
         {
-            // 预览任务可能仍在下载 → 等它结束（成功或异常都吞掉）再清理，避免「删了又被写回」
-            if (previewTask != null)
+            // 两路下载都收尾（成功或异常都吞掉）再清理，避免「删了又被写回」
+            foreach (var task in new[] { zipTask, previewTask })
             {
-                try { await previewTask; } catch { /* 取消 / 网络失败均可 */ }
+                if (task == null) continue;
+
+                try { await task; }
+                catch { /* 取消 / 网络失败均可 */ }
             }
 
             // 只清理**本流程**的产物——其他下载 / 导入流程的暂存可能仍在使用，禁止整区清扫

@@ -53,8 +53,36 @@ public static class WTLiveService
     private static readonly HttpClient Http = CreateClient(TimeSpan.FromSeconds(60));
 
     /// <summary>下载专用客户端：**禁用总超时**——HttpClient.Timeout 覆盖整个响应周期，
-    /// 大文件在慢网下必然超 60s 被掐断；取消改由外部 CTS 驱动（§3.15）。</summary>
+    /// 大文件在慢网下必然超 60s 被掐断；取消改由外部 CTS 驱动（§3.15）。
+    /// 「卡死」由 <see cref="StallTimeout"/> 的**读取停滞保护**兜底（不是总超时）。</summary>
     private static readonly HttpClient DownloadHttp = CreateClient(Timeout.InfiniteTimeSpan);
+
+    /// <summary>自动重试次数（含首次尝试；**固定间隔、不退避**——5 次 ≈ 4 秒，不静默拖时间）。</summary>
+    public const int DownloadAttempts = 5;
+
+    /// <summary>重试间隔（固定 1 秒，不退避：用户随时可用列表右侧的「重试」按钮掐断重来）。</summary>
+    public static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// 单次尝试的**读取停滞超时**：连续这么久没有任何字节就掐断本次尝试、走下一轮重试。
+    /// 没有它时，服务端"连接还在但不吐数据"会让进度条永久停住——用户看到的就是**静默卡死**。
+    /// </summary>
+    public static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>压缩包在下载总进度里的权重。</summary>
+    public const double ArchiveWeight = 0.8;
+
+    /// <summary>预览图在下载总进度里的权重（**预览图是下载的一部分，独占 20%**，§3.15）。</summary>
+    public const double PreviewWeight = 0.2;
+
+    /// <summary>
+    /// 下载阶段总进度（0..1）= 压缩包 80% + 预览图 20%（无预览图时压缩包即全部）。
+    /// 两者**必须都下载完成**才进入安装流程，所以这个比例就是"下载完成度"。
+    /// </summary>
+    public static double CombinedProgress(double archiveFraction, double previewFraction, bool hasPreview)
+        => hasPreview
+            ? Math.Clamp(archiveFraction * ArchiveWeight + previewFraction * PreviewWeight, 0, 1)
+            : Math.Clamp(archiveFraction, 0, 1);
 
     /// <summary>帖子 URL（<c>/post/&lt;id&gt;/…</c>），返回帖子 id；非帖子链接返回 null。</summary>
     public static long? IsPostUrl(string? text)
@@ -114,12 +142,21 @@ public static class WTLiveService
     }
 
     /// <summary>
-    /// 下载附件到 <paramref name="destPath"/>（1 MB 缓冲；进度按字节报 0..1 比例；
-    /// 自动创建目标目录；失败自动重试至多 3 次——国内访问 WT Live / CDN 的 TLS 握手抖动常见）。
+    /// 下载到 <paramref name="destPath"/>（1 MB 缓冲；进度按字节报 0..1 比例；自动创建目标目录）。
+    /// <para>
+    /// **失败重试**：最多 <see cref="DownloadAttempts"/> 次尝试、固定 <see cref="RetryDelay"/> 间隔、
+    /// **不做指数退避**——重试次数与节奏都是可预期的，且每次都经 <paramref name="onAttempt"/> 报到界面
+    /// （第几次尝试可见，重试不静默）。
+    /// </para>
+    /// <para>
+    /// **不静默卡死**：单次尝试内有 <see cref="StallTimeout"/> 读取停滞保护（30 秒无字节即掐断重试）；
+    /// 用户也可随时用下载列表右侧常驻的「重试」按钮掐断整条下载重来。
+    /// </para>
     /// 服务端不报内容长度时按 <paramref name="expectedSize"/> 兜底。
     /// </summary>
+    /// <param name="onAttempt">每次尝试开始时回调（1 起；用于界面提示"第 N 次尝试/重试"）</param>
     public static async Task DownloadFileAsync(string url, string destPath, long? expectedSize,
-        IProgress<ImportProgress>? progress, CancellationToken ct)
+        IProgress<ImportProgress>? progress, CancellationToken ct, Action<int>? onAttempt = null)
     {
         var dir = Path.GetDirectoryName(destPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
@@ -128,18 +165,20 @@ public static class WTLiveService
         {
             try
             {
+                onAttempt?.Invoke(attempt);
                 await DownloadOnceAsync(url, destPath, expectedSize, progress, ct);
                 return;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                throw; // 用户 / 程序退出取消 → 不重试
+                throw; // 用户掐断 / 程序退出取消 → 不重试
             }
-            catch (Exception ex) when (attempt < 3)
+            catch (Exception ex) when (attempt < DownloadAttempts)
             {
-                // 网络失败 / 服务器超时（TaskCanceledException）等 → 退避重试：0.8s / 1.6s
-                await Task.Delay(800 * attempt, ct);
-                System.Diagnostics.Debug.WriteLine($"WTLive download retry #{attempt}: {ex.Message}");
+                // 网络失败 / 读取停滞（OCE 子类）等 → **固定 1 秒**后重试（不退避）
+                System.Diagnostics.Debug.WriteLine(
+                    $"WTLive download attempt {attempt}/{DownloadAttempts} failed: {ex.Message}");
+                await Task.Delay(RetryDelay, ct);
             }
         }
     }
@@ -147,26 +186,33 @@ public static class WTLiveService
     private static async Task DownloadOnceAsync(string url, string destPath, long? expectedSize,
         IProgress<ImportProgress>? progress, CancellationToken ct)
     {
+        // 每次尝试独立计时：收到字节就重置，连续 StallTimeout 无字节 → 掐断本次尝试（转下一轮重试）
+        using var idle = new CancellationTokenSource(StallTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, idle.Token);
+        var token = linked.Token;
+
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Referrer = new Uri("https://live.warthunder.com/");
         request.Version = HttpVersion.Version11; // 站点经 Cloudflare，H2 握手偶发失败 → 强制 1.1
 
-        using var response = await DownloadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await DownloadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         response.EnsureSuccessStatusCode();
 
         var total = response.Content.Headers.ContentLength ?? expectedSize ?? -1;
 
-        await using var source = await response.Content.ReadAsStreamAsync(ct);
+        await using var source = await response.Content.ReadAsStreamAsync(token);
         await using var target = File.Create(destPath);
 
         var buffer = new byte[1024 * 1024];
         long done = 0;
         int read;
 
-        while ((read = await source.ReadAsync(buffer, ct)) > 0)
+        while ((read = await source.ReadAsync(buffer, token)) > 0)
         {
-            await target.WriteAsync(buffer.AsMemory(0, read), ct);
+            await target.WriteAsync(buffer.AsMemory(0, read), token);
             done += read;
+
+            idle.CancelAfter(StallTimeout); // 有进展 → 重置停滞计时
 
             if (total > 0)
                 progress?.Report(new ImportProgress
