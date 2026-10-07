@@ -60,7 +60,14 @@
     <SolidColorBrush x:Key="BrushActiveStrip" Color="{StaticResource ColorActiveStrip}"/>
 
     <!-- ============ 字体图标族 ============ -->
-    <FontFamily x:Key="IconFont">Segoe MDL2 Assets</FontFamily>
+    <!-- 全程序图标字体：**Font Awesome 7 Free Solid**（嵌入资源，见 Assets/Fonts/）。
+         不再使用 Segoe MDL2 Assets 等系统图标字体（观感 / 字重与自绘界面不一致），
+         也不混用手绘几何或位图图标；字号统一走尺寸档（docs/界面设计规范.md §2.5）。
+         FA 的墨迹覆盖比 MDL2 大，同一位置的字号已整体下调一档。 -->
+    <!-- 图标字体族由 App.OnStartup 注入到 Application.Resources 的 "IconFont" 键
+         （嵌入字体要提取后用 file URI 形式引用，XAML 里写不出来；见 Services/IconFontLoader）。
+         这里**不要**再定义 IconFont：本字典自己的键会盖住 App 资源里的那个。 -->
+
 
     <!-- ============ 排版 ============ -->
     <!-- 注意：这里不设置 Foreground！隐式样式优先级高于继承，会覆盖 Button 等父级的前景色，
@@ -499,18 +506,9 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
-    <!-- ============ 标题栏按钮：**自绘矢量图标**（不使用系统图标字体的 E921/E922/E923/E8BB） ============
-         图标几何画在 10×10 的框里、以 Tag 传入；描边跟随 Foreground（悬停提亮）；
-         悬停 = 主题表面色**圆角底**（120ms 淡入，不是系统那种整块矩形），按下 = 图标变淡；
-         关闭键悬停 = 危险色软底 + 危险色图标。 -->
-    <PathGeometry x:Key="TitleBarIconMinimize" Figures="M0.6,5 H9.4"/>
-    <PathGeometry x:Key="TitleBarIconMaximize" Figures="M0.6,0.6 H9.4 V9.4 H0.6 Z"/>
-    <PathGeometry x:Key="TitleBarIconRestore" Figures="M0.6,3.4 H6.6 V9.4 H0.6 Z M3.4,0.6 H9.4 V6"/>
-    <PathGeometry x:Key="TitleBarIconClose" Figures="M1,1 L9,9 M9,1 L1,9"/>
-    <!-- 置顶（图钉）：帽 + 钉身 + 针。净尺寸与其他图标相当（宽 ≈8、高 ≈8.4），
-         否则在同一 10×10 框里会明显比方框 / 叉号小一圈 -->
-    <PathGeometry x:Key="TitleBarIconPin" Figures="M303.3,166.6C304.2,173.3 304.6,180.2 304.4,187.1L303.3,223.3L331.6,245.8L546,415.8L576.3,439.8L613.1,427.8A290.6,290.6 0 0,1 797.9,429.4C815.8,435.6 833,443.6 849.3,453.1L680,623.1L637.1,666.2L624.4,679L454.9,849.2A289.2,289.2 0 0,1 428.9,612L440.9,575.2L416.9,544.9L246.9,330.5L224.4,302.2L188.2,303.3L184.5,303.4C178.8,303.4 173.1,303 167.5,302.2L303.3,166.6ZM317.9,64.1C309.4,64.1 300.8,67.3 294.2,73.9L74.8,292.8A33.4,33.4 0 0,0 80,344.4A191.7,191.7 0 0,0 184.5,375.3C186.5,375.3 188.5,375.3 190.5,375.2L360.5,589.6A360.8,360.8 0 0,0 423.2,929.2A34.5,34.5 0 0,0 474.2,931.8L680.2,725L903.4,948.2A32.6,32.6 0 1,0 949.4,902.1L726.1,678.9L932.1,472.1A34.4,34.4 0 0,0 929.3,421.1A359.6,359.6 0 0,0 703.2,341.4C665.2,341.4 627.3,347.4 590.8,359.3L376.4,189.3A191.1,191.1 0 0,0 345.8,79.2A33.2,33.2 0 0,0 317.9,64Z"/>
-
+    <!-- ============ 标题栏按钮（字形取自统一图标字体 Font Awesome 7 Free Solid） ============
+         调用方以 Content 给字形（如最小化 `&#xF2D1;`）；悬停 = 主题表面色**圆角底**（120ms 淡入），
+         按下 = 图标变淡；关闭键悬停 = 危险色软底 + 危险色图标。 -->
     <Style x:Key="TitleBarButton" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
@@ -519,6 +517,8 @@
         <Setter Property="Height" Value="28"/>
         <Setter Property="Margin" Value="2,0"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
+        <Setter Property="FontSize" Value="12"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -528,12 +528,8 @@
                     <Grid>
                         <Border x:Name="bd" CornerRadius="6"
                                 Background="{StaticResource BrushSurface2}" Opacity="0"/>
-                        <Path x:Name="icon" Data="{TemplateBinding Tag}"
-                              Stroke="{TemplateBinding Foreground}"
-                              StrokeThickness="1.1" StrokeLineJoin="Round"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                              Width="10" Height="10" Stretch="None"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <ContentPresenter x:Name="icon"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -570,8 +566,8 @@
     </Style>
 
     <Style x:Key="TitleBarCloseButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
-        <!-- 关闭键的几何直接写在样式里：调用方不必再传 Tag / 字形 -->
-        <Setter Property="Tag" Value="{StaticResource TitleBarIconClose}"/>
+        <!-- 关闭字形（xmark）写进样式：调用方无需再给 Content -->
+        <Setter Property="Content" Value="&#xF00D;"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -579,12 +575,8 @@
                     <Grid>
                         <Border x:Name="bd" CornerRadius="6"
                                 Background="{StaticResource BrushDangerSoftBg}" Opacity="0"/>
-                        <Path x:Name="icon" Data="{TemplateBinding Tag}"
-                              Stroke="{TemplateBinding Foreground}"
-                              StrokeThickness="1.1" StrokeLineJoin="Round"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                              Width="10" Height="10" Stretch="None"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <ContentPresenter x:Name="icon"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -610,57 +602,6 @@
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
-
-    <!-- ============ 置顶按钮（**填充型**矢量图钉） ============
-         与三个线性窗口按钮的区别：这个图标是**填充**的（成熟设计源的 1024 框图钉，已转成绝对路径几何），
-         因此用 Fill 而非 Stroke，并给 18px 的框让它有足够体积（针线较细，框小了会糊成灰线）。
-         置顶态由调用方把 Foreground 切到主色。 -->
-    <Style x:Key="TitleBarPinButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="Button">
-                    <Grid>
-                        <!-- 图标与悬停底是兄弟节点，图标常显 -->
-                        <Border x:Name="bd" CornerRadius="6"
-                                Background="{StaticResource BrushSurface2}" Opacity="0"/>
-                        <Path x:Name="icon" Data="{StaticResource TitleBarIconPin}"
-                              Fill="{TemplateBinding Foreground}"
-                              Width="18" Height="18" Stretch="Uniform"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Grid>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="bd"
-                                                         Storyboard.TargetProperty="Opacity"
-                                                         To="1" Duration="0:0:0.12"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="bd"
-                                                         Storyboard.TargetProperty="Opacity"
-                                                         To="0" Duration="0:0:0.15"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
-                        </Trigger>
-                        <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
-                        </Trigger>
-                        <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

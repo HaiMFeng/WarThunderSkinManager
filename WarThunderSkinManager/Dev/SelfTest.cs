@@ -395,6 +395,37 @@ internal static class SelfTest
             log.AppendLine($"标签备用关键字: sidewinder(无 aim) = {PartTagResolver.Resolve("f_15e_sidewinder_c", "f_15e").Count}（应 2），"
                          + $"ats(复数 at，无 net) = {PartTagResolver.Resolve("f_15e_ats_c", "f_15e").Count}（应 2）");
 
+            // ---- 图标字体（Font Awesome 7 Free Solid，嵌入资源）----
+            // 全程序图标字形都来自这个字体：pack URI / 族名 / 码位任一不对，界面就会渲染成空白或豆腐块
+            // （而且不会报错），因此这里做一次"字体可解析 + 用到的字形都在"的断言。
+            // 先注册嵌入字体（GDI 私有注册），再逐个试 WPF 侧可用的引用形式：
+            //  ① 纯族名（依赖 GDI 注册被 WPF 看到）
+            //  ② `./目录/#族名`（WPF 官方的**资源字体目录形式**，直接读程序集资源，不经 GDI）
+            IconFontLoader.EnsureLoaded();
+
+            var iconFace = new System.Windows.Media.Typeface(
+                IconFontLoader.IconFamily,
+                System.Windows.FontStyles.Normal, System.Windows.FontWeights.Normal,
+                System.Windows.FontStretches.Normal);
+
+            var iconFontOk = iconFace.TryGetGlyphTypeface(out var iconGlyphs);
+            var iconCodes = new (string Use, int Code)[]
+            {
+                ("窗口最小化", 0xF2D1), ("窗口最大化", 0xF2D0), ("窗口还原", 0xF2D2),
+                ("窗口关闭", 0xF00D), ("置顶", 0xF08D),
+                ("涂装管理", 0xF1FC), ("载具管理", 0xF072), ("多源复用", 0xF24D), ("设置", 0xF013),
+                ("拖入导入", 0xF56F), ("WT Live 列表", 0xF0ED), ("缩略图占位", 0xF03E), ("部件", 0xF12E),
+                ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023)
+            };
+            var missingIcons = iconFontOk && iconGlyphs != null
+                ? iconCodes.Where(c => !iconGlyphs.CharacterToGlyphMap.ContainsKey(c.Code))
+                           .Select(c => c.Use).ToList()
+                : iconCodes.Select(c => c.Use).ToList();
+
+            log.AppendLine($"图标字体   : {IconFontLoader.IconFullName} 可解析 = {iconFontOk}（应 True），"
+                         + $"字形缺失 = {missingIcons.Count} / {iconCodes.Length}（应 0）"
+                         + (missingIcons.Count > 0 ? $"（{string.Join('、', missingIcons)}）" : ""));
+
             // ---- 库级部件表 / 跨载具复用（§3.5 / §3.6）----
             log.AppendLine();
             log.AppendLine("---- 部件表（跨载具复用）----");

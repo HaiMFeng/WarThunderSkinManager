@@ -59,11 +59,10 @@
                 <TextBlock x:Name="StatusText" Grid.Column="1"
                            Style="{StaticResource TitleBarStatusText}" Text="{Binding StatusMessage}"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,6,0">
-                    <!-- 置顶：点一下置顶、再点一下取消（填充型图钉，见 TitleBarPinButton；
-                         置顶时图标变主色以示状态；与其余窗口按钮同款间距，不额外留间隔） -->
-                    <Button Click="Pin_Click" ToolTip="{loc:Loc app.window.pin}">
+                    <!-- 置顶：点一下置顶、再点一下取消（图钉 &#xF08D;；置顶时图标变主色以示状态） -->
+                    <Button Content="&#xF08D;" Click="Pin_Click" ToolTip="{loc:Loc app.window.pin}">
                         <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource TitleBarPinButton}">
+                            <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Topmost, RelativeSource={RelativeSource AncestorType=Window}}"
                                                  Value="True">
@@ -74,19 +73,17 @@
                         </Button.Style>
                     </Button>
 
-                    <!-- 三个窗口按钮均为**自绘矢量图标**（几何见 Themes/ThemeResources.xaml 的
-                         TitleBarIcon*；不用系统图标字体的 E921/E922/E923/E8BB，避免"系统原生"观感） -->
-                    <Button Style="{StaticResource TitleBarButton}"
-                            Tag="{StaticResource TitleBarIconMinimize}" Click="Minimize_Click"/>
-                    <!-- 最大化 ⇄ 还原：几何随窗口状态切换 -->
-                    <Button Click="Maximize_Click">
+                    <!-- 三个窗口按钮：字形统一取自图标字体 Font Awesome 7 Free Solid
+                         （关闭键的字形写在 TitleBarCloseButton 样式里，调用方无需给 Content） -->
+                    <Button Style="{StaticResource TitleBarButton}" Content="&#xF2D1;" Click="Minimize_Click"/>
+                    <!-- 最大化 ⇄ 还原：字形随窗口状态切换 -->
+                    <Button Content="&#xF2D0;" Click="Maximize_Click">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
-                                <Setter Property="Tag" Value="{StaticResource TitleBarIconMaximize}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
                                                  Value="Maximized">
-                                        <Setter Property="Tag" Value="{StaticResource TitleBarIconRestore}"/>
+                                        <Setter Property="Content" Value="&#xF2D2;"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -124,7 +121,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                <TextBlock Text="&#xF1FC;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.skins}" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -143,7 +140,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8F1;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.vehicles}" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -167,7 +164,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                <TextBlock Text="&#xF24D;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.partReuse}" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -186,7 +183,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE713;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                <TextBlock Text="&#xF013;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.settings}" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -334,7 +331,7 @@
                     BorderBrush="{StaticResource BrushPrimary}" BorderThickness="2" CornerRadius="12"
                     Visibility="Collapsed" IsHitTestVisible="False">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <TextBlock Text="&#xE896;" FontFamily="{StaticResource IconFont}" FontSize="34"
+                    <TextBlock Text="&#xF56F;" FontFamily="{StaticResource IconFont}" FontSize="30"
                                Foreground="{StaticResource BrushPrimary}" HorizontalAlignment="Center"/>
                     <TextBlock Text="{loc:Loc import.drop.hint}" Margin="0,10,0,0" FontSize="14" FontWeight="SemiBold"
                                Foreground="{StaticResource BrushPrimary}" HorizontalAlignment="Center"/>

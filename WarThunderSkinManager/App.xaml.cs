@@ -20,8 +20,13 @@ public partial class App : Application
         // 全局异常兜底：任何未捕获异常记日志 + 友好提示，不直接崩溃进程（发布版必须，§4）
         RegisterGlobalExceptionHandlers();
 
-        // 游戏符号字体就位（须在首个窗口前；未安装的机器上私有注册嵌入副本，§3.7）
+        // 嵌入字体就位（须在首个窗口前）：游戏符号字体（§3.7）+ 界面图标字体（Font Awesome 7 Free Solid）
         IconFontLoader.EnsureLoaded();
+
+        // 图标字体族注入 App 资源：XAML 侧照旧用 {StaticResource IconFont}。
+        // 必须在这里（主题字典稍后才合并）——嵌入字体的 pack / 相对资源形式实测命中不到，
+        // 只能用运行时构造的 file URI 形式（见 IconFontLoader 的说明）
+        Resources["IconFont"] = IconFontLoader.IconFamily;
 
         // 开发自检：--selftest <源文件夹> <工作目录>（跑完即退出，不建窗口；门禁保证 GUI 模式绝不触发）
         if (e.Args.Length >= 3 && e.Args[0] == "--selftest")

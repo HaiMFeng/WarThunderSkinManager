@@ -38,7 +38,7 @@
                     <Border Background="{StaticResource BrushDangerSoftBg}" BorderBrush="{StaticResource BrushDangerSoftBorder}" BorderThickness="1" CornerRadius="8"
                             Padding="14,12">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                            <TextBlock Text="&#xF071;" FontFamily="{StaticResource IconFont}" FontSize="15"
                                        Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
                                        Margin="0,1,10,0"/>
                             <TextBlock Text="{loc:Loc settings.reset.warn}" TextWrapping="Wrap" FontSize="13"

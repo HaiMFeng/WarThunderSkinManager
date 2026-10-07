@@ -75,7 +75,7 @@
                 <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停展开浮窗，移出关闭 -->
                 <Button x:Name="WtLiveListButton" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"
                         Padding="10,6" MouseEnter="WtLiveListButton_MouseEnter" MouseLeave="WtLiveListButton_MouseLeave">
-                    <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="16"/>
+                    <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
                 </Button>
 
                 <Popup x:Name="WtLiveListPopup" PlacementTarget="{Binding ElementName=WtLiveListButton}"
@@ -228,7 +228,7 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
-                        <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}" FontSize="30"
+                        <TextBlock Text="&#xF1FC;" FontFamily="{StaticResource IconFont}" FontSize="26"
                                    Foreground="{StaticResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                         <TextBlock Text="{loc:Loc skins.noSelection}" Style="{StaticResource PageSubtitle}"
                                    TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"/>
@@ -336,8 +336,8 @@
                                                 ClipToBounds="True" SnapsToDevicePixels="True"
                                                 SizeChanged="ThumbBorder_SizeChanged">
                                             <Grid>
-                                                <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}"
-                                                           FontSize="26" Foreground="{StaticResource BrushTextMuted}"
+                                                <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
+                                                           FontSize="22" Foreground="{StaticResource BrushTextMuted}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 <!-- UniformToFill 填满裁剪；对齐居中 → 裁掉的两侧均匀分布 -->
                                                 <Image Stretch="UniformToFill" HorizontalAlignment="Center"

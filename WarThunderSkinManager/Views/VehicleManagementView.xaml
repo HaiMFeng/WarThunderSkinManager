@@ -105,7 +105,7 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
-                        <TextBlock Text="&#xE8F1;" FontFamily="{StaticResource IconFont}" FontSize="30"
+                        <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="26"
                                    Foreground="{StaticResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                         <TextBlock Text="{loc:Loc vehicles.noSelect}" Style="{StaticResource PageSubtitle}"
                                    TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"/>

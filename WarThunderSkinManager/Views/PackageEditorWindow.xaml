@@ -159,7 +159,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                            <TextBlock Text="&#xF071;" FontFamily="{StaticResource IconFont}" FontSize="15"
                                        Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
                                        Margin="0,1,10,0"/>
                             <TextBlock Grid.Column="1" Text="{loc:Loc pkg.editor.partsHintResource}"

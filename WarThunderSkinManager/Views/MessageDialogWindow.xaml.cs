@@ -41,10 +41,10 @@ public partial class MessageDialogWindow : Window
 
         var (glyph, brushKey) = icon switch
         {
-            DialogIcon.Info => ("\uE946", "BrushPrimary"),
-            DialogIcon.Warning => ("\uE7BA", "BrushWarning"),
-            DialogIcon.Danger => ("\uE783", "BrushDanger"),
-            _ => ("\uE897", "BrushPrimary")
+            DialogIcon.Info => ("\uF05A", "BrushPrimary"),
+            DialogIcon.Warning => ("\uF071", "BrushWarning"),
+            DialogIcon.Danger => ("\uF06A", "BrushDanger"),
+            _ => ("\uF059", "BrushPrimary")
         };
 
         IconText.Text = glyph;

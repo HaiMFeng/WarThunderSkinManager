@@ -31,6 +31,9 @@
       <EmbeddedResource Include="Assets\lang\en-US.json" />
       <!-- 品牌资源：窗口图标（多尺寸 ico）与应用内灰轮廓镂空 Logo（经 OpacityMask 按主题染色） -->
       <Resource Include="Assets\app.ico" />
+    <!-- 图标字体：Font Awesome 7 Free Solid（SIL OFL 1.1；图标 CC BY 4.0，见同目录 LICENSE-FontAwesome.txt）。
+         全程序图标统一取自这一套（Themes/ThemeResources.xaml 的 IconFont） -->
+    <Resource Include="Assets\Fonts\fa-solid-900.otf" />
       <Resource Include="Assets\logo-outline.png" />
       <!-- 游戏符号字体（族名 symbols_skyquake，仅 15 个符号字形）：国旗 / 弹药等占位符的渲染源
            （源文件在仓库根目录，Link 引用；窗口字体链的**首位**——特殊字形被它截住渲染成图标，
