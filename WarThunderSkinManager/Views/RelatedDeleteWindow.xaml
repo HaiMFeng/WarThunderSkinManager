@@ -43,11 +43,19 @@
 
             <!-- 连带清单：**可勾选**（默认全选），每行「载具显示名.涂装包名」（如 VT-5.Skin1） -->
             <StackPanel Grid.Row="2" Margin="20,14,20,0">
+                <!-- 提示与计数**分两列**：同一格里叠放会让换行后的尾部被计数文字盖住（看不见） -->
                 <Grid>
-                    <TextBlock Text="{loc:Loc pkg.related.listHint}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding SelectionText}" Style="{StaticResource PageSubtitle}"
-                               HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="{loc:Loc pkg.related.listHint}"
+                               Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding SelectionText}"
+                               Style="{StaticResource PageSubtitle}"
+                               VerticalAlignment="Center" FontWeight="SemiBold"/>
                 </Grid>
 
                 <Border Margin="0,8,0,0" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"

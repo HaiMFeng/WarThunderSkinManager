@@ -380,8 +380,10 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
+                                            <!-- 卡片宽度有限 → 长名字按字符省略；悬停给出完整名字 -->
                                             <TextBlock Text="{Binding Name}" Foreground="{StaticResource BrushOnAccent}" FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Name}"/>
                                         </Border>
                                         <!-- 已激活标记（绿） -->
                                         <Border VerticalAlignment="Top" HorizontalAlignment="Left"
