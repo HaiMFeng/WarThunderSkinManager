@@ -509,8 +509,7 @@
     <PathGeometry x:Key="TitleBarIconClose" Figures="M1,1 L9,9 M9,1 L1,9"/>
     <!-- 置顶（图钉）：帽 + 钉身 + 针。净尺寸与其他图标相当（宽 ≈8、高 ≈8.4），
          否则在同一 10×10 框里会明显比方框 / 叉号小一圈 -->
-    <PathGeometry x:Key="TitleBarIconPin"
-                  Figures="M1,1.2 H9 M3.4,1.2 V4.2 L1.6,6.4 H8.4 L6.6,4.2 V1.2 M5,6.4 V9.4"/>
+    <PathGeometry x:Key="TitleBarIconPin" Figures="M303.3,166.6C304.2,173.3 304.6,180.2 304.4,187.1L303.3,223.3L331.6,245.8L546,415.8L576.3,439.8L613.1,427.8A290.6,290.6 0 0,1 797.9,429.4C815.8,435.6 833,443.6 849.3,453.1L680,623.1L637.1,666.2L624.4,679L454.9,849.2A289.2,289.2 0 0,1 428.9,612L440.9,575.2L416.9,544.9L246.9,330.5L224.4,302.2L188.2,303.3L184.5,303.4C178.8,303.4 173.1,303 167.5,302.2L303.3,166.6ZM317.9,64.1C309.4,64.1 300.8,67.3 294.2,73.9L74.8,292.8A33.4,33.4 0 0,0 80,344.4A191.7,191.7 0 0,0 184.5,375.3C186.5,375.3 188.5,375.3 190.5,375.2L360.5,589.6A360.8,360.8 0 0,0 423.2,929.2A34.5,34.5 0 0,0 474.2,931.8L680.2,725L903.4,948.2A32.6,32.6 0 1,0 949.4,902.1L726.1,678.9L932.1,472.1A34.4,34.4 0 0,0 929.3,421.1A359.6,359.6 0 0,0 703.2,341.4C665.2,341.4 627.3,347.4 590.8,359.3L376.4,189.3A191.1,191.1 0 0,0 345.8,79.2A33.2,33.2 0 0,0 317.9,64Z"/>
 
     <Style x:Key="TitleBarButton" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
@@ -611,6 +610,57 @@
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============ 置顶按钮（**填充型**矢量图钉） ============
+         与三个线性窗口按钮的区别：这个图标是**填充**的（成熟设计源的 1024 框图钉，已转成绝对路径几何），
+         因此用 Fill 而非 Stroke，并给 18px 的框让它有足够体积（针线较细，框小了会糊成灰线）。
+         置顶态由调用方把 Foreground 切到主色。 -->
+    <Style x:Key="TitleBarPinButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <!-- 图标与悬停底是兄弟节点，图标常显 -->
+                        <Border x:Name="bd" CornerRadius="6"
+                                Background="{StaticResource BrushSurface2}" Opacity="0"/>
+                        <Path x:Name="icon" Data="{StaticResource TitleBarIconPin}"
+                              Fill="{TemplateBinding Foreground}"
+                              Width="18" Height="18" Stretch="Uniform"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.15"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
