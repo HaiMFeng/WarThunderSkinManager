@@ -127,6 +127,8 @@ public static class ImportService
                 candidate.VehicleId = blk.VehicleId;
                 candidate.MappingCount = blk.Mappings.Count;
                 candidate.MissingTextureCount = blk.Mappings.Count(m => m.TextureMissing);
+                foreach (var issue in blk.Issues) // 文件级（缺字段的块 / 未闭合块）
+                    candidate.Warnings.Add(issue);
                 foreach (var mapping in blk.Mappings)
                     foreach (var issue in mapping.Issues)
                         candidate.Warnings.Add($"{mapping.ToFile}：{issue}");

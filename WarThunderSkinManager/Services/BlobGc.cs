@@ -39,6 +39,8 @@ public sealed class BlobGcReport
 /// </remarks>
 public static class BlobGc
 {
+    private static LocalizationManager Loc => LocalizationManager.Instance;
+
     /// <summary>
     /// 执行一次回收（枚举文件名 + 删除，不读贴图内容，很快；大量文件时应在后台线程调用）。
     /// </summary>
@@ -48,6 +50,15 @@ public static class BlobGc
 
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
             return report;
+
+        // 0) **保守闸门**：存在读不出来的 meta 时，引用集合必然不完整（该包的贴图不在其中），
+        //    此时回收会误删仍在使用的 blob → 直接放弃本次回收（只记提示）
+        var unreadable = PackageStore.CountUnreadableMetas(resourceDir);
+        if (unreadable > 0)
+        {
+            report.Errors.Add(Loc.Format("blobgc.unreadableMeta", unreadable));
+            return report;
+        }
 
         // 1) 收集所有包引用的 blob（哈希，不含扩展名；跨包共享同一份只算一个）
         var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

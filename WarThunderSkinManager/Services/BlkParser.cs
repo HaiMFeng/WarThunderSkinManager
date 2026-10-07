@@ -19,7 +19,24 @@ namespace WarThunderSkinManager.Services;
 public static class BlkParser
 {
     private static LocalizationManager Loc => LocalizationManager.Instance;
-    private static readonly Regex Quoted = new("t=\"([^\"]*)\"", RegexOptions.Compiled);
+
+    /// <summary>
+    /// 命令块：<c>(replace_tex|set_tex) { ... }</c>，块体可跨行（**块级解析**：
+    /// 行式状态机对单行块、`}` 与字段同行、块内多个 from、`from :t=` 之类空格变体会静默丢条目）。
+    /// </summary>
+    private static readonly Regex BlockRegex = new(
+        @"(?<cmd>replace_tex|set_tex)\s*\{(?<body>[^}]*)\}",
+        RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+    /// <summary>命令起始（用于与解析到的块数比对，发现未闭合块）。</summary>
+    private static readonly Regex CommandOpenRegex = new(
+        @"(replace_tex|set_tex)\s*\{",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>块内字段：容忍 <c>from:t="x"</c> / <c>from :t = "x"</c> 等空格变体，键名不分大小写。</summary>
+    private static readonly Regex FieldRegex = new(
+        @"(?<key>from|to|param)\s*:\s*t\s*=\s*""(?<value>[^""]*)""",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static BlkFile Parse(string filePath, string text)
     {
@@ -27,36 +44,47 @@ public static class BlkParser
         var vehicleId = Path.GetFileNameWithoutExtension(filePath);
         var blk = new BlkFile { FilePath = filePath, Directory = directory, VehicleId = vehicleId };
 
-        var mode = MappingMode.Replace;
-        string? pendingFrom = null;
-        string? pendingTo = null;
-        string? pendingParam = null;
+        var blocks = 0;
 
-        foreach (var rawLine in text.Split('\n'))
+        foreach (Match block in BlockRegex.Matches(text))
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0) continue;
+            blocks++;
 
-            if (line.StartsWith("replace_tex"))
-                mode = MappingMode.Replace;
-            else if (line.StartsWith("set_tex"))
-                mode = MappingMode.Set;
-            else if (line.StartsWith("from:"))
-                pendingFrom = Extract(line);
-            else if (line.StartsWith("to:"))
-                pendingTo = Extract(line);
-            else if (line.StartsWith("param:"))
-                pendingParam = Extract(line);
-            else if (line.StartsWith("}"))
+            var isSet = block.Groups["cmd"].Value.Equals("set_tex", StringComparison.OrdinalIgnoreCase);
+            var mode = isSet ? MappingMode.Set : MappingMode.Replace;
+
+            var froms = new List<string>();
+            string? to = null;
+            string? param = null;
+
+            foreach (Match field in FieldRegex.Matches(block.Groups["body"].Value))
             {
-                if (pendingFrom != null && pendingTo != null)
-                    blk.Mappings.Add(Build(mode, pendingFrom, pendingTo, pendingParam, blk));
-                pendingFrom = null;
-                pendingTo = null;
-                pendingParam = null;
+                var key = field.Groups["key"].Value;
+                var value = field.Groups["value"].Value;
+
+                if (key.Equals("from", StringComparison.OrdinalIgnoreCase)) froms.Add(value);
+                else if (key.Equals("to", StringComparison.OrdinalIgnoreCase)) to = value; // 多个 to：最后一个生效（与游戏一致）
+                else param = value;
             }
-            // name: / { 等其余行忽略
+
+            if (to == null || froms.Count == 0)
+            {
+                // 缺 from / to 的块：不产出映射，但**明确报出**（原先静默丢弃）
+                var sample = to ?? (froms.Count > 0 ? froms[0] : block.Value);
+                blk.Issues.Add(Loc.Format("parser.warn.incompleteBlock",
+                    sample.Trim().Length > 60 ? sample.Trim()[..60] + "…" : sample.Trim()));
+                continue;
+            }
+
+            // 块内多个 from → 每个 from 一条映射（共用同一 to / param）
+            foreach (var from in froms)
+                blk.Mappings.Add(Build(mode, from, to, param, blk));
         }
+
+        // 命令出现次数多于解析到的块数 → 存在未闭合 / 结构异常的块
+        var opens = CommandOpenRegex.Matches(text).Count;
+        if (opens > blocks)
+            blk.Issues.Add(Loc.Format("parser.warn.unclosedBlock", opens - blocks));
 
         return blk;
     }
@@ -88,12 +116,6 @@ public static class BlkParser
         return match;
     }
 
-    private static string? Extract(string line)
-    {
-        var m = Quoted.Match(line);
-        return m.Success ? m.Groups[1].Value : null;
-    }
-
     private static TexMapping Build(MappingMode mode, string from, string to, string? param, BlkFile blk)
     {
         var issues = new List<string>();
@@ -105,6 +127,8 @@ public static class BlkParser
             issues.Add(Loc["parser.warn.noExtension"]);
         if (mode == MappingMode.Set && param == null)
             issues.Add(Loc["parser.warn.setTexParam"]);
+        // replace_tex 上的 param（alpha / noremap / seamless…）：按文档属非标准写法 → 仍告警，
+        // 但**原样保留**（语义与命令绑定，丢弃会反转透明度解释；输出侧照写回）
         if (mode == MappingMode.Replace && param != null)
             issues.Add(Loc["parser.warn.replaceTexParam"]);
 

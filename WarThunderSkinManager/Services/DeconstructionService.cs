@@ -45,7 +45,10 @@ public static class DeconstructionService
             IsResource = true // 导入包 = 只读资源（§3.5）：编辑请复制，防止污染候选来源
         };
 
-        var seenTo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // to → 已入库内容（同一张贴图被多个 from 复用是常态：内容只入库一次，
+        // 但**每条 mapping 都必须拿到纹理引用**——否则后续条目在输出时被判「无贴图」而整条丢失，
+        // 表现为「部分贴图缺失」）
+        var storedTo = new Dictionary<string, (string Hash, string Ext)>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var mapping in blk.Mappings)
         {
@@ -55,17 +58,27 @@ public static class DeconstructionService
                 warnings.Add($"{blk.VehicleId}/{mapping.ToFile}：{issue}");
 
             if (string.IsNullOrWhiteSpace(mapping.ToFile)) continue;
-            if (!seenTo.Add(mapping.ToFile)) continue;
 
-            var resolved = BlkParser.ResolveTexture(blk.Directory, mapping.ToFile, out var caseWarning);
-            if (caseWarning != null) warnings.Add($"{blk.VehicleId}/{mapping.ToFile}：{caseWarning}");
-            if (resolved == null) continue; // 贴图缺失（parser 已记录 issue）
+            if (!storedTo.TryGetValue(mapping.ToFile, out var stored))
+            {
+                var resolved = BlkParser.ResolveTexture(blk.Directory, mapping.ToFile, out var caseWarning);
+                if (caseWarning != null) warnings.Add($"{blk.VehicleId}/{mapping.ToFile}：{caseWarning}");
+                if (resolved == null) continue; // 贴图缺失（parser 已记录 issue）
 
-            var hash = BlobStore.Store(resourceDir, resolved, out var ext);
-            mapping.TextureRef = hash + ext;
-            package.Textures.Add(new TextureRef { To = mapping.ToFile, Blob = hash });
-            meta.Textures.Add(new TextureEntry { To = mapping.ToFile, Blob = hash });
+                var hash = BlobStore.Store(resourceDir, resolved, out var ext);
+                stored = (hash, ext);
+                storedTo[mapping.ToFile] = stored;
+
+                package.Textures.Add(new TextureRef { To = mapping.ToFile, Blob = hash });
+                meta.Textures.Add(new TextureEntry { To = mapping.ToFile, Blob = hash });
+            }
+
+            mapping.TextureRef = stored.Hash + stored.Ext; // 复用同一 to 的每条映射都要回填
         }
+
+        // 文件级解析告警（缺字段的块 / 未闭合块）——原先静默丢弃，用户无从察觉
+        foreach (var blkIssue in blk.Issues)
+            warnings.Add($"{blk.VehicleId}：{blkIssue}");
 
         PackageStore.Save(resourceDir, meta, blkPath);
         return new DeconstructResult { Package = package, Warnings = warnings };

@@ -183,7 +183,7 @@ set_tex {
 | 飞机误用 `set_tex` 或 `camo_skin_tex` | 无效 |
 | 法线用 `set_tex` | 无效或报错 |
 | `set_tex` 漏写 `param:t="camo_skin_tex"` | 书写错误（崩溃/不读） |
-| `replace_tex` 多写 `param` | 书写错误 |
+| `replace_tex` 多写 `param` | 书写错误（**管理器仍原样保留并给出告警**，绝不静默丢弃——`param` 的透明度语义与命令绑定） |
 | 8.8.8.8 / 过高分辨率 | 加载压力过大导致崩溃 |
 | blk 中含注释（`//`、`/* */`、`#` 等） | 解析错误 / 不被读取 |
 

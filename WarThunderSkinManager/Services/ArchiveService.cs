@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using SharpCompress.Archives;
 using SharpCompress.Common;
@@ -96,6 +97,21 @@ public static class ArchiveService
         IProgress<ArchiveExtractProgress>? progress, CancellationToken cancellationToken)
     {
         var options = new ReaderOptions();
+
+        // 压缩包内文件名的默认编码（不带 UTF-8 标志的条目按此解码）：
+        // 中文工具打包的 zip 常见「GBK 字节 + 未置 UTF-8 标志」，库默认按 UTF-8 解 →
+        // 文件名乱码 → blk 的 to 找不到贴图（表现为「手动解压正常、程序导入后部分贴图缺失」）。
+        // ASCII 名两种编码等价；带 UTF-8 标志的条目不受影响。
+        try
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            options.ArchiveEncoding.Default = Encoding.GetEncoding(936);
+        }
+        catch
+        {
+            // 取不到 GBK（极端环境）→ 保持库默认
+        }
+
         if (!string.IsNullOrEmpty(password)) options.Password = password;
 
         IArchive archive;

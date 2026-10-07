@@ -23,6 +23,7 @@ namespace WarThunderSkinManager.Services;
 public static class PartCatalog
 {
     /// <summary>部件表里的一条贴图（贴图内容已确认存在）。</summary>
+    /// <param name="IsResource">来源包是否**资源包**（只读素材）——候选排序用：资源包优先（§3.5）</param>
     public sealed record Entry(
         string VehicleId,
         string PackageId,
@@ -31,7 +32,8 @@ public static class PartCatalog
         string To,
         string Blob,
         MappingMode Mode,
-        string? Param);
+        string? Param,
+        bool IsResource);
 
     private static readonly object Gate = new();
     private static Dictionary<string, List<Entry>> _table = new(StringComparer.OrdinalIgnoreCase);
@@ -84,6 +86,7 @@ public static class PartCatalog
             _built = false;
             _builtFrom = null;
             LibraryService.PutCached(string.Empty, string.Empty, null);
+            LibraryService.ClearProjectionCache(); // 投影缓存同样要丢：否则旧快照引用会返回改动前的视图
         }
     }
 
@@ -143,7 +146,7 @@ public static class PartCatalog
                     }
 
                     list.Add(new Entry(vehicle.Id, package.Id, package.Name, mapping.FromModule,
-                        mapping.ToFile, blob, mapping.Mode, mapping.Param));
+                        mapping.ToFile, blob, mapping.Mode, mapping.Param, package.IsResource));
                 }
 
                 // 原始映射（被「无」掉的部件）：同样可作为候选来源（§3.5 可逆的「不选用」）
@@ -164,7 +167,7 @@ public static class PartCatalog
                     }
 
                     originalList.Add(new Entry(vehicle.Id, package.Id, package.Name, mapping.FromModule,
-                        mapping.ToFile, blob, mapping.Mode, mapping.Param));
+                        mapping.ToFile, blob, mapping.Mode, mapping.Param, package.IsResource));
                 }
             }
 

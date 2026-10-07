@@ -192,8 +192,7 @@ public static class PackageExporter
         var blkTarget = Path.Combine(targetDir, meta.VehicleId + ".blk");
         var blkEntries = entries
             .Where(e => rename.ContainsKey(e.ToFile))
-            .Select(e => new BlkWriter.Entry(e.Mode, e.From, rename[e.ToFile],
-                e.Mode == MappingMode.Set ? e.Param : null));
+            .Select(e => new BlkWriter.Entry(e.Mode, e.From, rename[e.ToFile], e.Param)); // param 原样保留（两种命令）
 
         File.WriteAllText(blkTarget, BlkWriter.Write(blkEntries), new UTF8Encoding(false));
 

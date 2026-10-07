@@ -282,6 +282,21 @@ public static class LibraryService
     private static IReadOnlyDictionary<string, string>? _projectedOverrides;
     private static List<Vehicle>? _projectedVehicles;
 
+    /// <summary>
+    /// 丢弃投影缓存（库内容变更后调用，如 <see cref="PartCatalog.Invalidate"/>）：
+    /// 缓存键只含快照引用 + 国家归类，**不含**包内容 / 排除清单——内容变了但快照引用仍相同时
+    /// 会返回改动前的载具视图（「改了没生效」观感）。
+    /// </summary>
+    public static void ClearProjectionCache()
+    {
+        lock (CacheGate)
+        {
+            _projectedFrom = null;
+            _projectedOverrides = null;
+            _projectedVehicles = null;
+        }
+    }
+
     /// <summary>快照 → 载具视图（**纯内存**，不读任何文件；带投影缓存，§4）。</summary>
     public static List<Vehicle> ToVehicles(LibrarySnapshot snapshot,
         IReadOnlyDictionary<string, string>? countryOverrides = null)

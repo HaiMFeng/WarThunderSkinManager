@@ -21,14 +21,21 @@ public sealed class PartCandidate
     /// <summary>原模块代码（from，保留原值含通配符 <c>*</c>）</summary>
     public string From { get; init; } = "";
 
-    /// <summary>贴图名（to）</summary>
-    public string To { get; init; } = "";
+    /// <summary>贴图名（to）；本包自用同一内容贴图时会被覆写为**本包自己的** to 名（保持原名不改写）</summary>
+    public string To { get; set; } = "";
 
-    /// <summary>该贴图在来源 blk 中的写入方式（作为滑块的初值，用户可覆盖，见 §6.2）</summary>
-    public MappingMode Mode { get; init; } = MappingMode.Replace;
+    /// <summary>
+    /// 写入方式（滑块的初值，用户可覆盖，见 §6.2）。
+    /// 同内容贴图被多包采用而合并成一条候选时，**编辑中的本包**会用自己 meta 里的写法覆写它——
+    /// 否则会出现「保存 set_tex 后重开窗口又变回资源包的 replace_tex」。
+    /// </summary>
+    public MappingMode Mode { get; set; } = MappingMode.Replace;
 
     /// <summary>仅 Set 模式：camo_skin_tex</summary>
-    public string? Param { get; init; }
+    public string? Param { get; set; }
+
+    /// <summary>来源包是否资源包（只读素材）——候选排序用：资源包优先（§3.5）</summary>
+    public bool IsResource { get; init; }
 
     /// <summary>内容哈希（不含扩展名），来自来源包的 meta.textures 引用</summary>
     public string Blob { get; init; } = "";
@@ -54,6 +61,15 @@ public sealed class PartCandidate
 
     /// <summary>多源候选的标注文案（红色「多源 · 载具名」，非多源时为空）</summary>
     public string MultiSourceText { get; set; } = "";
+
+    /// <summary>
+    /// 候选排序权重（小者靠前）：**资源包固定优先**——
+    /// 本载具资源包 → 跨载具资源包 → 本载具普通包 → 跨载具普通包；
+    /// 多源复用候选（§3.13）排在最后（它是「组内其他位置」的补充来源）。
+    /// </summary>
+    public int SortRank => IsNone ? -1
+        : IsMultiSource ? 100
+        : (IsResource ? 0 : 10) + (IsCrossVehicle ? 0 : -5);
 
     public override string ToString() => Display;
 }

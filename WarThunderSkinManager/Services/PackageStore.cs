@@ -163,4 +163,25 @@ public static class PackageStore
         }
         return list;
     }
+
+    /// <summary>
+    /// 数一数**读不出来的 meta**（存在 meta.json 但反序列化失败）。
+    /// 引用扫描（<see cref="BlobGc"/>）据此决定是否保守放弃回收：
+    /// 读不出的包，其引用的 blob 无法计入引用集合，回收会误删。
+    /// </summary>
+    public static int CountUnreadableMetas(string resourceDir)
+    {
+        var root = PackagesDirectory(resourceDir);
+        if (!Directory.Exists(root)) return 0;
+
+        var count = 0;
+        foreach (var dir in Directory.GetDirectories(root))
+        {
+            if (File.Exists(MetaPath(resourceDir, Path.GetFileName(dir)))
+                && Load(resourceDir, Path.GetFileName(dir)) == null)
+                count++;
+        }
+
+        return count;
+    }
 }

@@ -1196,6 +1196,58 @@ internal static class SelfTest
             log.AppendLine($"HTML 剥离: 首行 = \"{htmlText.Split('\n')[0]}\"（应 First line），行数 = {htmlText.Split('\n').Length}（应 3），"
                          + $"实体解码 = {htmlText.Contains("&more", StringComparison.Ordinal) == false && htmlText.Contains("& more", StringComparison.Ordinal)}");
 
+            // ---- blk 解析 / 输出健壮性（§3.5 / §3.6）----
+            // 覆盖：replace_tex 的 param 保留、同一 to 被多个 from 复用、单行块 / 块内多 from、缺字段块告警
+            log.AppendLine();
+            log.AppendLine("---- blk 解析 / 输出健壮性 ----");
+            var robustRoot = Path.Combine(workDir, "blk-robust");
+            var robustSrc = Path.Combine(robustRoot, "src", "cn_ztz_96b");
+            Directory.CreateDirectory(robustSrc);
+            File.WriteAllBytes(Path.Combine(robustSrc, "hull.dds"), new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+
+            var robustBlkPath = Path.Combine(robustSrc, "cn_ztz_96b.blk");
+            File.WriteAllText(robustBlkPath, string.Join("\r\n", new[]
+            {
+                "name:t=\"user\"",
+                "",
+                "replace_tex {",
+                "  from:t=\"cn_ztz_96b_body_c*\"",
+                "  to:t=\"hull.dds\"",
+                "  param:t=\"alpha\"",
+                "}",
+                // 单行块 + 与上一条**共用同一个 to**（部分贴图缺失的经典触发点）
+                "set_tex { from:t=\"cn_ztz_96b_turret_c*\" to:t=\"hull.dds\" }",
+                // 块内多个 from：两条映射共用同一 to
+                "replace_tex {",
+                "  from:t=\"cn_ztz_96b_wing_l_c*\"",
+                "  from:t=\"cn_ztz_96b_pylon1_c*\"",
+                "  to:t=\"hull.dds\"",
+                "}",
+                // 缺 to 的块 → 应产出解析告警而不是静默丢弃
+                "replace_tex {",
+                "  from:t=\"cn_ztz_96b_broken_c*\"",
+                "}"
+            }), new UTF8Encoding(false));
+
+            var parsedRobust = BlkParser.Parse(robustBlkPath, File.ReadAllText(robustBlkPath, Encoding.UTF8));
+            log.AppendLine($"blk 解析: 条目 = {parsedRobust.Mappings.Count}（应 4：块内多 from 展开），"
+                         + $"文件级告警 = {parsedRobust.Issues.Count}（应 1：缺 to 的块），"
+                         + $"replace 上的 param 解析 = {parsedRobust.Mappings.FirstOrDefault(m => m.Param != null)?.Param ?? "(无)"}（应 alpha）");
+
+            var robustLib = Path.Combine(robustRoot, "lib");
+            var robustDeconstruct = DeconstructionService.Deconstruct(
+                robustBlkPath, robustLib, "selftest-robust");
+            var allHaveRef = robustDeconstruct.Package.Mappings.All(m => !string.IsNullOrWhiteSpace(m.TextureRef));
+            log.AppendLine($"同一 to 复用: 全部映射都有纹理引用 = {allHaveRef}（应 True），"
+                         + $"去重后入库贴图 = {robustDeconstruct.Package.Textures.Count}（应 1）");
+
+            var robustUserSkins = Path.Combine(robustRoot, "UserSkins");
+            var robustSync = OutputService.SyncVehicle(robustUserSkins, robustLib, "cn_ztz_96b",
+                LoadoutService.BuildLoadout(robustDeconstruct.Package));
+            var robustOutBlk = File.ReadAllText(robustSync.BlkPath, Encoding.UTF8);
+            log.AppendLine($"输出往返: 条目 = {robustSync.BlkEntries}（应 4），"
+                         + $"param 保留 = {robustOutBlk.Contains("param:t=\"alpha\"")}（应 True）");
+
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))

@@ -187,8 +187,7 @@ public static class OutputService
                            && !string.Equals(u.BlobFile, mapping.TextureRef, StringComparison.OrdinalIgnoreCase)))
                 assignedTo = UniqueTextureName(assignedTo, mapping.TextureRef, used);
 
-            entries.Add(new BlkWriter.Entry(mode, from, assignedTo,
-                mode == MappingMode.Set ? mapping.Param : null));
+            entries.Add(new BlkWriter.Entry(mode, from, assignedTo, mapping.Param)); // param 原样保留（两种命令都要）
 
             used.Add((assignedTo, mapping.TextureRef));
         }
@@ -215,14 +214,15 @@ public static class OutputService
             report.WrittenTextures++;
         }
 
-        // 清理不再被引用的贴图（WTSM 由程序维护）
-        var keep = used.Select(u => Path.GetFileName(u.To))
+        // 清理不再被引用的贴图（WTSM 由程序维护）。
+        // 保留集用**相对路径**（to 可能含子目录）：按文件名匹配会把其它子目录下的同名残留误当保留
+        var keep = used.Select(u => u.To.Replace('\\', '/'))
                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories))
         {
             var ext = Path.GetExtension(file).ToLowerInvariant();
             if (ext is not (".dds" or ".tga")) continue;
-            if (keep.Contains(Path.GetFileName(file))) continue;
+            if (keep.Contains(Path.GetRelativePath(outDir, file).Replace('\\', '/'))) continue;
 
             try
             {

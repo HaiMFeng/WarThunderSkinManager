@@ -76,15 +76,13 @@ public partial class PackageEditorViewModel : ObservableObject
     /// <summary>进入对话框时的资源态（解锁知会只对「原本是资源包」的解锁生效）。</summary>
     private readonly bool _originalIsResource;
 
-    private bool _suppressResource;
-
     /// <summary>是否资源包（滑块）：解锁（开 → 关）弹知会；切换后重建部件行（两种态的映射来源不同）。</summary>
     public bool IsResource
     {
         get => _isResource;
         set
         {
-            if (_suppressResource || _isResource == value) return;
+            if (_isResource == value) return;
 
             if (_originalIsResource && !value)
             {
@@ -96,12 +94,17 @@ public partial class PackageEditorViewModel : ObservableObject
 
                 if (!accepted)
                 {
-                    _suppressResource = true;
-                    IsResource = true; // 取消 → 滑块回滚
-                    _suppressResource = false;
+                    // 取消 → 滑块回滚：字段本就没改（仍是 true），但 WPF 已把勾选态置为未勾选，
+                    // 必须**手动通知**把视图拉回来（原先走受 _suppressResource 守卫的 setter 被吞掉，
+                    // 表现为「取消后开关仍是解锁状态、再点无反应」）
+                    OnPropertyChanged(nameof(IsResource));
                     return;
                 }
             }
+
+            // 由普通包切成资源包：**先落盘当前部件编辑**——资源态不可编辑，
+            // 下面的 BuildParts 会用资源视图重建部件行，切换前的选择否则会被静默丢弃
+            if (value && !_meta.IsResource) ApplyParts();
 
             _isResource = value;
             OnPropertyChanged(nameof(IsResource));
@@ -233,9 +236,16 @@ public partial class PackageEditorViewModel : ObservableObject
                     entry = pool[key].First(c => string.Equals(c.Blob, candidate.Blob, StringComparison.Ordinal));
                 }
 
-                // 本包在该位置当前使用的贴图
+                // 本包在该位置当前使用的贴图：**写入方式与 to 名以本包 meta 为准**——
+                // 候选合并后条目携带的是"最早持有该内容"的包的写法，若直接用它当滑块初值，
+                // 用户保存的 set_tex 会在重开窗口后被资源包的 replace_tex 覆盖（"设置不保存"的根因）
                 if (string.Equals(package.Id, _meta.Id, StringComparison.Ordinal))
+                {
+                    entry.Mode = mapping.Mode;
+                    entry.Param = mapping.Param;
+                    if (!string.IsNullOrWhiteSpace(mapping.ToFile)) entry.To = mapping.ToFile;
                     current[key] = entry;
+                }
             }
 
             // 原始映射（被「无」掉的部件，§3.5）：为部件行保留候选，让「不选用」可逆；
@@ -274,7 +284,13 @@ public partial class PackageEditorViewModel : ObservableObject
             };
 
             row.Candidates.Add(new PartCandidate { IsNone = true, Display = noneLabel });
-            foreach (var candidate in candidates) row.Candidates.Add(candidate);
+
+            // 候选顺序（§3.5 资源包固定优先）：本载具资源包 → 跨载具资源包 →
+            // 本载具用户涂装包 → 跨载具用户涂装包 → 多源复用；同级按显示名稳定排序
+            foreach (var candidate in candidates
+                         .OrderBy(c => c.SortRank)
+                         .ThenBy(c => c.Display, StringComparer.Ordinal))
+                row.Candidates.Add(candidate);
 
             // 先定选择（期间写入方式跟随贴图原始写法），再接上滑块确认回调
             row.SelectedCandidate = current.TryGetValue(key, out var chosen) && row.Candidates.Contains(chosen)
@@ -285,9 +301,15 @@ public partial class PackageEditorViewModel : ObservableObject
             rows.Add(row);
         }
 
+        _initialPartsSignature = PartsSignature(
+            rows.Select(r => (r.From, r.IsSetMode, r.SelectedCandidate?.To ?? "")));
+
         _canEditParts = true;
         Parts = rows;
     }
+
+    /// <summary>进窗口时的部件选择签名（<see cref="ApplyParts"/> 据此判断「用户真改过」）。</summary>
+    private string _initialPartsSignature = "";
 
     /// <summary>
     /// 并入**跨载具**候选（功能设计 §3.6）：Gaijin 靠相同的 <c>from</c> 在不同载具间复用贴图，
@@ -337,6 +359,7 @@ public partial class PackageEditorViewModel : ObservableObject
                     Param = entry.Param,
                     Blob = entry.Blob,
                     IsCrossVehicle = true,
+                    IsResource = entry.IsResource, // 跨载具**资源包**贴图优先于本载具用户包（§3.5）
                     Display = $"{entry.PackageName} · {entry.To}"
                 }, new List<string> { vehicleName }));
             }
@@ -397,6 +420,7 @@ public partial class PackageEditorViewModel : ObservableObject
                     Mode = entry.Mode,
                     Param = entry.Param,
                     Blob = entry.Blob,
+                    IsResource = entry.IsResource,
                     IsMultiSource = true,
                     Display = $"{entry.PackageName} · {entry.To}",
                     MultiSourceText = Loc.Format("pkg.editor.multiSource", vehicleName)
@@ -432,6 +456,7 @@ public partial class PackageEditorViewModel : ObservableObject
             Mode = mapping.Mode,
             Param = mapping.Param,
             Blob = blob,
+            IsResource = package.IsResource, // 候选排序：资源包优先（§3.5）
             // 文案里不再带写入方式：它由滑块单独控制
             Display = $"{package.Name} · {mapping.ToFile}"
         };
@@ -452,8 +477,9 @@ public partial class PackageEditorViewModel : ObservableObject
     /// </remarks>
     private void ApplyParts()
     {
-        // 资源包只读：parts/textures 永不改写（§3.5）；改名 / 预览图等元数据不受限
-        if (!_canEditParts || _meta.IsResource) return;
+        // 资源包只读：parts/textures 永不改写（§3.5）；改名 / 预览图等元数据不受限。
+        // 例外：本次会话内**由普通包刚切成资源包**时，用户之前的部件编辑仍要落盘（否则静默丢失）。
+        if (!_canEditParts || (_meta.IsResource && _originalIsResource)) return;
 
         var parts = new List<PackagePartEntry>();
         var textures = new List<TextureEntry>(_meta.Textures);
@@ -478,7 +504,7 @@ public partial class PackageEditorViewModel : ObservableObject
                 From = choice.IsMultiSource || string.IsNullOrWhiteSpace(choice.From) ? row.From : choice.From,
                 Mode = mode,
                 To = assignedTo,
-                Param = mode == MappingMode.Set ? choice.Param : null
+                Param = choice.Param // param 两种命令都保留（透明度语义与命令绑定，丢弃会改变渲染）
             });
 
             var entry = textures.FirstOrDefault(t => string.Equals(t.To, assignedTo, StringComparison.OrdinalIgnoreCase));
@@ -488,10 +514,22 @@ public partial class PackageEditorViewModel : ObservableObject
                 entry.Blob = choice.Blob; // 同名贴图以当前配置为准
         }
 
+        // 用户没有实际改动（选择签名与进窗口时一致）→ 不固化 parts 快照：
+        // 普通包继续沿用 source.blk（to 名 / 映射来源零失真），也不会把「打开一次」变成配置动作
+        var signature = PartsSignature(parts.Select(
+            p => (VehicleAggregator.NormalizeFrom(p.From), p.Mode == MappingMode.Set, p.To)));
+        if (string.Equals(signature, _initialPartsSignature, StringComparison.Ordinal)) return;
+
         _meta.Parts = parts;
         _meta.PartsConfigured = true;
         _meta.Textures = textures;
     }
+
+    /// <summary>部件选择的签名（归一化 from|写入方式|to，按 from 排序）：用于判断用户是否真的改动过。</summary>
+    private static string PartsSignature(IEnumerable<(string From, bool IsSet, string To)> rows)
+        => string.Join("|", rows
+            .OrderBy(r => r.From, StringComparer.Ordinal)
+            .Select(r => $"{r.From}:{(r.IsSet ? "set" : "replace")}:{r.To}"));
 
     /// <summary>为撞名的 to 生成唯一文件名：原名 + 所选贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
     private static string UniqueTextureTo(string to, string blob, List<TextureEntry> textures)

@@ -27,11 +27,14 @@ public static class BlkWriter
             sb.Append("  from:t=\"").Append(e.From).Append('"').Append(NewLine);
             sb.Append("  to:t=\"").Append(e.To).Append('"').Append(NewLine);
 
-            if (isSet)
-            {
-                var param = string.IsNullOrWhiteSpace(e.Param) ? "camo_skin_tex" : e.Param;
+            // param **两种命令都要原样保留**（`alpha` / `noremap` / `bump` / `camo_skin_tex`…）：
+            // 语义与命令绑定（见格式文档 §4：set_tex 白=透明、replace_tex 白=不透明），
+            // 丢掉会让该部件的透明度解释反转——这是「激活后透明度异常」的根因之一。
+            // set_tex 缺省才补 camo_skin_tex。
+            var param = e.Param;
+            if (isSet && string.IsNullOrWhiteSpace(param)) param = "camo_skin_tex";
+            if (!string.IsNullOrWhiteSpace(param))
                 sb.Append("  param:t=\"").Append(param).Append('"').Append(NewLine);
-            }
 
             sb.Append('}').Append(NewLine).Append(NewLine);
         }

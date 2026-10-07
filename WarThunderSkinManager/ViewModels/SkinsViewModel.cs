@@ -590,8 +590,18 @@ public partial class SkinsViewModel : ObservableObject
         var window = new PackageEditorWindow { DataContext = editor, Owner = Application.Current?.MainWindow };
         if (window.ShowDialog() != true) return;
 
-        editor.Apply();
-        PackageStore.SaveMeta(_config.ResourceDirectory, meta);
+        try
+        {
+            editor.Apply();
+            PackageStore.SaveMeta(_config.ResourceDirectory, meta);
+        }
+        catch (Exception ex)
+        {
+            // 保存失败必须**明确告知**：原先异常逃逸到全局兜底，窗口已关、用户以为已保存
+            ShowStatus(Loc.Format("pkg.editor.saveFailed", ex.Message));
+            return;
+        }
+
         PartCatalog.Invalidate(); // 包内容变了 → 部件表下次访问重建
 
         var wasActive = Packages.FirstOrDefault(
