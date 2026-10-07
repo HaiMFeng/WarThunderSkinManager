@@ -148,54 +148,59 @@ public static class OutputService
         report.BlkCreated = !File.Exists(blkPath);
 
         var entries = new List<BlkWriter.Entry>();
-        var used = new List<(string To, string BlobFile)>();
+        var used = new List<(string To, string? BlobFile)>();
 
-        foreach (var pair in loadout.Selections.OrderBy(p => p.Key, StringComparer.Ordinal))
+        // **按包内原顺序**逐条输出（同一 from 的多条——如 set_tex + replace_tex 配对、迷彩与替换各一条——
+        // 全部保留且保持先后：游戏按顺序应用，合并 / 重排会改变渲染结果，§3.8）
+        foreach (var selection in loadout.Selections)
         {
-            var selection = pair.Value;
-            var mapping = selection?.Mapping;
+            var mapping = selection.Mapping;
             if (mapping == null) continue;
 
             // to 携带非法相对路径（第三方 blk 误写 / 恶意构造）→ 不写入也不调度（§3.8 安全）
             if (!IsSafeRelativeTexturePath(mapping.ToFile))
             {
-                report.Warnings.Add(Loc.Format("output.warn.illegalPath", pair.Key, mapping.ToFile));
+                report.Warnings.Add(Loc.Format("output.warn.illegalPath", selection.Key, mapping.ToFile));
                 continue;
             }
 
-            // 贴图不可用的部件**不写入 blk**：游戏不会报错，但会静默失败（§3.8）
-            if (string.IsNullOrWhiteSpace(mapping.TextureRef))
+            // 本包内是否有该贴图 → 决定要不要调度文件；**条目本身都照写**：
+            // `to` 可能指向**游戏本体资源**（真实涂装常见，如 ussr_camo_green.tga），
+            // 这类条目在手动安装时是生效的，丢弃会造成"程序输出 ≠ 手动安装"（§3.8）
+            string? blobFile = null;
+            if (!string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
-                report.Warnings.Add(Loc.Format("output.warn.noTexture", pair.Key));
-                continue;
+                var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
+                if (File.Exists(blobPath)) blobFile = mapping.TextureRef;
+                else report.Warnings.Add(Loc.Format("output.warn.textureMissing", selection.Key, mapping.TextureRef));
             }
-
-            var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
-            if (!File.Exists(blobPath))
+            else if (!mapping.TextureMissing)
             {
-                report.Warnings.Add(Loc.Format("output.warn.textureMissing", pair.Key, mapping.TextureRef));
-                continue;
+                report.Warnings.Add(Loc.Format("output.warn.noTexture", selection.Key));
             }
 
-            var mode = selection!.ModeOverride ?? mapping.Mode;
+            var mode = selection.ModeOverride ?? mapping.Mode;
             var from = BlkWriter.EnsureWildcard(mapping.FromModule);
 
             // to 撞名防御：同一 to 名已被**其他部件**用不同贴图占用（跨包选择可能撞名）时，
-            // 为本条生成唯一文件名——否则后调度的贴图会覆盖先调度的，两个部件显示同一张图
+            // 为本条生成唯一文件名——否则后调度的贴图会覆盖先调度的，两个部件显示同一张图。
+            // 无本地贴图的条目（to 指游戏本体资源）按原名写出，不参与撞名改写
             var assignedTo = mapping.ToFile;
-            if (used.Any(u => string.Equals(u.To, assignedTo, StringComparison.OrdinalIgnoreCase)
-                           && !string.Equals(u.BlobFile, mapping.TextureRef, StringComparison.OrdinalIgnoreCase)))
-                assignedTo = UniqueTextureName(assignedTo, mapping.TextureRef, used);
+            if (blobFile != null
+                && used.Any(u => string.Equals(u.To, assignedTo, StringComparison.OrdinalIgnoreCase)
+                              && !string.Equals(u.BlobFile, blobFile, StringComparison.OrdinalIgnoreCase)))
+                assignedTo = UniqueTextureName(assignedTo, blobFile, used);
 
             entries.Add(new BlkWriter.Entry(mode, from, assignedTo, mapping.Param)); // param 原样保留（两种命令都要）
 
-            used.Add((assignedTo, mapping.TextureRef));
+            used.Add((assignedTo, blobFile));
         }
 
         // 调度贴图：blob → WTSM/<载具Id>/<to 原名>
         // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出
         foreach (var (to, blobFile) in used)
         {
+            if (blobFile == null) continue; // to 指游戏本体资源（包内没有）→ 无需调度
             var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
@@ -245,7 +250,7 @@ public static class OutputService
     }
 
     /// <summary>为撞名的 to 生成唯一文件名：原文件名 + 贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
-    private static string UniqueTextureName(string to, string blobFile, List<(string To, string BlobFile)> used)
+    private static string UniqueTextureName(string to, string blobFile, List<(string To, string? BlobFile)> used)
     {
         var directory = Path.GetDirectoryName(to) ?? "";
         var stem = Path.GetFileNameWithoutExtension(to);

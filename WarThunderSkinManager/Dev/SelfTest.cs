@@ -97,7 +97,7 @@ internal static class SelfTest
                 var reloaded = LoadoutService.LoadActivation(cfgDir, target.Id);
                 log.AppendLine($"active   : 往返后 {(reloaded.ActivePackageId == activePackage.Id ? "OK" : reloaded.ActivePackageId)}");
                 log.AppendLine($"loadout  : 由激活包派生 selections={loadout.Selections.Count}");
-                log.AppendLine($"loadout  : 示例 key={loadout.Selections.Keys.FirstOrDefault() ?? "-"}");
+                log.AppendLine($"loadout  : 示例 key={loadout.Selections.FirstOrDefault()?.Key ?? "-"}");
 
                 log.AppendLine("---- 生成的 blk 前 16 行 ----");
                 foreach (var line in File.ReadAllLines(sync.BlkPath).Take(16))
@@ -1223,6 +1223,22 @@ internal static class SelfTest
                 "  from:t=\"cn_ztz_96b_pylon1_c*\"",
                 "  to:t=\"hull.dds\"",
                 "}",
+                // 同一 from 的 set + replace 配对（真实涂装常见，如装甲车迷彩）——两条都要保留且保序
+                "set_tex {",
+                "  from:t=\"cn_ztz_96b_hull_c*\"",
+                "  to:t=\"hull.dds\"",
+                "  param:t=\"camo_skin_tex\"",
+                "}",
+                "replace_tex {",
+                "  from:t=\"cn_ztz_96b_hull_c*\"",
+                "  to:t=\"hull.dds\"",
+                "  param:t=\"camo_skin_tex\"",
+                "}",
+                // to 指向**游戏本体资源**（包内没有该文件）：条目仍要写出（与手动安装一致）
+                "replace_tex {",
+                "  from:t=\"cn_ztz_96b_game_c*\"",
+                "  to:t=\"game_texture.tga\"",
+                "}",
                 // 缺 to 的块 → 应产出解析告警而不是静默丢弃
                 "replace_tex {",
                 "  from:t=\"cn_ztz_96b_broken_c*\"",
@@ -1230,23 +1246,27 @@ internal static class SelfTest
             }), new UTF8Encoding(false));
 
             var parsedRobust = BlkParser.Parse(robustBlkPath, File.ReadAllText(robustBlkPath, Encoding.UTF8));
-            log.AppendLine($"blk 解析: 条目 = {parsedRobust.Mappings.Count}（应 4：块内多 from 展开），"
+            log.AppendLine($"blk 解析: 条目 = {parsedRobust.Mappings.Count}（应 7：含多 from 展开与 set/replace 配对），"
                          + $"文件级告警 = {parsedRobust.Issues.Count}（应 1：缺 to 的块），"
                          + $"replace 上的 param 解析 = {parsedRobust.Mappings.FirstOrDefault(m => m.Param != null)?.Param ?? "(无)"}（应 alpha）");
 
             var robustLib = Path.Combine(robustRoot, "lib");
             var robustDeconstruct = DeconstructionService.Deconstruct(
                 robustBlkPath, robustLib, "selftest-robust");
-            var allHaveRef = robustDeconstruct.Package.Mappings.All(m => !string.IsNullOrWhiteSpace(m.TextureRef));
-            log.AppendLine($"同一 to 复用: 全部映射都有纹理引用 = {allHaveRef}（应 True），"
+            var refsOk = robustDeconstruct.Package.Mappings
+                .Where(m => !m.TextureMissing)
+                .All(m => !string.IsNullOrWhiteSpace(m.TextureRef));
+            log.AppendLine($"同一 to 复用: 有本地贴图的映射都有引用 = {refsOk}（应 True），"
                          + $"去重后入库贴图 = {robustDeconstruct.Package.Textures.Count}（应 1）");
 
             var robustUserSkins = Path.Combine(robustRoot, "UserSkins");
             var robustSync = OutputService.SyncVehicle(robustUserSkins, robustLib, "cn_ztz_96b",
                 LoadoutService.BuildLoadout(robustDeconstruct.Package));
             var robustOutBlk = File.ReadAllText(robustSync.BlkPath, Encoding.UTF8);
-            log.AppendLine($"输出往返: 条目 = {robustSync.BlkEntries}（应 4），"
-                         + $"param 保留 = {robustOutBlk.Contains("param:t=\"alpha\"")}（应 True）");
+            log.AppendLine($"输出往返: 条目 = {robustSync.BlkEntries}（应 7），"
+                         + $"param 保留 = {robustOutBlk.Contains("param:t=\"alpha\"")}（应 True），"
+                         + $"set/replace 配对都在 = {robustOutBlk.Contains("set_tex {") && robustOutBlk.Contains("replace_tex {")}（应 True），"
+                         + $"本体资源条目保留 = {robustOutBlk.Contains("game_texture.tga")}（应 True）");
 
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");

@@ -199,6 +199,24 @@ public partial class PackageEditorViewModel : ObservableObject
             return;
         }
 
+        // 本包当前生效的映射（按 from 分组）：**未改动的部件保存时按原样逐条写回**——
+        // 作者常用 `set_tex` + `replace_tex` 配对（装甲车迷彩），界面是「每 from 一行」，
+        // 若一律压成一行会丢掉配对、改变透明度/迷彩渲染（§3.6 / §3.8）
+        _sourceMappingsByFrom.Clear();
+        _initialRowState.Clear();
+
+        foreach (var package in vehicle.SkinPackages)
+        {
+            if (!string.Equals(package.Id, _meta.Id, StringComparison.Ordinal)) continue;
+
+            foreach (var grouping in package.Mappings.GroupBy(
+                         m => VehicleAggregator.NormalizeFrom(m.FromModule), StringComparer.OrdinalIgnoreCase))
+            {
+                if (grouping.Key.Length == 0) continue;
+                _sourceMappingsByFrom[grouping.Key] = grouping.ToList();
+            }
+        }
+
         var pool = new Dictionary<string, List<PartCandidate>>(StringComparer.OrdinalIgnoreCase);
         var current = new Dictionary<string, PartCandidate>(StringComparer.OrdinalIgnoreCase);
         // 同一部件位置内按**内容（blob）去重**（§3.5）：同一张贴图被多个包采用时只显示一条候选，
@@ -297,12 +315,18 @@ public partial class PackageEditorViewModel : ObservableObject
                 ? chosen
                 : row.Candidates[0];
 
+            // 记录进窗口时的选择（ApplyParts 据此识别「未改动」的行，未改动的部件原样逐条写回）
+            _initialRowState[key] = (row.SelectedCandidate?.To ?? "", row.IsSetMode);
+
             row.ConfirmModeToggle = ConfirmModeToggle;
             rows.Add(row);
         }
 
-        _initialPartsSignature = PartsSignature(
-            rows.Select(r => (r.From, r.IsSetMode, r.SelectedCandidate?.To ?? "")));
+        // 初始签名按**本包当前全部映射**（含 set/replace 配对）计算：
+        // 未改动的部件保存时逐条写回原映射，签名一致 → 不会把"打开一次"变成配置动作
+        _initialPartsSignature = PartsSignature(_sourceMappingsByFrom.Values
+            .SelectMany(list => list)
+            .Select(m => (VehicleAggregator.NormalizeFrom(m.FromModule), m.Mode == MappingMode.Set, m.ToFile)));
 
         _canEditParts = true;
         Parts = rows;
@@ -310,6 +334,14 @@ public partial class PackageEditorViewModel : ObservableObject
 
     /// <summary>进窗口时的部件选择签名（<see cref="ApplyParts"/> 据此判断「用户真改过」）。</summary>
     private string _initialPartsSignature = "";
+
+    /// <summary>本包当前映射（按归一化 from 分组）：未改动的部件按原样逐条写回（保留 set/replace 配对）。</summary>
+    private readonly Dictionary<string, List<TexMapping>> _sourceMappingsByFrom =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>各部件行进窗口时的选择（from → to / 写入方式），用于识别「未改动」的行。</summary>
+    private readonly Dictionary<string, (string To, bool IsSet)> _initialRowState =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 并入**跨载具**候选（功能设计 §3.6）：Gaijin 靠相同的 <c>from</c> 在不同载具间复用贴图，
@@ -487,6 +519,32 @@ public partial class PackageEditorViewModel : ObservableObject
         foreach (var row in Parts)
         {
             var choice = row.SelectedCandidate;
+
+            // **未改动**且选了具体贴图的部件：按本包原映射**逐条**写回——
+            // 作者常用 `set_tex` + `replace_tex` 配对（装甲车迷彩 + 替换），
+            // 界面是「每 from 一行」，压成一行会丢配对、改透明度 / 迷彩渲染（§3.6 / §3.8）。
+            // 行仍为「无」则维持「无」（不复活用户已排除的部件）。
+            var unchanged = choice is { IsNone: false }
+                            && _initialRowState.TryGetValue(row.From, out var initial)
+                            && string.Equals(initial.To, choice.To, StringComparison.OrdinalIgnoreCase)
+                            && initial.IsSet == row.IsSetMode;
+            if (unchanged && _sourceMappingsByFrom.TryGetValue(row.From, out var sourceMappings))
+            {
+                foreach (var source in sourceMappings)
+                {
+                    if (string.IsNullOrWhiteSpace(source.ToFile)) continue;
+                    parts.Add(new PackagePartEntry
+                    {
+                        From = source.FromModule,
+                        Mode = source.Mode,
+                        To = source.ToFile,
+                        Param = source.Param
+                    });
+                }
+
+                continue;
+            }
+
             if (choice == null || choice.IsNone || string.IsNullOrWhiteSpace(choice.To)) continue;
 
             var mode = row.IsSetMode ? MappingMode.Set : MappingMode.Replace;

@@ -6,6 +6,9 @@ namespace WarThunderSkinManager.Models;
 /// <summary>激活输出中的单部件选择。</summary>
 public partial class SelectedMapping : ObservableObject
 {
+    /// <summary>归一化部件位置（去 <c>*</c>）——告警文案与诊断用</summary>
+    [ObservableProperty] private string _key = "";
+
     /// <summary>来源涂装包 Id</summary>
     [ObservableProperty] private string _packageId = "";
 
@@ -23,8 +26,12 @@ public partial class SelectedMapping : ObservableObject
 /// </summary>
 public partial class ActiveLoadout : ObservableObject
 {
-    /// <summary>部件位置 -> 选中映射</summary>
-    [ObservableProperty] private Dictionary<string, SelectedMapping> _selections = new();
+    /// <summary>
+    /// 选中映射列表——**按包内原始顺序**逐条保留（同一部件位置可有多条：
+    /// 作者常用 <c>set_tex</c> + <c>replace_tex</c> 配对、迷彩与替换各一条；
+    /// 游戏按顺序应用，合并成"每位置一条"会改变渲染结果）。
+    /// </summary>
+    [ObservableProperty] private List<SelectedMapping> _selections = new();
 }
 
 /// <summary>

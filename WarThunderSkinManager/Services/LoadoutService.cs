@@ -27,8 +27,9 @@ public static class LoadoutService
             new VehicleActivation { ActivePackageId = packageId ?? "" });
 
     /// <summary>
-    /// 由激活的涂装包派生输出用组合（§6.3）：键 = 归一化部件位置，
-    /// 值 = 该包在该位置使用的贴图（Mode / Param 随贴图走）。
+    /// 由激活的涂装包派生输出用组合（§6.3）：**按包内原顺序**列出该包的每条映射
+    /// （Mode / Param 随贴图走）。同一部件位置的多条（set + replace 配对）不合并——
+    /// 游戏按顺序应用，合并会丢条目、改渲染（§3.8）。
     /// </summary>
     public static ActiveLoadout BuildLoadout(SkinPackage? package)
     {
@@ -43,11 +44,12 @@ public static class LoadoutService
             // 手动删除的部件（§3.10）不参与输出——与导出同一规则
             if (PartExclusionService.IsExcluded(package.VehicleId, key)) continue;
 
-            loadout.Selections[key] = new SelectedMapping
+            loadout.Selections.Add(new SelectedMapping
             {
+                Key = key,
                 PackageId = package.Id,
                 Mapping = mapping
-            };
+            });
         }
 
         return loadout;
