@@ -34,16 +34,22 @@
             <ScrollViewer Grid.Row="1" Margin="20,18,20,0" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
 
-                    <!-- 警告 -->
+                    <!-- 警告。图标与正文用**两列 Grid**：横向 StackPanel 按"无限宽度"测量子元素 →
+                         TextWrapping="Wrap" 不生效、长文案溢出被裁（与「删除关联」窗口同一处修正） -->
                     <Border Background="{StaticResource BrushDangerSoftBg}" BorderBrush="{StaticResource BrushDangerSoftBorder}" BorderThickness="1" CornerRadius="8"
                             Padding="14,12">
-                        <StackPanel Orientation="Horizontal">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
                             <TextBlock Text="&#xF071;" FontFamily="{StaticResource IconFont}" FontSize="15"
                                        Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
                                        Margin="0,1,10,0"/>
-                            <TextBlock Text="{loc:Loc settings.reset.warn}" TextWrapping="Wrap" FontSize="13"
+                            <TextBlock Grid.Column="1" Text="{loc:Loc settings.reset.warn}" TextWrapping="Wrap" FontSize="13"
                                        Foreground="{StaticResource BrushDangerSoftText}"/>
-                        </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- 清除范围 -->

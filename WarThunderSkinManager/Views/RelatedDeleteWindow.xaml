@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
         Title="{Binding Title}"
-        Width="540" SizeToContent="Height" MaxHeight="640"
+        Width="540" SizeToContent="Height" MaxHeight="720"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         FontFamily="symbols_skyquake, Segoe UI, Microsoft YaHei UI"
@@ -27,18 +27,26 @@
                         HorizontalAlignment="Right" Click="Cancel_Click"/>
             </Grid>
 
-            <!-- 警告（危险色软底，与「清除数据」窗口同一形态） -->
+            <!-- 警告（危险色软底，与「清除数据」窗口同一形态）。
+                 图标与正文用**两列 Grid**：横向 StackPanel 会按"无限宽度"测量子元素 →
+                 TextWrapping="Wrap" 永不换行、长文案溢出窗口被裁掉 -->
             <Border Grid.Row="1" Margin="20,16,20,0"
                     Background="{StaticResource BrushDangerSoftBg}"
                     BorderBrush="{StaticResource BrushDangerSoftBorder}" BorderThickness="1"
                     CornerRadius="8" Padding="14,12">
-                <StackPanel Orientation="Horizontal">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
                     <TextBlock Text="&#xF071;" FontFamily="{StaticResource IconFont}" FontSize="15"
                                Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
                                Margin="0,1,10,0"/>
-                    <TextBlock Text="{Binding WarningText}" TextWrapping="Wrap" FontSize="13" LineHeight="21"
+                    <TextBlock Grid.Column="1" Text="{Binding WarningText}" TextWrapping="Wrap"
+                               FontSize="13" LineHeight="21"
                                Foreground="{StaticResource BrushTextSecondary}"/>
-                </StackPanel>
+                </Grid>
             </Border>
 
             <!-- 连带清单：**可勾选**（默认全选），每行「载具显示名.涂装包名」（如 VT-5.Skin1） -->
@@ -60,7 +68,8 @@
 
                 <Border Margin="0,8,0,0" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
                         CornerRadius="6" Padding="4,2">
-                    <ListBox ItemsSource="{Binding Rows}" MaxHeight="300"
+                    <!-- 警告文案会换行（可能占好几行）+ 清单上限 240 → 整体高度稳定落在窗口上限内 -->
+                    <ListBox ItemsSource="{Binding Rows}" MaxHeight="240"
                              BorderThickness="0" Background="Transparent"
                              ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <ListBox.ItemContainerStyle>
