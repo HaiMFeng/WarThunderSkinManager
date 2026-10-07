@@ -265,6 +265,9 @@ public partial class SkinsViewModel : ObservableObject
             var candidates = await Task.Run(
                 () => ImportService.Scan(extracted, ImportSourceType.Archive, packName), runToken);
 
+            // 一个压缩包 = 一个来源 = 一个导入 ID（§3.1；下载项本身就是一个 zip）
+            ImportService.AssignGroupKey(candidates, zipPath, ImportSourceType.Archive);
+
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath);
 
             // 导入成功 → 预览图（已下载完）应用于**全部**导入的涂装包（互通 → 同一张图）
@@ -460,17 +463,30 @@ public partial class SkinsViewModel : ObservableObject
     [RelayCommand]
     private void SelectCountry(CountryItem item) => SelectedCountry = item;
 
+    /// <summary>
+    /// 导入文件夹（**支持多选**）：一个文件夹 = 一个涂装 = 一个来源（= 一个导入 ID，见 §3.1）。
+    /// 选一个 → 沿用「导入文件夹」语义（可勾选「导入后删除该文件夹」）；
+    /// 选多个 → 走**多来源**链路（与拖入多个文件夹同一条路），每个文件夹各拿一个导入 ID。
+    /// </summary>
     [RelayCommand]
     private void ImportFolder()
     {
         if (!EnsureResourceDir()) return;
 
-        var dialog = new OpenFolderDialog { Title = Loc["skins.importFolder"], Multiselect = false };
+        var dialog = new OpenFolderDialog { Title = Loc["skins.importFolder"], Multiselect = true };
         if (dialog.ShowDialog() != true) return;
-        if (!IsSafeImportRoot(dialog.FolderName, folderMode: true)) return;
 
-        RunImport(() => ImportService.Scan(dialog.FolderName, ImportSourceType.Folder),
-                  ImportSourceType.Folder, dialog.FolderName);
+        var folders = dialog.FolderNames.Where(f => IsSafeImportRoot(f, folderMode: true)).ToList();
+        if (folders.Count == 0) return;
+
+        if (folders.Count == 1)
+        {
+            RunImport(() => ImportService.Scan(folders[0], ImportSourceType.Folder),
+                      ImportSourceType.Folder, folders[0]);
+            return;
+        }
+
+        ImportDropped(folders);
     }
 
     /// <summary>导入压缩包：文件选择器（**多选**，过滤器与识别同一份扩展名清单）→ 复用拖入链路
@@ -513,8 +529,13 @@ public partial class SkinsViewModel : ObservableObject
 
         if (!IsSafeImportRoot(userSkins, folderMode: false)) return;
 
-        RunImport(() => ImportService.Scan(userSkins, ImportSourceType.UserSkins),
-                  ImportSourceType.UserSkins, userSkins);
+        // **一个顶层文件夹 = 一个涂装 = 一个导入 ID**（§3.1）：同一个皮肤文件夹里的多个载具共用该 ID
+        RunImport(() =>
+        {
+            var candidates = ImportService.Scan(userSkins, ImportSourceType.UserSkins);
+            ImportService.GroupByTopFolder(userSkins, candidates);
+            return candidates;
+        }, ImportSourceType.UserSkins, userSkins);
     }
 
     /// <summary>
@@ -946,7 +967,8 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 删除**所有关联的涂装包**（§3.4）：连带范围 = 同一次导入的系列包 + 共用贴图的包
     /// （即「引用了该包内容」的包），并取**传递闭包**（同系列的连带包一并纳入）。
-    /// 先弹「警告 + 删除列表」窗口，确认后逐个删除，最后统一回收无引用贴图。
+    /// 先弹「警告 + **可勾选清单**」窗口（默认全选，可逐条取消 / 全选 / 全取消），
+    /// 确认后只删**勾选项**，最后统一回收无引用贴图。
     /// 删掉的包若是其所在载具的激活包 → 一并取消激活并清空输出（与单个删除同一条规则）。
     /// </summary>
     private void DeleteRelatedPackages(SkinPackage package)
@@ -960,9 +982,13 @@ public partial class SkinsViewModel : ObservableObject
             return;
         }
 
+        var editor = new RelatedDeleteViewModel(package.Name, related);
         var window = new RelatedDeleteWindow { Owner = Application.Current?.MainWindow };
-        window.Configure(package.Name, related);
+        window.Configure(editor);
         if (window.ShowDialog() != true) return;
+
+        var selected = editor.Selected; // 只删用户勾选的
+        if (selected.Count == 0) return; // 按钮已禁用，双保险
 
         try
         {
@@ -973,7 +999,7 @@ public partial class SkinsViewModel : ObservableObject
             var removed = 0;
             var deactivated = new List<string>();
 
-            foreach (var item in related)
+            foreach (var item in selected) // 用户勾掉了"正在删除的那一个"时，本次就只删关联项
             {
                 // 是不是所在载具的激活包（读激活设置要在删除前）
                 var wasActive = string.Equals(
@@ -1564,8 +1590,12 @@ public partial class SkinsViewModel : ObservableObject
                     // 解析（读全部 blk 文本，秒级）：逐压缩包显示（用户示例的「正在解析 xxx.zip」）
                     reporter.Report(new ImportProgress
                         { Current = Loc.Format("import.progressScanningArchive", Path.GetFileName(archive)) });
-                    list.AddRange(ImportService.Scan(extracted, ImportSourceType.Archive,
-                        ArchivePackName(archive, extracted), ct));
+
+                    // **一个压缩包 = 一个来源 = 一个导入 ID**（§3.1）
+                    var scanned = ImportService.Scan(extracted, ImportSourceType.Archive,
+                        ArchivePackName(archive, extracted), ct);
+                    ImportService.AssignGroupKey(scanned, archive, ImportSourceType.Archive);
+                    list.AddRange(scanned);
                 }
 
                 foreach (var folder in folders)
@@ -1574,7 +1604,11 @@ public partial class SkinsViewModel : ObservableObject
 
                     reporter.Report(new ImportProgress
                         { Current = Loc.Format("import.progressScanningFolder", Path.GetFileName(folder)) });
-                    list.AddRange(ImportService.Scan(folder, ImportSourceType.Folder, null, ct));
+
+                    // **一个文件夹 = 一个来源 = 一个导入 ID**（§3.1）
+                    var scanned = ImportService.Scan(folder, ImportSourceType.Folder, null, ct);
+                    ImportService.AssignGroupKey(scanned, folder, ImportSourceType.Folder);
+                    list.AddRange(scanned);
                 }
 
                 return list;

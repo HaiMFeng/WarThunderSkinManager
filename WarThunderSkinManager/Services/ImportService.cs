@@ -14,7 +14,12 @@ namespace WarThunderSkinManager.Services;
 /// <summary>导入结果。</summary>
 public sealed class ImportResult
 {
-    public ImportRecord Record { get; init; } = new();
+    /// <summary>
+    /// 本次导入产生的**导入记录**（§3.1 / §6.5）：**一个来源一条**——
+    /// 一个压缩包 / 一个导入文件夹 / UserSkins 的一个顶层文件夹各一条，各自带自己的 <see cref="ImportRecord.Id"/>。
+    /// </summary>
+    public List<ImportRecord> Records { get; init; } = new();
+
     public List<SkinPackage> Packages { get; init; } = new();
     public List<string> Warnings { get; init; } = new();
 
@@ -71,6 +76,17 @@ public sealed class ImportCandidate
 
     /// <summary>blk 所在目录（相对导入根）；空 = 直接位于导入根目录。用于分组展示来源。</summary>
     public string SourceFolder { get; set; } = "";
+
+    /// <summary>
+    /// **来源分组键**（§3.1）：一次导入里的每个"来源"各一个键——
+    /// 一个压缩包 = 压缩包路径；一个导入文件夹 = 该文件夹路径；
+    /// 一键导入 UserSkins = 每个**顶层文件夹**的绝对路径。**导入 ID 按它分配**。
+    /// 空 = 整批算一个来源（旧行为，兼容未铺键的调用）。
+    /// </summary>
+    public string GroupKey { get; set; } = "";
+
+    /// <summary>该来源的导入类型（<see cref="ImportRecord.SourceType"/>）；空 = 用整批的类型。</summary>
+    public ImportSourceType? GroupSourceType { get; set; }
 
     /// <summary>映射条目数</summary>
     public int MappingCount { get; set; }
@@ -165,15 +181,33 @@ public static class ImportService
         ImportSourceType sourceType, string sourcePath,
         IProgress<ImportProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        var record = new ImportRecord
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            SourceType = sourceType,
-            SourcePath = Path.GetFullPath(sourcePath),
-            ImportedAt = DateTime.Now
-        };
+        // **按来源分组**（§3.1）：一个压缩包 / 一个导入文件夹 / UserSkins 的一个顶层文件夹 = 一个来源
+        // = 一个导入记录（各自一个 Id）。未铺分组键的调用（键为空）→ 整批算一个来源，与旧行为一致。
+        var groups = candidates
+            .GroupBy(c => c.GroupKey ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(g => new
+            {
+                Record = new ImportRecord
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    SourceType = g.First().GroupSourceType ?? sourceType,
+                    // 来源路径 = 该来源自己的路径（分组键就是它）；空键（旧调用）→ 用整批的路径
+                    SourcePath = FullPathOrSelf(g.Key.Length > 0 ? g.Key : sourcePath),
+                    ImportedAt = DateTime.Now
+                },
+                Candidates = g.ToList()
+            })
+            .ToList();
 
-        var result = new ImportResult { Record = record };
+        // 候选 → 自己来源的记录 Id（并行解构时按它写包）；同时按来源收集包，供各自写清单
+        var importIdByCandidate = new Dictionary<ImportCandidate, string>();
+        var packagesByRecord = groups.ToDictionary(g => g.Record.Id, _ => new List<SkinPackage>(), StringComparer.Ordinal);
+
+        foreach (var group in groups)
+            foreach (var candidate in group.Candidates)
+                importIdByCandidate[candidate] = group.Record.Id;
+
+        var result = new ImportResult { Records = groups.Select(g => g.Record).ToList() };
         var gate = new object();
         var done = 0;
 
@@ -191,14 +225,16 @@ public static class ImportService
 
                 try
                 {
+                    var recordId = importIdByCandidate[candidate];
                     var decon = DeconstructionService.Deconstruct(
-                        candidate.BlkPath, resourceDir, record.Id, candidate.SuggestedName);
+                        candidate.BlkPath, resourceDir, recordId, candidate.SuggestedName);
 
                     lock (gate)
                     {
                         result.Packages.Add(decon.Package);
                         result.Warnings.AddRange(decon.Warnings);
                         result.ImportedBlkPaths.Add(candidate.BlkPath);
+                        packagesByRecord[recordId].Add(decon.Package);
                     }
                 }
                 catch (Exception ex)
@@ -219,9 +255,58 @@ public static class ImportService
             result.Canceled = true;
         }
 
+        // 顺序在**整批**上统一分配（同载具的新包追加在既有之后）：按来源分别 Commit 会让同载具顺序反复重排
         AssignOrder(resourceDir, result.Packages);
-        SaveManifest(resourceDir, record, result.Packages);
+
+        // 每个来源写自己的清单（只含该来源解构出的包）
+        foreach (var group in groups)
+            SaveManifest(resourceDir, group.Record, packagesByRecord[group.Record.Id]);
+
         return result;
+    }
+
+    /// <summary>
+    /// 给一批候选打上**来源分组键**（§3.1）：一个压缩包 / 一个导入文件夹调一次。
+    /// </summary>
+    public static void AssignGroupKey(IEnumerable<ImportCandidate> candidates, string groupKey,
+        ImportSourceType? sourceType = null)
+    {
+        foreach (var candidate in candidates)
+        {
+            candidate.GroupKey = groupKey;
+            candidate.GroupSourceType = sourceType;
+        }
+    }
+
+    /// <summary>
+    /// 按**顶层文件夹**给候选分组（「一键导入 UserSkins」）：每个一级子文件夹 = 一个来源（= 一个导入 ID）。
+    /// 直接躺在根下的 blk 归到"根"这一组（键 = 根目录本身）。
+    /// </summary>
+    public static void GroupByTopFolder(string root, IEnumerable<ImportCandidate> candidates)
+    {
+        var fullRoot = Path.GetFullPath(root);
+
+        foreach (var candidate in candidates)
+        {
+            var top = TopLevelOf(fullRoot, candidate.BlkPath);
+            candidate.GroupKey = top.Length == 0 ? fullRoot : Path.Combine(fullRoot, top);
+            candidate.GroupSourceType = ImportSourceType.UserSkins;
+        }
+    }
+
+    /// <summary>取绝对路径；空 / 非法则原样返回——来源路径只是溯源标签，不该让导入失败。</summary>
+    private static string FullPathOrSelf(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "";
+
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     /// <summary>

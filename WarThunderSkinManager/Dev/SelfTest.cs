@@ -897,6 +897,76 @@ internal static class SelfTest
                          + $"，批次恰好 {RelatedPackageService.MaxSeriesSize} 包 → {seriesBoundary}"
                          + $"（应 {RelatedPackageService.MaxSeriesSize}）");
 
+            // 「删除关联」清单的勾选（§3.4）：默认全选、全取消、再全选
+            var relatedRows = RelatedPackageService.Find(relatedLib, "A", null);
+            var relatedVm = new RelatedDeleteViewModel("Skin1", relatedRows);
+
+            var defaultAllSelected = relatedVm.Selected.Count == relatedRows.Count && relatedVm.HasSelection;
+            relatedVm.SelectNoneCommand.Execute(null);
+            var noneSelected = relatedVm.Selected.Count == 0 && !relatedVm.HasSelection;
+            relatedVm.SelectAllCommand.Execute(null);
+
+            log.AppendLine($"关联删除勾选: 默认全选 = {defaultAllSelected}（应 True），"
+                         + $"全取消 = {noneSelected}（应 True：0 项且确认按钮不可用），"
+                         + $"再全选 = {relatedVm.Selected.Count}（应 {relatedRows.Count}），"
+                         + $"文案 = {relatedVm.SelectionText}");
+
+            // ---- 导入 ID 粒度（§3.1）：**一个来源 = 一个导入 ID** ----
+            // 两个"来源"文件夹各一个 blk → 一次 Commit 应产出 2 条记录、各写自己的清单
+            var idRoot = Path.Combine(workDir, "import-id");
+            var srcA = Path.Combine(idRoot, "SkinA");
+            var srcB = Path.Combine(idRoot, "SkinB");
+
+            foreach (var (dir, vehicle) in new[] { (srcA, "f_4e"), (srcB, "t_80u") })
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, vehicle + ".blk"),
+                    BlkAssembler.MinimalBlock("a_c", "b.dds"), new UTF8Encoding(false));
+            }
+
+            var scannedA = ImportService.Scan(srcA, ImportSourceType.Folder);
+            ImportService.AssignGroupKey(scannedA, srcA, ImportSourceType.Folder);
+            var scannedB = ImportService.Scan(srcB, ImportSourceType.Folder);
+            ImportService.AssignGroupKey(scannedB, srcB, ImportSourceType.Folder);
+
+            var manifestDir = ImportService.ImportsDirectory(resourceDir);
+            var manifestsBefore = Directory.Exists(manifestDir)
+                ? Directory.GetFiles(manifestDir, "import_*.json").Length : 0;
+
+            var groupCandidates = new List<ImportCandidate>();
+            groupCandidates.AddRange(scannedA);
+            groupCandidates.AddRange(scannedB);
+
+            var groupResult = ImportService.Commit(groupCandidates, resourceDir, ImportSourceType.Folder,
+                string.Join("; ", new[] { srcA, srcB }));
+
+            var manifestsAfter = Directory.GetFiles(manifestDir, "import_*.json").Length;
+            var importedIds = groupResult.Packages.Select(p => (p.VehicleId, p.SourceImportId)).ToList();
+
+            log.AppendLine($"导入ID粒度 : 记录数 = {groupResult.Records.Count}（应 2：两个来源各一条），"
+                         + $"不同 ID 数 = {importedIds.Select(x => x.SourceImportId).Distinct().Count()}（应 2），"
+                         + $"新增清单 = {manifestsAfter - manifestsBefore}（应 2）→ "
+                         + string.Join("、", importedIds.Select(x => $"{x.VehicleId}={x.SourceImportId[..8]}")));
+
+            // UserSkins：一个**顶层文件夹** = 一个来源；根下直挂的 blk 归到"根"这一组
+            var skinsRoot = Path.Combine(workDir, "userskins-id");
+            foreach (var rel in new[] { "SkinOne", "SkinTwo" })
+                Directory.CreateDirectory(Path.Combine(skinsRoot, rel));
+
+            File.WriteAllText(Path.Combine(skinsRoot, "SkinOne", "f_4e.blk"),
+                BlkAssembler.MinimalBlock("a_c", "b.dds"), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(skinsRoot, "SkinTwo", "t_80u.blk"),
+                BlkAssembler.MinimalBlock("a_c", "b.dds"), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(skinsRoot, "t_72b.blk"),
+                BlkAssembler.MinimalBlock("a_c", "b.dds"), new UTF8Encoding(false));
+
+            var skinCandidates = ImportService.Scan(skinsRoot, ImportSourceType.UserSkins);
+            ImportService.GroupByTopFolder(skinsRoot, skinCandidates);
+
+            log.AppendLine($"导入ID对照 : UserSkins 顶层文件夹分组 = "
+                         + $"{skinCandidates.Select(c => c.GroupKey).Distinct(StringComparer.OrdinalIgnoreCase).Count()} 组（应 3）→ "
+                         + string.Join("、", skinCandidates.Select(c => $"{c.VehicleId}∈{Path.GetFileName(c.GroupKey)}")));
+
             ArchiveService.CleanupStaging(new[] { extractDir });
             log.AppendLine($"清理暂存目录后仍存在: {Directory.Exists(extractDir)}");
 

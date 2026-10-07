@@ -60,11 +60,13 @@ public partial class ImportPreviewViewModel : ObservableObject
         _deleteSource = CanDeleteSource && deleteSourceDefault;
         _deleteArchive = CanDeleteArchive && deleteArchiveDefault;
 
-        // 建议名相同 = 来自同名文件夹 = 同一套模组 → 归为一组（保持扫描顺序）
+        // 同一**来源**内建议名相同 = 来自同名文件夹 = 同一套模组 → 归为一组（保持扫描顺序）。
+        // 分组键里必须带**来源**（§3.1）：多来源同时导入时，两个压缩包 / 两个文件夹里的同名子文件夹
+        // 并不是同一套模组，混成一组会让「一同改名」连改多处
         Groups = new ObservableCollection<ImportGroupViewModel>(
             candidates
-                .GroupBy(c => c.SuggestedName, StringComparer.Ordinal)
-                .Select(g => new ImportGroupViewModel(g.Key, g.ToList())));
+                .GroupBy(c => (Source: c.GroupKey ?? "", c.SuggestedName))
+                .Select(g => new ImportGroupViewModel(g.Key.SuggestedName, g.ToList())));
     }
 
     /// <summary>把界面上编辑过的包名写回候选对象（确认导入时调用）。</summary>

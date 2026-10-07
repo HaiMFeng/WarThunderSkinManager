@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
-        Width="520" SizeToContent="Height" MaxHeight="620"
+        Title="{Binding Title}"
+        Width="540" SizeToContent="Height" MaxHeight="640"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         FontFamily="symbols_skyquake, Segoe UI, Microsoft YaHei UI"
@@ -20,7 +21,7 @@
             <!-- 标题栏（可拖动） -->
             <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
                   MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <TextBlock x:Name="HeaderText" Margin="14,0" VerticalAlignment="Center"
+                <TextBlock Text="{Binding Title}" Margin="14,0" VerticalAlignment="Center"
                            FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                 <Button Style="{StaticResource TitleBarCloseButton}"
                         HorizontalAlignment="Right" Click="Cancel_Click"/>
@@ -35,35 +36,59 @@
                     <TextBlock Text="&#xF071;" FontFamily="{StaticResource IconFont}" FontSize="15"
                                Foreground="{StaticResource BrushDanger}" VerticalAlignment="Top"
                                Margin="0,1,10,0"/>
-                    <TextBlock x:Name="WarningText" TextWrapping="Wrap" FontSize="13" LineHeight="21"
+                    <TextBlock Text="{Binding WarningText}" TextWrapping="Wrap" FontSize="13" LineHeight="21"
                                Foreground="{StaticResource BrushTextSecondary}"/>
                 </StackPanel>
             </Border>
 
-            <!-- 删除列表：每行「载具显示名.涂装包名」（如 VT-5.Skin1） -->
+            <!-- 连带清单：**可勾选**（默认全选），每行「载具显示名.涂装包名」（如 VT-5.Skin1） -->
             <StackPanel Grid.Row="2" Margin="20,14,20,0">
-                <TextBlock x:Name="ListHint" Style="{StaticResource PageSubtitle}"/>
-                <ScrollViewer MaxHeight="300" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
-                    <ItemsControl x:Name="PackageList">
-                        <ItemsControl.ItemTemplate>
+                <Grid>
+                    <TextBlock Text="{loc:Loc pkg.related.listHint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding SelectionText}" Style="{StaticResource PageSubtitle}"
+                               HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                </Grid>
+
+                <Border Margin="0,8,0,0" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                        CornerRadius="6" Padding="4,2">
+                    <ListBox ItemsSource="{Binding Rows}" MaxHeight="300"
+                             BorderThickness="0" Background="Transparent"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="6,5"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1"
-                                        Padding="2,7">
-                                    <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding Display}"/>
-                                </Border>
+                                <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Display}"
+                                          ToolTip="{Binding Display}"/>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
             </StackPanel>
 
-            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16,20,18">
-                <Button Content="{loc:Loc common.cancel}" Style="{StaticResource SecondaryButton}"
-                        Click="Cancel_Click"/>
-                <Button x:Name="DeleteButton" Margin="8,0,0,0"
-                        Style="{StaticResource DangerFillButton}" Click="Ok_Click"/>
-            </StackPanel>
+            <Grid Grid.Row="3" Margin="20,16,20,18">
+                <!-- 勾选辅助：全选 / 全取消（贴左） -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Button Content="{loc:Loc pkg.related.selectAll}" Padding="10,4" FontSize="12"
+                            Style="{StaticResource SecondaryButton}" Command="{Binding SelectAllCommand}"/>
+                    <Button Content="{loc:Loc pkg.related.selectNone}" Padding="10,4" FontSize="12" Margin="8,0,0,0"
+                            Style="{StaticResource SecondaryButton}" Command="{Binding SelectNoneCommand}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{loc:Loc common.cancel}" Style="{StaticResource SecondaryButton}"
+                            Click="Cancel_Click"/>
+                    <Button x:Name="DeleteButton" Margin="8,0,0,0"
+                            Style="{StaticResource DangerFillButton}"
+                            Content="{loc:Loc pkg.related.confirm}"
+                            IsEnabled="{Binding HasSelection}" Click="Ok_Click"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Border>
 </Window>
