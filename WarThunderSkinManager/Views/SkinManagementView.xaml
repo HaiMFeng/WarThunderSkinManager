@@ -78,8 +78,10 @@
                     <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
                 </Button>
 
+                <!-- VerticalOffset：与下载按钮之间留出间距（贴太紧像按钮的一部分）；
+                     横向偏移在代码里按"浮窗右缘对齐按钮右缘"动态设置（见 OpenWtLivePopup） -->
                 <Popup x:Name="WtLiveListPopup" PlacementTarget="{Binding ElementName=WtLiveListButton}"
-                       Placement="Bottom" StaysOpen="True" AllowsTransparency="True"
+                       Placement="Bottom" VerticalOffset="8" StaysOpen="True" AllowsTransparency="True"
                        PopupAnimation="Fade" Width="360"
                        MouseEnter="WtLivePopup_MouseEnter" MouseLeave="WtLivePopup_MouseLeave">
                     <Border Background="{StaticResource BrushBackground}" BorderBrush="{StaticResource BrushBorder}"
