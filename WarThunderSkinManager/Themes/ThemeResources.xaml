@@ -520,15 +520,18 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" CornerRadius="6"
-                            Background="{StaticResource BrushSurface2}" Opacity="0">
+                    <!-- 悬停底与图标是**兄弟节点**：只有背景参与淡入淡出，
+                         图标不能放进 bd 里（否则不悬停时整个按钮连图标一起不可见） -->
+                    <Grid>
+                        <Border x:Name="bd" CornerRadius="6"
+                                Background="{StaticResource BrushSurface2}" Opacity="0"/>
                         <Path x:Name="icon" Data="{TemplateBinding Tag}"
                               Stroke="{TemplateBinding Foreground}"
                               StrokeThickness="1.1" StrokeLineJoin="Round"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Width="10" Height="10" Stretch="None"
                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
@@ -569,15 +572,17 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" CornerRadius="6"
-                            Background="{StaticResource BrushDangerSoftBg}" Opacity="0">
+                    <!-- 同 TitleBarButton：图标与悬停底是兄弟节点，图标常显 -->
+                    <Grid>
+                        <Border x:Name="bd" CornerRadius="6"
+                                Background="{StaticResource BrushDangerSoftBg}" Opacity="0"/>
                         <Path x:Name="icon" Data="{TemplateBinding Tag}"
                               Stroke="{TemplateBinding Foreground}"
                               StrokeThickness="1.1" StrokeLineJoin="Round"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Width="10" Height="10" Stretch="None"
                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Foreground" Value="{StaticResource BrushDanger}"/>
