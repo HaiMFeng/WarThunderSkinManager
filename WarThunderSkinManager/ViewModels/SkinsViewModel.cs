@@ -255,12 +255,15 @@ public partial class SkinsViewModel : ObservableObject
             item.StateText = Loc["wtlive.state.importing"];
 
             extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir), runToken);
-            var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, item.FileName), runToken);
 
-            // 同一帖子内的载具互通 → 显示名应用于全部候选（预览窗可再改）
-            if (item.DisplayName.Length > 0)
-                foreach (var candidate in candidates)
-                    candidate.SuggestedName = item.DisplayName;
+            // 建议名 = 帖子显示名（没有就退回压缩包名去扩展名）+ **包内嵌套段**（§3.1，与「导入压缩包」同一规则）：
+            // 同一个压缩包里的多个涂装包因此可区分（Skin/ver1/type1/car1.blk ⇒ Skin.ver1.type1）
+            var packName = item.DisplayName.Length > 0
+                ? item.DisplayName
+                : Path.GetFileNameWithoutExtension(item.FileName);
+
+            var candidates = await Task.Run(
+                () => ImportService.Scan(extracted, ImportSourceType.Archive, packName), runToken);
 
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath);
 

@@ -818,6 +818,31 @@ internal static class SelfTest
             log.AppendLine($"按压缩包扫描: {zipCandidates.Count} 个候选 → "
                          + string.Join("、", zipCandidates.Select(c => $"{c.VehicleId}（建议名 {c.SuggestedName}，{c.MappingCount} 条）")));
 
+            // ---- 压缩包嵌套命名（§3.1）：同一个压缩包里的多个涂装包要能区分 ----
+            // Skin.zip → Skin/ver1/type1/car1.blk、Skin/ver1/type2/car1.blk、Skin/ver2/car1.blk
+            var nestedRoot = Path.Combine(workDir, "nested-skin");
+            foreach (var rel in new[] { "Skin/ver1/type1", "Skin/ver1/type2", "Skin/ver2" })
+            {
+                var dir = Path.Combine(nestedRoot, rel.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "car1.blk"),
+                    BlkAssembler.MinimalBlock("a_c", "b.dds"), new UTF8Encoding(false));
+            }
+
+            var nestedNames = ImportService.Scan(nestedRoot, ImportSourceType.Archive, "Skin")
+                .Select(c => c.SuggestedName).ToList();
+            log.AppendLine($"嵌套命名   : {string.Join("、", nestedNames)}"
+                         + "（应 Skin.ver1.type1 / Skin.ver1.type2 / Skin.ver2）");
+
+            // 文件夹 / UserSkins 导入**不套用**嵌套规则（按 blk 所在文件夹命名，规则不变）
+            var nestedFolderNames = ImportService.Scan(nestedRoot, ImportSourceType.Folder)
+                .Select(c => c.SuggestedName).Distinct().OrderBy(n => n, StringComparer.Ordinal).ToList();
+            log.AppendLine($"嵌套命名对照: 文件夹导入 = {string.Join("、", nestedFolderNames)}"
+                         + "（应 type1 / type2 / ver2）"
+                         + $"，首段同包名 = {PackageNaming.AppendNested("Skin", "Skin/ver1")}（应 Skin.ver1）"
+                         + $"，无单一顶层 = {PackageNaming.AppendNested("Skin", @"A\ver1")}（应 Skin.A.ver1）"
+                         + $"，无嵌套 = {PackageNaming.AppendNested("Skin", "")}（应 Skin）");
+
             ArchiveService.CleanupStaging(new[] { extractDir });
             log.AppendLine($"清理暂存目录后仍存在: {Directory.Exists(extractDir)}");
 

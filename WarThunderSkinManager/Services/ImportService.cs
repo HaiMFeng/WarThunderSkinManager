@@ -110,15 +110,24 @@ public static class ImportService
         var root = Path.GetFullPath(folder);
         var list = new List<ImportCandidate>();
 
-        foreach (var blkPath in EnumerateBlkFiles(root, skipWtsm))
+        var blkFiles = EnumerateBlkFiles(root, skipWtsm).ToList();
+
+        // 压缩包（§3.1）：包内常见「压缩包名/版本/类型/blk」的嵌套 —— 建议名要带上嵌套段，
+        // 否则同一个压缩包里的多个涂装包会拿到完全一样的名字。最外层那层若全包共用，
+        // 它代表压缩包自身（已体现在包名里）→ 不重复写进名字。
+        var skipFirstSegment = !string.IsNullOrWhiteSpace(archiveName) && HasSingleTopFolder(root, blkFiles);
+
+        foreach (var blkPath in blkFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var sourceFolder = RelativeFolder(root, blkPath);
             var candidate = new ImportCandidate
             {
                 BlkPath = blkPath,
                 VehicleId = Path.GetFileNameWithoutExtension(blkPath),
-                SuggestedName = PackageNaming.Suggest(archiveName, root, blkPath),
-                SourceFolder = RelativeFolder(root, blkPath)
+                SuggestedName = PackageNaming.Suggest(archiveName, root, blkPath, sourceFolder, skipFirstSegment),
+                SourceFolder = sourceFolder
             };
 
             try
@@ -363,6 +372,24 @@ public static class ImportService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 包内所有 blk 是否共用**同一个顶层文件夹**（压缩包导入用：那一层代表压缩包自身）。
+    /// 有 blk 直接躺在根下 → 不算（此时无法说外层代表压缩包）。
+    /// </summary>
+    private static bool HasSingleTopFolder(string root, IReadOnlyList<string> blkFiles)
+    {
+        var tops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var blkPath in blkFiles)
+        {
+            var top = TopLevelOf(root, blkPath);
+            if (top.Length == 0) return false;
+            tops.Add(top);
+        }
+
+        return tops.Count == 1;
     }
 
     /// <summary>blk 相对 <paramref name="fullRoot"/> 的顶层段；直接位于根下时返回空串。</summary>
