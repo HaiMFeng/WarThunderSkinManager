@@ -33,7 +33,12 @@ public static class DeconstructionService
             VehicleId = blk.VehicleId,
             Name = PackageNaming.Resolve(name, blkPath),
             SourceImportId = sourceImportId,
-            IsResource = true // 导入包 = 只读资源（§3.5）
+            IsResource = true, // 导入包 = 只读资源（§3.5）
+            // 有效 blk 文本 = 导入的原文（§7：资源包激活时**逐字节部署**它）
+            BlkText = text,
+            Blocks = blk.Blocks
+                .Select(b => new EffectiveBlock(b.Index, -1, b.From, b.To, b.Text, !b.IsIndexed))
+                .ToList()
         };
 
         var meta = new PackageMeta

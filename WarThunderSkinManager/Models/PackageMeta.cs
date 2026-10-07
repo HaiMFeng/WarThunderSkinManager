@@ -32,21 +32,49 @@ public sealed class PackageMeta
     /// <summary>同载具内的显示顺序（用户可拖动卡片调整）</summary>
     public int Order { get; set; }
 
-    /// <summary>
-    /// 该包的**部件贴图配置**（功能设计 §3.5 / §3.6）：部件位置 → 使用的贴图。
-    /// 用户在「涂装包属性」界面改动后写入**完整快照**（即该包最终使用哪些部件贴图）。
-    /// </summary>
-    public List<PackagePartEntry> Parts { get; set; } = new();
-
-    /// <summary>
-    /// 是否已由用户在属性界面**配置过**部件贴图。
-    /// <c>false</c> = 沿用 <c>source.blk</c> 内的原始条目；
-    /// <c>true</c> = 以 <see cref="Parts"/> 为准（即使为空 = 该包不输出任何部件）。
-    /// </summary>
-    public bool PartsConfigured { get; set; }
-
     /// <summary>贴图引用表：blk 内 to 原名 → 内容哈希</summary>
     public List<TextureEntry> Textures { get; set; } = new();
+
+    // ---------- 块级模型（docs/软件功能设计.md §7 三层模型） ----------
+    // 输出 = **source.blk 原文** + 下列改动；未改动时逐字节等于 source.blk。
+    // 资源包（IsResource）永不写入这些字段 —— 激活时直接部署原文。
+
+    /// <summary>继承块的改动（按 <see cref="BlkBlock.Index"/> 定位）：覆写原文 / 删除</summary>
+    public List<BlkBlockOverride> BlockOverrides { get; set; } = new();
+
+    /// <summary>用户新增块（原文，按顺序追加在继承块之后；由我们排版的最小块不带 param）</summary>
+    public List<string> AddedBlocks { get; set; } = new();
+
+    /// <summary>
+    /// **额外参数块**（原文）：聚合无法归属的块（缺 <c>to</c>）与用户自由编辑的内容，
+    /// 输出时统一放在**文件末尾**（官方语义下书写顺序与游戏加载顺序无关），可编辑、可删除。
+    /// 新建包为空。
+    /// </summary>
+    public string? ExtraBlkText { get; set; }
+
+    /// <summary>用户自定义的部件位置显示顺序（可选；空 = 按 source.blk 顺序）</summary>
+    public List<string> PartOrder { get; set; } = new();
+
+    // ---------- 旧字段（v0.1.4 及以前）：**仅供一次性迁移读取** ----------
+
+    /// <summary>【旧】部件贴图配置快照——迁移为 <see cref="BlockOverrides"/> 后不再写入</summary>
+    public List<PackagePartEntry> Parts { get; set; } = new();
+
+    /// <summary>【旧】是否已配置过部件贴图（<c>true</c> = 以 <see cref="Parts"/> 为准）</summary>
+    public bool PartsConfigured { get; set; }
+}
+
+/// <summary>继承块的一条改动（块级模型）：覆写原文（含贴图替换后的文本）或标记删除。</summary>
+public sealed class BlkBlockOverride
+{
+    /// <summary>对应 source.blk 解析出的块序号（<see cref="BlkBlock.Index"/>）</summary>
+    public int Index { get; set; }
+
+    /// <summary>覆写后的块原文（<c>null</c> = 不覆写文本，仅按 <see cref="Deleted"/> 处理）</summary>
+    public string? Text { get; set; }
+
+    /// <summary>是否从输出中删除该块（"设为无" / 手动删块 / 迁移时被 parts 覆盖掉的块）</summary>
+    public bool Deleted { get; set; }
 }
 
 /// <summary>贴图引用：原名（to）→ 内容哈希（blob 文件名 = 哈希 + 扩展名）。</summary>

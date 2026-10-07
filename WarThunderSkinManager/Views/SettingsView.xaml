@@ -142,17 +142,30 @@
                 </StackPanel>
             </Border>
 
-            <!-- 多源复用（§3.13）：开启后左侧导航出现「多源复用」页；关闭只停用，组数据保留 -->
+            <!-- 进阶功能（§3.13 多源复用 / §7.3 手动编辑 blk）：面向懂技术的用户 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.partReuse}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{loc:Loc settings.partReuse.hint}" Style="{StaticResource PageSubtitle}"
+                    <TextBlock Text="{loc:Loc settings.advanced}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.advanced.hint}" Style="{StaticResource PageSubtitle}"
                                TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                    <!-- 多源复用（§3.13）：开启后左侧导航出现「多源复用」页；关闭只停用，组数据保留 -->
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="{loc:Loc settings.partReuse.toggle}" VerticalAlignment="Center"/>
                         <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
                                   IsChecked="{Binding Config.PartReuseEnabled}"/>
                     </StackPanel>
+                    <TextBlock Text="{loc:Loc settings.partReuse.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,6,0,16"/>
+
+                    <!-- 手动编辑 blk（§7.3）：开启后属性页出现「编辑 blk 块」 -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{loc:Loc settings.manualBlkEdit.toggle}" VerticalAlignment="Center"/>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
+                                  IsChecked="{Binding Config.ManualBlkEdit}"/>
+                    </StackPanel>
+                    <TextBlock Text="{loc:Loc settings.manualBlkEdit.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 

@@ -15,11 +15,12 @@ using WarThunderSkinManager.Views;
 namespace WarThunderSkinManager.ViewModels;
 
 /// <summary>
-/// 涂装包属性对话框视图模型（功能设计 §3.5 / §3.6）：
-/// 自定义显示名、预览图（选择文件 / 从剪贴板 / 清除），以及**该包的部件贴图配置**——
-/// 逐部件从「同载具其他涂装包中相同 <c>from</c> 的贴图」里挑选，并用**滑块**决定写
-/// <c>replace_tex</c> 还是 <c>set_tex</c>。
-/// 首次使用滑块会弹窗知会含义；用户取消则本次不改变、下次继续提示。
+/// 涂装包属性对话框视图模型（功能设计 §3.5 / §3.6 / §7 三层模型）：
+/// 自定义显示名、预览图（选择文件 / 从剪贴板 / 清除），以及**该包的部件贴图选择**——
+/// 逐部件从「同载具其他涂装包中相同 <c>from</c> 的贴图」里挑选；**块跟着贴图走**：
+/// 换贴图只改写该位置各块的 <c>to</c> 槽位，其余字段（含 <c>param</c>）原样保留。
+/// 资源包只读（不可解锁，只能复制为普通包）；开启「设置 → 进阶功能 → 手动编辑 blk」后，
+/// 每行出现「编辑 blk 块」，可逐块编辑原文 / 删除（面向懂技术的用户）。
 /// </summary>
 public partial class PackageEditorViewModel : ObservableObject
 {
@@ -33,9 +34,6 @@ public partial class PackageEditorViewModel : ObservableObject
 
     /// <summary>单个部件位置最多并入多少条跨载具候选（安全上限，正常远小于此值）。</summary>
     private const int MaxCrossVehicleCandidates = 80;
-
-    /// <summary>用户是否已知会过 replace/set 的含义（来自配置，确认一次后永久为 true）。</summary>
-    private bool _modeNoticeSeen;
 
     [ObservableProperty] private string _name;
     [ObservableProperty] private ImageSource? _previewImage;
@@ -51,9 +49,7 @@ public partial class PackageEditorViewModel : ObservableObject
         _resourceDir = config.ResourceDirectory;
         _meta = meta;
         _name = meta.Name;
-        _modeNoticeSeen = config.ReplaceSetNoticeSeen;
-        _isResource = meta.IsResource;
-        _originalIsResource = meta.IsResource;
+        _extraBlkText = meta.ExtraBlkText ?? "";
 
         RefreshPreview();
         BuildParts();
@@ -68,54 +64,42 @@ public partial class PackageEditorViewModel : ObservableObject
 
     partial void OnPreviewImageChanged(ImageSource? value) => OnPropertyChanged(nameof(HasPreview));
 
-    // ---------- 资源包开关（§3.5）----------
+    // ---------- 资源包（§3.5 / §7）----------
 
-    /// <summary>是否**资源包**（只读素材）：打开时禁用部件贴图修改，部件行 / 候选照常展示。</summary>
+    /// <summary>
+    /// 是否**资源包**（只读素材）：属性页只做展示——不可改块、**不可解锁**，
+    /// 要改就先「复制为普通包」（入口在资源包横幅里，见 <see cref="RequestDuplicateCommand"/>）。
+    /// </summary>
+    public bool IsResource => _meta.IsResource;
+
+    /// <summary>普通包才可改部件贴图（资源包只读）</summary>
     public bool CanEditTextures => !IsResource;
 
-    /// <summary>进入对话框时的资源态（解锁知会只对「原本是资源包」的解锁生效）。</summary>
-    private readonly bool _originalIsResource;
+    /// <summary>
+    /// 进阶：是否显示「编辑 blk 块」——需在**设置 → 进阶功能**里开启「手动编辑 blk」，
+    /// 且当前包不是资源包（§7.3）。
+    /// </summary>
+    public bool CanEditBlkBlocks => _config.ManualBlkEdit && !IsResource;
 
-    /// <summary>是否资源包（滑块）：解锁（开 → 关）弹知会；切换后重建部件行（两种态的映射来源不同）。</summary>
-    public bool IsResource
+    /// <summary>
+    /// **额外参数块**（原文）：聚合无法归属的块（缺 <c>to</c>）与用户自由编辑的内容，
+    /// 输出时统一放在**文件末尾**（官方语义下书写顺序与游戏加载顺序无关）。
+    /// </summary>
+    [ObservableProperty] private string _extraBlkText = "";
+
+    /// <summary>用户在属性页点了「复制为普通包」（由调用方据此关闭窗口并执行复制）。</summary>
+    public bool DuplicateRequested { get; private set; }
+
+    /// <summary>请求「复制为普通包」：置标记并请窗口关闭（不写回任何改动）。</summary>
+    [RelayCommand]
+    private void RequestDuplicate()
     {
-        get => _isResource;
-        set
-        {
-            if (_isResource == value) return;
-
-            if (_originalIsResource && !value)
-            {
-                var accepted = MessageDialog.Confirm(
-                    Loc["pkg.editor.resource.unlockNotice"],
-                    Loc["pkg.editor.resource.unlockTitle"],
-                    Loc["pkg.editor.resource.unlockOk"], Loc["common.cancel"],
-                    icon: DialogIcon.Warning);
-
-                if (!accepted)
-                {
-                    // 取消 → 滑块回滚：字段本就没改（仍是 true），但 WPF 已把勾选态置为未勾选，
-                    // 必须**手动通知**把视图拉回来（原先走受 _suppressResource 守卫的 setter 被吞掉，
-                    // 表现为「取消后开关仍是解锁状态、再点无反应」）
-                    OnPropertyChanged(nameof(IsResource));
-                    return;
-                }
-            }
-
-            // 由普通包切成资源包：**先落盘当前部件编辑**——资源态不可编辑，
-            // 下面的 BuildParts 会用资源视图重建部件行，切换前的选择否则会被静默丢弃
-            if (value && !_meta.IsResource) ApplyParts();
-
-            _isResource = value;
-            OnPropertyChanged(nameof(IsResource));
-            OnPropertyChanged(nameof(CanEditTextures));
-
-            _meta.IsResource = value;
-            BuildParts(); // 资源态 / 普通态的映射来源不同 → 重建部件行
-        }
+        DuplicateRequested = true;
+        CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool _isResource;
+    /// <summary>窗口订阅：请求关闭（复制为普通包时用，视为取消当前编辑）</summary>
+    public event EventHandler? CloseRequested;
 
     [RelayCommand]
     private void ChoosePreview()
@@ -174,27 +158,34 @@ public partial class PackageEditorViewModel : ObservableObject
 
         _meta.Preview = PreviewStore.Exists(_configDir, _meta.Id) ? PreviewStore.FileName(_meta.Id) : "";
 
-        ApplyParts();
+        ApplyBlocks();
     }
 
-    // ---------- 部件贴图（§3.5 / §3.6）----------
+    // ---------- 进阶：编辑 blk 块（§7.3）----------
+
+    /// <summary>
+    /// 「编辑 blk 块」：展开 / 收起该位置的块编辑器（直接改块原文，其余块不受影响）。
+    /// 仅在设置里开启「手动编辑 blk」且非资源包时可用。
+    /// </summary>
+    [RelayCommand]
+    private void EditBlocks(PartRow? row)
+    {
+        if (row == null || !CanEditBlkBlocks) return;
+        row.IsEditingBlocks = !row.IsEditingBlocks;
+    }
+
+    // ---------- 部件贴图（§3.5 / §3.6 / §7）----------
 
     /// <summary>
     /// 构建部件行：行为「该载具由各包 <c>from</c> 聚合出的部件位置」；
     /// 候选 = **本载具同 <c>from</c> 的可用贴图**（含本包自身）+ **其他载具同 <c>from</c> 的贴图**
-    /// （跨载具复用，界面标注来源载具，见 §3.6），另加「无」项。
+    /// （跨载具复用，界面标注来源载具，见 §3.6），另加「无」项；
+    /// 每行还带上**本包在该位置的块**（进阶模式可逐块编辑原文）。
     /// </summary>
     private void BuildParts()
     {
         var rows = new ObservableCollection<PartRow>();
         _canEditParts = false;
-
-        // 本包当前生效的映射（按 from 分组）：**未改动的部件保存时按原样逐条写回**——
-        // 作者常用 `set_tex` + `replace_tex` 配对（装甲车迷彩），界面是「每 from 一行」，
-        // 若一律压成一行会丢掉配对、改变透明度/迷彩渲染（§3.6 / §3.8）。
-        // 先清空（含 vehicle == null 的早退路径），避免留着上一轮的状态
-        _sourceMappingsByFrom.Clear();
-        _initialRowState.Clear();
 
         var vehicle = string.IsNullOrWhiteSpace(_resourceDir)
             ? null
@@ -206,15 +197,20 @@ public partial class PackageEditorViewModel : ObservableObject
             return;
         }
 
+        // 本包的有效块（按 from 分组）：**块跟着贴图走**——属性页每行显示该位置的块，
+        // 进阶模式下可逐块编辑原文（§7 三层模型）
+        var blocksByKey = new Dictionary<string, List<EffectiveBlock>>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var package in vehicle.SkinPackages)
         {
             if (!string.Equals(package.Id, _meta.Id, StringComparison.Ordinal)) continue;
 
-            foreach (var grouping in package.Mappings.GroupBy(
-                         m => VehicleAggregator.NormalizeFrom(m.FromModule), StringComparer.OrdinalIgnoreCase))
+            foreach (var grouping in package.Blocks
+                         .Where(b => !b.IsUnindexed)
+                         .GroupBy(b => VehicleAggregator.NormalizeFrom(b.From ?? ""), StringComparer.OrdinalIgnoreCase))
             {
                 if (grouping.Key.Length == 0) continue;
-                _sourceMappingsByFrom[grouping.Key] = grouping.ToList();
+                blocksByKey[grouping.Key] = grouping.ToList();
             }
         }
 
@@ -255,35 +251,9 @@ public partial class PackageEditorViewModel : ObservableObject
                     entry = pool[key].First(c => string.Equals(c.Blob, candidate.Blob, StringComparison.Ordinal));
                 }
 
-                // 本包在该位置当前使用的贴图：**写入方式与 to 名以本包 meta 为准**——
-                // 候选合并后条目携带的是"最早持有该内容"的包的写法，若直接用它当滑块初值，
-                // 用户保存的 set_tex 会在重开窗口后被资源包的 replace_tex 覆盖（"设置不保存"的根因）
+                // 本包在该位置当前使用的贴图
                 if (string.Equals(package.Id, _meta.Id, StringComparison.Ordinal))
-                {
-                    entry.Mode = mapping.Mode;
-                    entry.Param = mapping.Param;
-                    if (!string.IsNullOrWhiteSpace(mapping.ToFile)) entry.To = mapping.ToFile;
                     current[key] = entry;
-                }
-            }
-
-            // 原始映射（被「无」掉的部件，§3.5）：为部件行保留候选，让「不选用」可逆；
-            // 这类条目只在其内容尚未出现在候选池时补充进来
-            foreach (var mapping in package.OriginalMappings)
-            {
-                var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
-                if (key.Length == 0) continue;
-
-                if (!pool.ContainsKey(key))
-                {
-                    pool[key] = new List<PartCandidate>();
-                    seenBlobs[key] = new HashSet<string>(StringComparer.Ordinal);
-                }
-
-                if (!TryBuildCandidate(package, mapping, out var candidate)) continue;
-
-                if (seenBlobs[key].Add(candidate.Blob))
-                    pool[key].Add(candidate);
             }
         }
 
@@ -311,35 +281,29 @@ public partial class PackageEditorViewModel : ObservableObject
                          .ThenBy(c => c.Display, StringComparer.Ordinal))
                 row.Candidates.Add(candidate);
 
-            // 先定选择（期间写入方式跟随贴图原始写法），再接上滑块确认回调
+            // 该位置在本包输出中的块（块跟着贴图走；进阶模式下可编辑原文 / 删除）
+            if (blocksByKey.TryGetValue(key, out var keyBlocks))
+                foreach (var block in keyBlocks)
+                    row.Blocks.Add(new BlkBlockRow
+                    {
+                        Index = block.Index,
+                        AddedIndex = block.AddedIndex,
+                        From = block.From,
+                        To = block.To,
+                        Text = block.Text,
+                        OriginalText = block.Text
+                    });
+
             row.SelectedCandidate = current.TryGetValue(key, out var chosen) && row.Candidates.Contains(chosen)
                 ? chosen
                 : row.Candidates[0];
 
-            // 记录进窗口时的选择（ApplyParts 据此识别「未改动」的行，未改动的部件原样逐条写回）：
-            // **必须含内容（blob）与 param** —— 候选池允许「同名不同内容」并存，
-            // 只比 to 名 + 滑块会把「换选同名贴图」误判成未改动而静默丢弃
-            _initialRowState[key] = (row.SelectedCandidate?.To ?? "", row.IsSetMode,
-                row.SelectedCandidate?.Blob ?? "", row.SelectedCandidate?.Param ?? "");
-
-            row.ConfirmModeToggle = ConfirmModeToggle;
             rows.Add(row);
         }
 
         _canEditParts = true;
         Parts = rows;
     }
-
-    /// <summary>本包当前映射（按归一化 from 分组）：未改动的部件按原样逐条写回（保留 set/replace 配对）。</summary>
-    private readonly Dictionary<string, List<TexMapping>> _sourceMappingsByFrom =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// 各部件行进窗口时的选择（from → to / 写入方式 / 内容 / param），用于识别「未改动」的行。
-    /// 四元组缺一不可：blob 区分「同名不同内容」，param 区分「同名同内容不同写法」。
-    /// </summary>
-    private readonly Dictionary<string, (string To, bool IsSet, string Blob, string Param)> _initialRowState =
-        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 并入**跨载具**候选（功能设计 §3.6）：Gaijin 靠相同的 <c>from</c> 在不同载具间复用贴图，
@@ -413,7 +377,7 @@ public partial class PackageEditorViewModel : ObservableObject
     /// </summary>
     /// <remarks>
     /// 与本位置已有候选（含跨载具并入的）按内容（blob）去重；与跨载具共用同一安全上限。
-    /// 选中后写回包的仍是**本部件自己的 from**（见 <see cref="ApplyParts"/>），输出模型不变。
+    /// 选中后写回包的仍是**本部件自己的 from**（见 <see cref="ApplyBlocks"/>），输出模型不变。
     /// </remarks>
     private void AddMultiSourceCandidates(Dictionary<string, List<PartCandidate>> pool)
     {
@@ -495,118 +459,161 @@ public partial class PackageEditorViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 把界面上的部件选择写回 meta：
-    /// <see cref="PackageMeta.Parts"/> 写**完整快照**（未设置的不写入 = 该部件不输出），
-    /// 每条的 <c>mode</c> 取滑块状态（<c>replace_tex</c> / <c>set_tex</c>）；
-    /// <see cref="PackageMeta.Textures"/> 只增补引用（保留原始引用，导出原始模组仍可用，见 §3.11）。
+    /// 把界面上的编辑写回 meta（**块级模型**，§7 三层模型）：
+    /// 换贴图 = 只改写该位置各块的 <c>to</c> 槽位；「无」= 该位置的块不输出（可再选回来）；
+    /// 原本没有块的位置选图 = 生成一条最小块；逐块原文编辑 / 删除与「额外参数块」直接落盘。
+    /// 未改动时不写任何块级字段——未编辑的包输出仍与 <c>source.blk</c> 逐字节一致。
     /// </summary>
-    /// <remarks>
-    /// **to 撞名处理**：跨包 / 多源候选可能让两个部件选中**同名文件但内容不同**的贴图——
-    /// 而 meta.textures 以 to 为键，直接写回会让后选者覆盖先选者。因此撞名时给后者生成
-    /// **唯一文件名**（原名 + 贴图哈希前 8 位），保证每个部件"所见即所得"。
-    /// </remarks>
-    private void ApplyParts()
+    private void ApplyBlocks()
     {
-        // 资源包只读：parts/textures 永不改写（§3.5）；改名 / 预览图等元数据不受限。
-        // 例外：本次会话内**由普通包刚切成资源包**时，用户之前的部件编辑仍要落盘（否则静默丢失）。
-        if (!_canEditParts || (_meta.IsResource && _originalIsResource)) return;
+        // 资源包只读（§3.5 / §7）：只允许改名与预览图，块级字段永不写入
+        if (!_canEditParts || _meta.IsResource) return;
 
-        var parts = new List<PackagePartEntry>();
+        var overrides = new List<BlkBlockOverride>(_meta.BlockOverrides);
+        var added = new List<string>(_meta.AddedBlocks);
         var textures = new List<TextureEntry>(_meta.Textures);
+        var changed = false;
+
+        // 额外参数块（进阶：用户直接编辑的原文）
+        var extra = ExtraBlkText?.Trim() ?? "";
+        if (!string.Equals(extra, _meta.ExtraBlkText?.Trim() ?? "", StringComparison.Ordinal))
+        {
+            _meta.ExtraBlkText = extra.Length == 0 ? null : extra;
+            changed = true;
+        }
 
         foreach (var row in Parts)
         {
-            var choice = row.SelectedCandidate;
-
-            // **未改动**且选了具体贴图的部件：按本包原映射**逐条**写回——
-            // 作者常用 `set_tex` + `replace_tex` 配对（装甲车迷彩 + 替换），
-            // 界面是「每 from 一行」，压成一行会丢配对、改透明度 / 迷彩渲染（§3.6 / §3.8）。
-            // 行仍为「无」则维持「无」（不复活用户已排除的部件）。
-            var unchanged = choice is { IsNone: false }
-                            && _initialRowState.TryGetValue(row.From, out var initial)
-                            && string.Equals(initial.To, choice.To, StringComparison.OrdinalIgnoreCase)
-                            && initial.IsSet == row.IsSetMode
-                            && string.Equals(initial.Blob, choice.Blob, StringComparison.Ordinal)
-                            && string.Equals(initial.Param, choice.Param ?? "", StringComparison.Ordinal);
-            if (unchanged && _sourceMappingsByFrom.TryGetValue(row.From, out var sourceMappings))
+            // 1) 逐块的原文编辑 / 删除（进阶：编辑 blk 块）
+            foreach (var block in row.Blocks)
             {
-                foreach (var source in sourceMappings)
+                if (block.IsAdded)
                 {
-                    if (string.IsNullOrWhiteSpace(source.ToFile)) continue;
-                    parts.Add(new PackagePartEntry
+                    if (block.AddedIndex < 0 || block.AddedIndex >= added.Count) continue;
+
+                    if (block.Deleted)
                     {
-                        From = source.FromModule,
-                        Mode = source.Mode,
-                        To = source.ToFile,
-                        Param = source.Param
-                    });
+                        added[block.AddedIndex] = "";
+                        changed = true;
+                    }
+                    else if (block.IsChanged)
+                    {
+                        added[block.AddedIndex] = block.Text.Trim();
+                        changed = true;
+                    }
+                }
+                else if (block.Deleted)
+                {
+                    SetOverride(overrides, block.Index, text: null, deleted: true);
+                    changed = true;
+                }
+                else if (block.IsChanged)
+                {
+                    SetOverride(overrides, block.Index, block.Text.Trim(), deleted: false);
+                    changed = true;
+                }
+            }
+
+            // 2) 贴图选择（块跟着贴图走）
+            var choice = row.SelectedCandidate;
+            if (choice == null) continue;
+
+            var live = row.Blocks.Where(b => !b.Deleted).ToList();
+
+            if (choice.IsNone)
+            {
+                // 「无」= 该位置的块全部不输出（再选一张图即可恢复）
+                foreach (var block in live)
+                {
+                    if (block.IsAdded)
+                    {
+                        if (block.AddedIndex >= 0 && block.AddedIndex < added.Count) added[block.AddedIndex] = "";
+                    }
+                    else
+                    {
+                        SetOverride(overrides, block.Index, text: null, deleted: true);
+                    }
+
+                    changed = true;
                 }
 
                 continue;
             }
 
-            if (choice == null || choice.IsNone || string.IsNullOrWhiteSpace(choice.To)) continue;
+            if (string.IsNullOrWhiteSpace(choice.To)) continue;
 
-            var mode = row.IsSetMode ? MappingMode.Set : MappingMode.Replace;
+            var assignedTo = AssignTextureName(choice, textures);
 
-            // to 撞名：已被**其他贴图**占用的 to 名改用唯一文件名（见 remarks）
-            var assignedTo = choice.To;
-            var occupied = textures.FirstOrDefault(
-                t => string.Equals(t.To, assignedTo, StringComparison.OrdinalIgnoreCase));
-            if (occupied != null && !string.Equals(occupied.Blob, choice.Blob, StringComparison.Ordinal))
-                assignedTo = UniqueTextureTo(assignedTo, choice.Blob, textures);
-
-            parts.Add(new PackagePartEntry
+            if (live.Count == 0)
             {
-                // 多源候选的 From 是**来源部件**的位置；写回包时仍用本部件自己的 from（§3.13）
-                From = choice.IsMultiSource || string.IsNullOrWhiteSpace(choice.From) ? row.From : choice.From,
-                Mode = mode,
-                To = assignedTo,
-                // param 原样保留（透明度语义与命令绑定，丢弃会改变渲染）。
-                // 例外：**用户显式把滑块切到 set_tex** 时该模式必须带 param 才按「固定涂装」生效
-                // （候选多来自 replace 条目、Param 为空）→ 补标准值；往返既有 blk 时绝不补（见 BlkWriter）
-                Param = mode == MappingMode.Set && string.IsNullOrWhiteSpace(choice.Param)
-                    ? BlkWriter.CamoSkinTexParam
-                    : choice.Param
-            });
+                // 填空：该位置原本没有块 → 生成最小块（`replace_tex`、**不带 param**）
+                added.Add(BlkAssembler.MinimalBlock(row.From, assignedTo));
+                changed = true;
+            }
+            else if (live.Any(b => !string.Equals(b.To, assignedTo, StringComparison.OrdinalIgnoreCase)))
+            {
+                // 换贴图 = 只改写这些块的 `to` 槽位（其余字段含 param 原样保留）
+                foreach (var block in live)
+                {
+                    var patched = BlkAssembler.WithToText(block.Text, assignedTo);
+                    if (patched == null) continue; // 块里没有 to 槽位（无法归属）→ 保持原样
 
-            var entry = textures.FirstOrDefault(t => string.Equals(t.To, assignedTo, StringComparison.OrdinalIgnoreCase));
-            if (entry == null)
-                textures.Add(new TextureEntry { To = assignedTo, Blob = choice.Blob });
-            else if (!string.IsNullOrWhiteSpace(choice.Blob) && !string.Equals(entry.Blob, choice.Blob, StringComparison.Ordinal))
-                entry.Blob = choice.Blob; // 同名贴图以当前配置为准
+                    if (block.IsAdded)
+                    {
+                        if (block.AddedIndex >= 0 && block.AddedIndex < added.Count) added[block.AddedIndex] = patched;
+                    }
+                    else
+                    {
+                        SetOverride(overrides, block.Index, patched, deleted: false);
+                    }
+
+                    changed = true;
+                }
+            }
+
+            AddTexture(textures, assignedTo, choice.Blob);
         }
 
-        // 用户没有实际改动（逐行比对进窗口时的选择：to / 写入方式 / 内容 / param）→ 不固化 parts 快照：
-        // 普通包继续沿用 source.blk（to 名 / 映射来源零失真），也不会把「打开一次」变成配置动作
-        if (!AnyRowChanged()) return;
+        if (!changed) return;
 
-        _meta.Parts = parts;
-        _meta.PartsConfigured = true;
+        _meta.BlockOverrides = overrides;
+        _meta.AddedBlocks = added.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
         _meta.Textures = textures;
     }
 
-    /// <summary>
-    /// 是否有任一部件行的选择发生变化——四元组（to / 写入方式 / 内容 blob / param）逐项比对。
-    /// 只比 to 名与滑块会把「换选同名不同内容的贴图」「param 变化」误判为未改动而静默丢弃。
-    /// </summary>
-    private bool AnyRowChanged()
+    /// <summary>写入 / 更新一条继承块改动（按块序号定位）。</summary>
+    private static void SetOverride(List<BlkBlockOverride> list, int index, string? text, bool deleted)
     {
-        foreach (var row in Parts)
+        var existing = list.FirstOrDefault(o => o.Index == index);
+        if (existing == null)
         {
-            if (!_initialRowState.TryGetValue(row.From, out var initial)) return true;
-
-            var to = row.SelectedCandidate?.To ?? "";
-            var blob = row.SelectedCandidate?.Blob ?? "";
-            var param = row.SelectedCandidate?.Param ?? "";
-
-            if (!string.Equals(initial.To, to, StringComparison.OrdinalIgnoreCase)) return true;
-            if (initial.IsSet != row.IsSetMode) return true;
-            if (!string.Equals(initial.Blob, blob, StringComparison.Ordinal)) return true;
-            if (!string.Equals(initial.Param, param, StringComparison.Ordinal)) return true;
+            list.Add(new BlkBlockOverride { Index = index, Text = text, Deleted = deleted });
+            return;
         }
 
-        return false;
+        existing.Text = text;
+        existing.Deleted = deleted;
+    }
+
+    /// <summary>贴图撞名处理：同名但内容不同 → 唯一文件名（原名 + 贴图哈希前 8 位）。</summary>
+    private static string AssignTextureName(PartCandidate choice, List<TextureEntry> textures)
+    {
+        var occupied = textures.FirstOrDefault(
+            t => string.Equals(t.To, choice.To, StringComparison.OrdinalIgnoreCase));
+
+        return occupied != null && !string.Equals(occupied.Blob, choice.Blob, StringComparison.Ordinal)
+            ? UniqueTextureTo(choice.To, choice.Blob, textures)
+            : choice.To;
+    }
+
+    /// <summary>登记 / 更新 to → blob 引用（同名贴图以当前选择为准）。</summary>
+    private static void AddTexture(List<TextureEntry> textures, string to, string blob)
+    {
+        if (string.IsNullOrWhiteSpace(to) || string.IsNullOrWhiteSpace(blob)) return;
+
+        var entry = textures.FirstOrDefault(t => string.Equals(t.To, to, StringComparison.OrdinalIgnoreCase));
+        if (entry == null) textures.Add(new TextureEntry { To = to, Blob = blob });
+        else entry.Blob = blob;
     }
 
     /// <summary>为撞名的 to 生成唯一文件名：原名 + 所选贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
@@ -627,40 +634,6 @@ public partial class PackageEditorViewModel : ObservableObject
             candidate = Candidate($"{suffix}_{index++}");
 
         return candidate;
-    }
-
-    // ---------- 首次使用的写入方式知会（§3.6）----------
-
-    /// <summary>
-    /// 用户要改动写入方式时调用：未确认过则弹窗讲清 replace / set 的区别。
-    /// 取消 → 返回 false（滑块回滚、什么都不改），下次继续提示；确认 → 记住，不再提示。
-    /// </summary>
-    private bool ConfirmModeToggle()
-    {
-        if (_modeNoticeSeen) return true;
-
-        var accepted = MessageDialog.Confirm(
-            Loc.Format("pkg.editor.mode.notice", Loc["pkg.editor.mode.noticeOk"], Loc["common.cancel"]),
-            Loc["pkg.editor.mode.noticeTitle"],
-            Loc["pkg.editor.mode.noticeOk"], Loc["common.cancel"],
-            icon: DialogIcon.Warning);
-
-        if (!accepted) return false;
-
-        _modeNoticeSeen = true;
-        _config.ReplaceSetNoticeSeen = true;
-
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(_configDir))
-                ConfigService.Save(_configDir, _config);
-        }
-        catch
-        {
-            // 写不进去也不影响本次使用，只是下次会再提示一次
-        }
-
-        return true;
     }
 
     private void RefreshPreview()

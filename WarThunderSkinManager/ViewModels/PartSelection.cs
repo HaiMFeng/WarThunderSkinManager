@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WarThunderSkinManager.Models;
+using WarThunderSkinManager.Services;
 
 namespace WarThunderSkinManager.ViewModels;
 
@@ -74,11 +75,13 @@ public sealed class PartCandidate
     public override string ToString() => Display;
 }
 
-/// <summary>部件行：该部件位置的候选贴图 + 本包使用的贴图 + 写入方式滑块（§3.5 / §3.6）。</summary>
+/// <summary>
+/// 部件行：该部件位置的候选贴图 + 本包在该位置的 blk 块（§3.5 / §3.6 / §7 三层模型）。
+/// **块跟着贴图走**：选一张候选贴图 = 改写这些块的 <c>to</c> 槽位，其余字段原样保留；
+/// 不再有 replace / set 滑块（要改命令或 param 就在进阶模式里直接编辑块原文）。
+/// </summary>
 public partial class PartRow : ObservableObject
 {
-    private bool _suppressModeChange;
-
     /// <summary>归一化部件位置（去 <c>*</c>）</summary>
     public string From { get; init; } = "";
 
@@ -92,59 +95,57 @@ public partial class PartRow : ObservableObject
 
     public ObservableCollection<PartCandidate> Candidates { get; } = new();
 
-    /// <summary>本包在该部件位置使用的贴图；IsNone 项 = 不设置</summary>
+    /// <summary>本包在该部件位置使用的贴图；IsNone 项 = 不设置（该位置的块不输出）</summary>
     [ObservableProperty] private PartCandidate? _selectedCandidate;
 
-    /// <summary>
-    /// 写入方式：<c>true</c> = <c>set_tex</c>，<c>false</c> = <c>replace_tex</c>（§6.2）。
-    /// 初值跟随所选贴图在来源 blk 中的写法，用户可用滑块覆盖。
-    /// </summary>
-    [ObservableProperty] private bool _isSetMode;
+    /// <summary>本包在该位置的块（继承块 + 新增块）；进阶模式可逐块编辑原文 / 删除</summary>
+    public ObservableCollection<BlkBlockRow> Blocks { get; } = new();
 
-    /// <summary>
-    /// 用户改动滑块前的确认回调（首次使用需知会用户，见 §3.6）。
-    /// 返回 <c>false</c> 表示不采纳 → 滑块回滚，下次仍会再问。为空则直接生效。
-    /// </summary>
-    public Func<bool>? ConfirmModeToggle { get; set; }
+    /// <summary>进阶：是否展开该位置的块编辑器（「编辑 blk 块」按钮切换）</summary>
+    [ObservableProperty] private bool _isEditingBlocks;
 
-    public bool IsReplaceMode => !IsSetMode;
+    /// <summary>块数提示（界面文案「该位置有 N 条 blk 块」）</summary>
+    public string BlockCountText => Loc.Format("pkg.editor.blocks.count", Blocks.Count);
 
-    /// <summary>本部件是否有可用贴图（没有贴图时不写 blk，滑块也不可用）</summary>
-    public bool IsModeEnabled => SelectedCandidate is { IsNone: false };
+    private static LocalizationManager Loc => LocalizationManager.Instance;
 
     public override string ToString() => From;
+}
 
-    partial void OnSelectedCandidateChanged(PartCandidate? value)
-    {
-        OnPropertyChanged(nameof(IsModeEnabled));
+/// <summary>
+/// 属性页里的一条 blk 块（进阶：**编辑 blk 块**）。
+/// 输出里的块原文可编辑——改了就按原文写回（其余块不受影响）；也可标记删除。
+/// </summary>
+public partial class BlkBlockRow : ObservableObject
+{
+    /// <summary>继承块 = <c>source.blk</c> 中的块序号；新增块 = <c>-1</c></summary>
+    public int Index { get; init; } = -1;
 
-        if (value is not { IsNone: false }) return;
+    /// <summary>新增块在其列表中的下标（继承块 = <c>-1</c>）</summary>
+    public int AddedIndex { get; init; } = -1;
 
-        // 切换贴图时，写入方式**跟随该贴图的原始写法**（用户仍可再用滑块覆盖）
-        SetModeSilently(value.Mode == MappingMode.Set);
-    }
+    /// <summary>块的**可编辑原文**（含命令名与花括号）</summary>
+    [ObservableProperty] private string _text = "";
 
-    partial void OnIsSetModeChanged(bool value)
-    {
-        OnPropertyChanged(nameof(IsReplaceMode));
+    /// <summary>进窗口时的原文（判定是否改动）</summary>
+    public string OriginalText { get; init; } = "";
 
-        if (_suppressModeChange) return;
+    /// <summary>解析出的 <c>from</c>（显示用）</summary>
+    public string? From { get; init; }
 
-        // 首次使用：用户确认后才生效，取消则回滚（下次继续提示）
-        if (ConfirmModeToggle?.Invoke() == false)
-            SetModeSilently(!value);
-    }
+    /// <summary>解析出的 <c>to</c>（显示用）</summary>
+    public string? To { get; init; }
 
-    private void SetModeSilently(bool isSet)
-    {
-        _suppressModeChange = true;
-        try
-        {
-            IsSetMode = isSet;
-        }
-        finally
-        {
-            _suppressModeChange = false;
-        }
-    }
+    /// <summary>标记删除（该块不写入输出）</summary>
+    [ObservableProperty] private bool _deleted;
+
+    /// <summary>是否用户新增的块（对应 <see cref="PackageMeta.AddedBlocks"/>）</summary>
+    public bool IsAdded => AddedIndex >= 0;
+
+    /// <summary>是否已改动（原文变化或标记删除）——界面提示「已改动」用</summary>
+    public bool IsChanged => Deleted || !string.Equals(Text, OriginalText, StringComparison.Ordinal);
+
+    partial void OnTextChanged(string value) => OnPropertyChanged(nameof(IsChanged));
+
+    partial void OnDeletedChanged(bool value) => OnPropertyChanged(nameof(IsChanged));
 }

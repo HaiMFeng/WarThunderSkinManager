@@ -583,12 +583,29 @@ public partial class SkinsViewModel : ObservableObject
         OpenEditor(meta);
     }
 
-    /// <summary>打开涂装包属性界面（编辑 / 新建共用）：确定后写回 meta，改的若是激活包则立即重新输出。</summary>
+    /// <summary>
+    /// 打开涂装包属性界面（编辑 / 新建共用）：确定后写回 meta，改的若是激活包则立即重新输出。
+    /// 资源包只读（§7）——属性页里点「复制为普通包」即复制一份并**直接在其副本上继续编辑**。
+    /// </summary>
     private void OpenEditor(PackageMeta meta)
     {
         var editor = new PackageEditorViewModel(_config, meta);
         var window = new PackageEditorWindow { DataContext = editor, Owner = Application.Current?.MainWindow };
-        if (window.ShowDialog() != true) return;
+
+        if (window.ShowDialog() != true)
+        {
+            if (editor.DuplicateRequested)
+            {
+                var copy = DuplicatePackageCore(meta.Id, meta.Name);
+                if (copy != null)
+                {
+                    SelectPackage(copy.Id);
+                    OpenEditor(copy);
+                }
+            }
+
+            return;
+        }
 
         try
         {
@@ -652,20 +669,32 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
+        DuplicatePackageCore(SelectedPackage.Id, SelectedPackage.Name);
+    }
+
+    /// <summary>
+    /// 复制涂装包为**普通包**（返回副本 meta）。
+    /// 基准（<c>source.blk</c>）与块级改动一并克隆；资源包里的「无法归属的块」由
+    /// <see cref="PackageStore.Duplicate"/> 搬进副本的**额外参数块**（§7 三层模型）。
+    /// </summary>
+    private PackageMeta? DuplicatePackageCore(string packageId, string sourceName)
+    {
         try
         {
-            var newName = Loc.Format("pkg.copyName", SelectedPackage.Name);
-            var copy = PackageStore.Duplicate(_config.ResourceDirectory, SelectedPackage.Id, newName);
-            if (copy == null) return;
+            var newName = Loc.Format("pkg.copyName", sourceName);
+            var copy = PackageStore.Duplicate(_config.ResourceDirectory, packageId, newName);
+            if (copy == null) return null;
 
             PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
             RefreshLibrary();
             SelectPackage(copy.Id);
             ShowStatus(Loc.Format("pkg.duplicated", copy.Name));
+            return copy;
         }
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("pkg.operationFailed", ex.Message));
+            return null;
         }
     }
 

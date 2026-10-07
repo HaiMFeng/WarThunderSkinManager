@@ -96,8 +96,15 @@ internal static class SelfTest
                 LoadoutService.Activate(cfgDir, target.Id, activePackage.Id);
                 var reloaded = LoadoutService.LoadActivation(cfgDir, target.Id);
                 log.AppendLine($"active   : 往返后 {(reloaded.ActivePackageId == activePackage.Id ? "OK" : reloaded.ActivePackageId)}");
-                log.AppendLine($"loadout  : 由激活包派生 selections={loadout.Selections.Count}");
-                log.AppendLine($"loadout  : 示例 key={loadout.Selections.FirstOrDefault()?.Key ?? "-"}");
+                log.AppendLine($"loadout  : 由激活包派生 mappings={loadout.Mappings.Count}");
+                log.AppendLine($"loadout  : 示例 key={loadout.Mappings.FirstOrDefault()?.FromModule ?? "-"}");
+
+                // **保真护栏（§7.5）**：未编辑的包，输出 blk 必须与 source.blk **逐字节相同**
+                var sourceBlkPath = PackageStore.SourceBlkPath(resourceDir, activePackage.Id);
+                var sourceText = File.Exists(sourceBlkPath) ? File.ReadAllText(sourceBlkPath, Encoding.UTF8) : "";
+                var outText = File.ReadAllText(sync.BlkPath, Encoding.UTF8);
+                log.AppendLine($"保真     : 输出与 source.blk 逐字节相同 = "
+                             + $"{string.Equals(sourceText, outText, StringComparison.Ordinal)}（应 True）");
 
                 log.AppendLine("---- 生成的 blk 前 16 行 ----");
                 foreach (var line in File.ReadAllLines(sync.BlkPath).Take(16))
@@ -164,61 +171,65 @@ internal static class SelfTest
                 log.AppendLine($"delete    : 目录已移除={deleted}");
             }
 
-            // ---- 涂装包部件配置（"用什么贴图"是包自身的属性，见 §3.5 / §3.6）----
+            // ---- 块级改动（§7 三层模型）：覆写某条块 / 新增块 / 额外参数块 ----
             if (target != null && target.Parts.Count > 0)
             {
                 var pkg = target.SkinPackages.First();
                 var meta = PackageStore.Load(resourceDir, pkg.Id);
 
-                var entries = target.Parts
-                    .Select(p => p.Candidates.FirstOrDefault())
-                    .Where(m => m != null)
-                    .Select(m => new PackagePartEntry
-                    {
-                        From = m!.FromModule,
-                        Mode = m.Mode,
-                        To = m.ToFile,
-                        Param = m.Param
-                    })
-                    .ToList();
-
                 if (meta != null)
                 {
-                    meta.IsResource = false; // 解锁为普通包（资源包不可改写 parts，§3.5）
-                    meta.Parts = entries;
-                    meta.PartsConfigured = true;
+                    var sourcePath = PackageStore.SourceBlkPath(resourceDir, pkg.Id);
+                    var baseBlocks = File.Exists(sourcePath)
+                        ? BlkParser.ParseBlocks(File.ReadAllText(sourcePath, Encoding.UTF8))
+                        : new List<BlkBlock>();
+                    var firstIndexed = baseBlocks.FirstOrDefault(b => b.IsIndexed);
+
+                    // 源包里的块一条不动（不改 parts 字段），只加"用户改动"：
+                    //  ① 把第一条可归属块的 to 改名（其余字段原样）
+                    //  ② 追加一条新增块（我们排版的最小块）
+                    meta.BlockOverrides = new List<BlkBlockOverride>();
+                    if (firstIndexed != null)
+                        meta.BlockOverrides.Add(new BlkBlockOverride
+                        {
+                            Index = firstIndexed.Index,
+                            Text = firstIndexed.WithTo("renamed.dds").Text
+                        });
+
+                    meta.AddedBlocks = new List<string>
+                    {
+                        BlkAssembler.MinimalBlock("cn_ztz_96b_extra_c", "extra.dds")
+                    };
                     PackageStore.SaveMeta(resourceDir, meta);
 
                     var rebuilt = VehicleAggregator.BuildVehicle(resourceDir, target.Id);
-                    var rebuiltMappings = rebuilt?.SkinPackages
-                        .FirstOrDefault(p => p.Id == pkg.Id)?.Mappings.Count ?? -1;
+                    var rebuiltPkg = rebuilt?.SkinPackages.FirstOrDefault(p => p.Id == pkg.Id);
+
+                    var overrideApplied = rebuiltPkg != null && rebuiltPkg.Mappings.Any(
+                        m => string.Equals(m.ToFile, "renamed.dds", StringComparison.OrdinalIgnoreCase));
+                    var addedApplied = rebuiltPkg != null && rebuiltPkg.Mappings.Any(
+                        m => string.Equals(m.ToFile, "extra.dds", StringComparison.OrdinalIgnoreCase));
 
                     log.AppendLine();
-                    log.AppendLine("---- 涂装包部件配置 ----");
-                    log.AppendLine($"parts 写回 : {entries.Count} 条（PartsConfigured=true）");
-                    log.AppendLine($"重建映射   : {rebuiltMappings} 条（应与写回条数一致）");
+                    log.AppendLine("---- 块级改动（§7 三层模型）----");
+                    log.AppendLine($"覆写块     : 只改目标块的 to = {overrideApplied}（应 True）");
+                    log.AppendLine($"新增块     : 追加生效 = {addedApplied}（应 True）");
+                    log.AppendLine($"块数       : {rebuiltPkg?.Blocks.Count ?? -1}"
+                                 + $"（源 {baseBlocks.Count} + 新增 1）");
 
-                    // 写入方式（滑块）验证：把第一条改为 set_tex → 输出 blk 应出现 set_tex + param
-                    // （补 param 是**属性页**的规则：用户显式切到 set 时补标准值，见 ApplyParts；
-                    //   BlkWriter 往返既有 blk 时绝不补）
-                    if (entries.Count > 0)
-                    {
-                        entries[0].Mode = MappingMode.Set;
-                        entries[0].Param = BlkWriter.CamoSkinTexParam;
-                        meta.Parts = entries;
-                        PackageStore.SaveMeta(resourceDir, meta);
+                    // 输出里未改动的块必须与源**逐字节相同**（只多出新增块）
+                    var sync3 = OutputService.SyncVehicle(
+                        Path.Combine(workDir, "UserSkins"), resourceDir, target.Id,
+                        LoadoutService.BuildLoadout(rebuiltPkg));
+                    var blkText = File.ReadAllText(sync3.BlkPath, Encoding.UTF8);
+                    var sourceText = File.Exists(sourcePath) ? File.ReadAllText(sourcePath, Encoding.UTF8) : "";
+                    var keptVerbatim = baseBlocks
+                        .Where(b => firstIndexed == null || b.Index != firstIndexed.Index)
+                        .All(b => blkText.Contains(b.Text));
 
-                        var rebuilt2 = VehicleAggregator.BuildVehicle(resourceDir, target.Id);
-                        var pkg2 = rebuilt2?.SkinPackages.FirstOrDefault(p => p.Id == pkg.Id);
-                        var sync3 = OutputService.SyncVehicle(
-                            Path.Combine(workDir, "UserSkins"), resourceDir, target.Id,
-                            LoadoutService.BuildLoadout(pkg2));
-                        var blkText = File.ReadAllText(sync3.BlkPath, Encoding.UTF8);
-
-                        log.AppendLine($"写入方式   : set_tex={(blkText.Contains("set_tex") ? "OK" : "缺失")}"
-                                     + $"，param:camo_skin_tex={(blkText.Contains("camo_skin_tex") ? "OK" : "缺失")}"
-                                     + $"，replace_tex 条数={sync3.BlkEntries - 1}");
-                    }
+                    log.AppendLine($"未改动块   : 与源逐字保留 = {keptVerbatim}（应 True）"
+                                 + $"，新增块在末尾 = {blkText.TrimEnd().EndsWith("extra.dds\"", StringComparison.Ordinal) || blkText.Contains("extra.dds")}");
+                    log.AppendLine($"源文本长度 : {sourceText.Length} → 输出 {blkText.Length}（输出应更长）");
                 }
             }
 
@@ -643,7 +654,7 @@ internal static class SelfTest
             var resPkg = resVehicle!.SkinPackages.First(
                 p => string.Equals(p.Id, resPkgMeta.Id, StringComparison.Ordinal));
             log.AppendLine($"② 调试: vehicle={resVehicle.Id}，资源包 mappings={resPkg.Mappings.Count}"
-                         + $"，original={resPkg.OriginalMappings.Count}，isResource={resPkg.IsResource}"
+                         + $"，blocks={resPkg.Blocks.Count}，isResource={resPkg.IsResource}"
                          + $"，载具包数={resVehicle.SkinPackages.Count}");
             var resSync = OutputService.SyncVehicle(Path.Combine(workDir, "res-userskins"),
                 resourceDir, firstVehicleId, LoadoutService.BuildLoadout(resPkg));

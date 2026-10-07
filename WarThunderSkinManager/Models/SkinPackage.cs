@@ -7,15 +7,17 @@ namespace WarThunderSkinManager.Models;
 /// <summary>涂装包（导入时的一个 blk = 一个包）。物理存于资源目录 packages/&lt;Id&gt;/。</summary>
 public partial class SkinPackage : ObservableObject
 {
-    /// <summary>
-    /// **仅聚合 / 候选用**的原始映射（§3.5）：配置过部件贴图（<c>PartsConfigured</c>）的包里，
-    /// 被用户设为「无」或移除的 <c>source.blk</c> 原始条目——**不参与输出**（输出只看
-    /// <see cref="Mappings"/>），但保留部件行与候选，让「不选用」随时可以改回来。
-    /// </summary>
-    public List<TexMapping> OriginalMappings { get; set; } = new();
-
     /// <summary>是否资源包（只读素材，卡片角标与属性页只读态用）。</summary>
     public bool IsResource { get; set; }
+
+    /// <summary>
+    /// **组装好的有效 blk 文本**（§7 三层模型）：激活输出**直接写它**，不再"解析成条目再重建"。
+    /// 未改动的包 = <c>source.blk</c> 原文（逐字节）。
+    /// </summary>
+    [ObservableProperty] private string _blkText = "";
+
+    /// <summary>有效块的逐块清单（属性页展示 / 编辑、块编辑器用）</summary>
+    [ObservableProperty] private List<EffectiveBlock> _blocks = new();
 
     /// <summary>程序内稳定标识（GUID）</summary>
     [ObservableProperty] private string _id = "";

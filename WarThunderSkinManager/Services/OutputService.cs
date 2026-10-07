@@ -128,7 +128,11 @@ public static class OutputService
         return to.Split('/', '\\').All(segment => segment.Length > 0 && segment != "." && segment != "..");
     }
 
-    /// <summary>同步一个载具的激活组合到 WTSM。</summary>
+    /// <summary>
+    /// 同步一个载具的激活包到 WTSM（§3.8 / §7 三层模型）。
+    /// **写的就是包组装好的 blk 文本**——不再"解析成条目再重建"，因此未改动的包
+    /// 输出与 <c>source.blk</c> 逐字节一致；只负责把引用到的贴图（blob）调度过去。
+    /// </summary>
     public static SyncReport SyncVehicle(string userSkinsDir, string resourceDir,
         string vehicleId, ActiveLoadout loadout)
     {
@@ -147,77 +151,40 @@ public static class OutputService
         var blkPath = Path.Combine(outDir, vehicleId + ".blk");
         report.BlkCreated = !File.Exists(blkPath);
 
-        var entries = new List<BlkWriter.Entry>();
-        var used = new List<(string To, string? BlobFile)>();
+        // 贴图调度清单：条目本身**照写**（blk 文本是全文），这里只为"把文件搬过去"
+        var scheduled = new List<(string To, string BlobFile)>();
 
-        // **按包内原顺序**逐条输出（同一 from 的多条——如 set_tex + replace_tex 配对、迷彩与替换各一条——
-        // 全部保留且保持先后：游戏按顺序应用，合并 / 重排会改变渲染结果，§3.8）
-        foreach (var selection in loadout.Selections)
+        foreach (var mapping in loadout.Mappings)
         {
-            var mapping = selection.Mapping;
-            if (mapping == null) continue;
+            if (string.IsNullOrWhiteSpace(mapping.ToFile)) continue;
 
-            // to 携带非法相对路径（第三方 blk 误写 / 恶意构造）→ 不写入也不调度（§3.8 安全）
+            // to 携带非法相对路径（第三方 blk 误写 / 恶意构造）→ 不调度该文件（§3.8 安全）
             if (!IsSafeRelativeTexturePath(mapping.ToFile))
             {
-                report.Warnings.Add(Loc.Format("output.warn.illegalPath", selection.Key, mapping.ToFile));
+                report.Warnings.Add(Loc.Format("output.warn.illegalPath", mapping.FromModule, mapping.ToFile));
                 continue;
             }
 
-            // 本包内是否有该贴图 → 决定要不要调度文件；**条目本身都照写**：
-            // `to` 可能指向**游戏本体资源**（真实涂装常见，如 ussr_camo_green.tga），
-            // 这类条目在手动安装时是生效的，丢弃会造成"程序输出 ≠ 手动安装"（§3.8）。
-            // 两种"没有本地贴图"（包外引用 / 贴图真的缺失）都给出说明性告警（**不再说"已跳过"**）。
-            string? blobFile = null;
+            // `to` 可能指向**游戏本体资源**（真实涂装常见，如 ussr_camo_green.tga）：条目照写、无需调度；
+            // 两种"没有本地贴图"（包外引用 / 贴图缺失）给说明性告警
             if (!string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
                 var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
-                if (File.Exists(blobPath)) blobFile = mapping.TextureRef;
-                else report.Warnings.Add(Loc.Format("output.warn.textureMissing", selection.Key, mapping.ToFile));
+                if (File.Exists(blobPath)) scheduled.Add((mapping.ToFile, mapping.TextureRef));
+                else report.Warnings.Add(Loc.Format("output.warn.textureMissing", mapping.FromModule, mapping.ToFile));
             }
             else
             {
-                report.Warnings.Add(Loc.Format("output.warn.noTexture", selection.Key, mapping.ToFile));
+                report.Warnings.Add(Loc.Format("output.warn.noTexture", mapping.FromModule, mapping.ToFile));
             }
-
-            var mode = selection.ModeOverride ?? mapping.Mode;
-            var from = BlkWriter.EnsureWildcard(mapping.FromModule);
-
-            var assignedTo = mapping.ToFile;
-
-            if (blobFile == null)
-            {
-                // **包外引用**（to 指向游戏本体资源）：名字必须原样保留，否则指向的对象就变了。
-                // 若与前面某条**本地贴图**同名 → 改本地那条的名字（我们能自由改的是自己写出的文件），
-                // 让包外引用拿到它原本要指向的名字
-                for (var i = 0; i < used.Count; i++)
-                {
-                    if (used[i].BlobFile == null) continue;
-                    if (!string.Equals(used[i].To, assignedTo, StringComparison.OrdinalIgnoreCase)) continue;
-
-                    var renamed = UniqueTextureName(used[i].To, used[i].BlobFile!, used);
-                    entries[i] = entries[i] with { To = renamed };
-                    used[i] = (renamed, used[i].BlobFile);
-                }
-            }
-            else if (used.Any(u => string.Equals(u.To, assignedTo, StringComparison.OrdinalIgnoreCase)
-                                && !string.Equals(u.BlobFile, blobFile, StringComparison.OrdinalIgnoreCase)))
-            {
-                // 本地贴图与已有条目（本地贴图或包外引用）同名 → 本条目改名
-                assignedTo = UniqueTextureName(assignedTo, blobFile, used);
-            }
-
-            entries.Add(new BlkWriter.Entry(mode, from, assignedTo, mapping.Param)); // param 原样保留（两种命令都要）
-
-            used.Add((assignedTo, blobFile));
         }
 
         // 调度贴图：blob → WTSM/<载具Id>/<to 原名>
         // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出。
-        // 同一 (to, blob) 被多条映射复用时只调度一次（Distinct），避免对大贴图重复做内容比对
-        foreach (var (to, blobFile) in used.Where(u => u.BlobFile != null).Distinct())
+        // 同一 (to, blob) 被多条映射复用时只调度一次，避免对大贴图重复做内容比对
+        foreach (var (to, blobFile) in scheduled.Distinct())
         {
-            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile!);
+            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
@@ -239,9 +206,8 @@ public static class OutputService
         // 保留集 = **真正被调度写出**的文件（相对路径，to 可能含子目录）；
         // 包外引用条目的名字**不进保留集**：若输出目录里留着上一次的同名残留文件，
         // 游戏会优先加载残留（把"指向本体资源"变成"指向旧文件"）→ 必须清掉
-        var keep = used.Where(u => u.BlobFile != null)
-                       .Select(u => u.To.Replace('\\', '/'))
-                       .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var keep = scheduled.Select(u => u.To.Replace('\\', '/'))
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories))
         {
             var ext = Path.GetExtension(file).ToLowerInvariant();
@@ -261,15 +227,15 @@ public static class OutputService
 
         // 写 blk（最后写 = 提交点；路径不变 → 热重载）。**原子写**：blk 是"生效点"，
         // 半截文件会让游戏读到坏配置（与 meta.json 同级保护，§3.8）
-        AtomicFile.WriteAllText(blkPath, BlkWriter.Write(entries));
+        AtomicFile.WriteAllText(blkPath, loadout.BlkText);
         report.BlkPath = blkPath;
-        report.BlkEntries = entries.Count;
+        report.BlkEntries = loadout.Mappings.Count;
 
         return report;
     }
 
     /// <summary>为撞名的 to 生成唯一文件名：原文件名 + 贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
-    private static string UniqueTextureName(string to, string blobFile, List<(string To, string? BlobFile)> used)
+    private static string UniqueTextureName(string to, string blobFile, List<(string To, string BlobFile)> used)
     {
         var directory = Path.GetDirectoryName(to) ?? "";
         var stem = Path.GetFileNameWithoutExtension(to);

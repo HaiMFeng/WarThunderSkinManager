@@ -84,9 +84,13 @@ public static class PackageStore
             Preview = "", // 预览图缓存键跟随包，不自动继承
             Order = source.Order + 1,
             Textures = new List<TextureEntry>(source.Textures),
-            // 派生新组合：先继承源包的部件贴图配置，再在属性界面替换部件
-            Parts = new List<PackagePartEntry>(source.Parts),
-            PartsConfigured = source.PartsConfigured
+            // 派生新组合：**完整克隆**源包的块级改动（§7 三层模型）——副本与源包同基线（source.blk 已复制），
+            // 因此覆盖 / 新增 / 删除逐条继承；之后在属性界面替换贴图只动副本自己
+            BlockOverrides = source.BlockOverrides
+                .Select(o => new BlkBlockOverride { Index = o.Index, Text = o.Text, Deleted = o.Deleted })
+                .ToList(),
+            AddedBlocks = new List<string>(source.AddedBlocks),
+            ExtraBlkText = source.ExtraBlkText
         };
 
         Directory.CreateDirectory(PackageDirectory(resourceDir, copy.Id));
@@ -94,6 +98,22 @@ public static class PackageStore
         var sourceBlk = SourceBlkPath(resourceDir, id);
         if (File.Exists(sourceBlk))
             File.Copy(sourceBlk, SourceBlkPath(resourceDir, copy.Id), overwrite: true);
+
+        // 资源包里「无法归属的块」（缺 to / 缺 from）→ 搬进副本的**额外参数块**（§7 三层模型）：
+        // 原文逐条保留在副本 meta 里（可编辑、可删除），基线里按序号标删除，避免输出时重复出现
+        if (source.IsResource && File.Exists(SourceBlkPath(resourceDir, copy.Id)))
+        {
+            var baseText = File.ReadAllText(SourceBlkPath(resourceDir, copy.Id), Encoding.UTF8);
+            var orphans = BlkParser.ParseBlocks(baseText).Where(b => !b.IsIndexed).ToList();
+
+            if (orphans.Count > 0)
+            {
+                copy.ExtraBlkText = string.Join(Environment.NewLine, orphans.Select(b => b.Text.Trim()));
+                copy.BlockOverrides = orphans
+                    .Select(b => new BlkBlockOverride { Index = b.Index, Deleted = true })
+                    .ToList();
+            }
+        }
 
         SaveMeta(resourceDir, copy);
         return copy;

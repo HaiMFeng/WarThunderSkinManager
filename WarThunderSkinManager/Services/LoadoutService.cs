@@ -27,31 +27,10 @@ public static class LoadoutService
             new VehicleActivation { ActivePackageId = packageId ?? "" });
 
     /// <summary>
-    /// 由激活的涂装包派生输出用组合（§6.3）：**按包内原顺序**列出该包的每条映射
-    /// （Mode / Param 随贴图走）。同一部件位置的多条（set + replace 配对）不合并——
-    /// 游戏按顺序应用，合并会丢条目、改渲染（§3.8）。
+    /// 由激活的涂装包派生输出用组合（§6.3 / §7 三层模型）：**就是该包本身**——
+    /// 输出写它的 <see cref="SkinPackage.BlkText"/>（组装好的有效 blk 文本），
+    /// 贴图按它的映射调度。「手动删除部件」（§3.10）在组装阶段已按 from 排除。
     /// </summary>
     public static ActiveLoadout BuildLoadout(SkinPackage? package)
-    {
-        var loadout = new ActiveLoadout();
-        if (package == null) return loadout;
-
-        foreach (var mapping in package.Mappings)
-        {
-            var key = VehicleAggregator.NormalizeFrom(mapping.FromModule);
-            if (key.Length == 0) continue;
-
-            // 手动删除的部件（§3.10）不参与输出——与导出同一规则
-            if (PartExclusionService.IsExcluded(package.VehicleId, key)) continue;
-
-            loadout.Selections.Add(new SelectedMapping
-            {
-                Key = key,
-                PackageId = package.Id,
-                Mapping = mapping
-            });
-        }
-
-        return loadout;
-    }
+        => new() { Package = package };
 }

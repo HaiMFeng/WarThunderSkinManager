@@ -98,7 +98,7 @@
                     <TextBox Style="{StaticResource BaseTextBox}"
                              Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
 
-                    <!-- 资源包开关（§3.5）：只读素材；解锁（开→关）有知会，解锁后可修改部件贴图 -->
+                    <!-- 资源包（§3.5 / §7）：只读素材——**不可解锁、不可修改**，只能复制为普通包后再改 -->
                     <Grid Margin="0,18,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -109,8 +109,19 @@
                             <TextBlock Text="{loc:Loc pkg.editor.resource.hint}" Style="{StaticResource PageSubtitle}"
                                        TextWrapping="Wrap" Margin="0,4,0,0"/>
                         </StackPanel>
-                        <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                  IsChecked="{Binding IsResource}"/>
+                        <Button Grid.Column="1" VerticalAlignment="Center" Content="{loc:Loc pkg.editor.duplicate}"
+                                Command="{Binding RequestDuplicateCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsResource}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </Grid>
 
                     <!-- 部件贴图（该包自己的属性，§3.5 / §3.6）；资源包为只读 -->
@@ -165,7 +176,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{loc:Loc pkg.editor.col.part}"
                                    Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
-                        <TextBlock Grid.Column="1" Text="{loc:Loc pkg.editor.col.mode}"
+                        <TextBlock Grid.Column="1" Text="{loc:Loc pkg.editor.col.blocks}"
                                    Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
                         <TextBlock Grid.Column="2" Text="{loc:Loc pkg.editor.col.tex}"
                                    Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
@@ -175,6 +186,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,0,0,1" Padding="0,8">
+                                  <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -208,39 +220,27 @@
                                                        Foreground="{StaticResource BrushTextMuted}" Margin="0,2,0,0"/>
                                         </StackPanel>
 
-                                        <!-- 写入方式滑块（blk 里写 replace_tex 还是 set_tex）；初值跟随所选贴图 -->
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <TextBlock Text="{loc:Loc pkg.editor.mode.replace}" FontSize="12"
-                                                       VerticalAlignment="Center">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
+                                        <!-- blk 块（§7 三层模型）：该位置在输出中的块数；
+                                             进阶模式（设置 → 进阶功能 → 手动编辑 blk）可逐块编辑原文 -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding BlockCountText}" FontSize="11"
+                                                       Foreground="{StaticResource BrushTextMuted}"/>
+                                            <Button Content="{loc:Loc pkg.editor.blocks.edit}" Margin="0,4,0,0"
+                                                    HorizontalAlignment="Left" Padding="8,3"
+                                                    Command="{Binding DataContext.EditBlocksCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsReplaceMode}" Value="True">
-                                                                <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
-                                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            <DataTrigger Binding="{Binding DataContext.CanEditBlkBlocks, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                         Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                            <CheckBox Style="{StaticResource ToggleSwitch}" Margin="8,0"
-                                                      IsChecked="{Binding IsSetMode}"
-                                                      IsEnabled="{Binding IsModeEnabled}"/>
-                                            <TextBlock Text="{loc:Loc pkg.editor.mode.set}" FontSize="12"
-                                                       VerticalAlignment="Center">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsSetMode}" Value="True">
-                                                                <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
-                                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
+                                                </Button.Style>
+                                            </Button>
                                         </StackPanel>
 
                                         <ComboBox Grid.Column="2" Style="{StaticResource BaseComboBox}"
@@ -289,10 +289,77 @@
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
                                     </Grid>
+
+                                    <!-- 块编辑器（进阶）：逐块编辑原文 / 标记删除（改动只作用于这一条块） -->
+                                    <ItemsControl ItemsSource="{Binding Blocks}" Margin="0,6,0,0">
+                                        <ItemsControl.Style>
+                                            <Style TargetType="ItemsControl">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsEditingBlocks}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ItemsControl.Style>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0"
+                                                             Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52"
+                                                             FontSize="11" FontFamily="Consolas"
+                                                             Style="{StaticResource BaseTextBox}"/>
+                                                    <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Top">
+                                                        <TextBlock Text="{loc:Loc pkg.editor.blocks.changed}" FontSize="11"
+                                                                   Foreground="{StaticResource BrushDanger}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsChanged}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <CheckBox Content="{loc:Loc pkg.editor.blocks.delete}"
+                                                                  IsChecked="{Binding Deleted}" Margin="0,4,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                  </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- 额外参数块（进阶）：聚合无法归属的块（缺 to）+ 自由内容，输出时放在**文件末尾** -->
+                    <StackPanel Margin="0,18,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CanEditBlkBlocks}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{loc:Loc pkg.editor.extraBlk}" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Text="{loc:Loc pkg.editor.extraBlk.hint}" Style="{StaticResource PageSubtitle}"
+                                   TextWrapping="Wrap" Margin="0,4,0,6"/>
+                        <TextBox Text="{Binding ExtraBlkText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
+                                 FontSize="11" FontFamily="Consolas" Style="{StaticResource BaseTextBox}"/>
+                    </StackPanel>
 
                     <TextBlock Text="{Binding StatusMessage}" Margin="0,10,0,0" TextWrapping="Wrap"
                                FontSize="12" Foreground="{StaticResource BrushDanger}"/>

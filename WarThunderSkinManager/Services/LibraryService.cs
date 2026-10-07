@@ -28,11 +28,13 @@ public sealed class SnapshotPackage
 {
     public PackageMeta Meta { get; set; } = new();
 
-    /// <summary>已解析的映射（来自 <c>meta.parts</c>，或未配置时解析 <c>source.blk</c> 的结果）。</summary>
+    /// <summary>已解析的映射（来自组装后的有效 blk 文本，见 §7 三层模型）。</summary>
     public List<SnapshotMapping> Mappings { get; set; } = new();
 
-    /// <summary>仅聚合 / 候选用：配置过的包里被「无」掉的原始映射（不参与输出，见 §3.5）。</summary>
-    public List<SnapshotMapping> OriginalMappings { get; set; } = new();
+    /// <summary>
+    /// **组装好的有效 blk 文本**（激活输出直接写它；快照里带上它，启动后无需再读盘重组）。
+    /// </summary>
+    public string BlkText { get; set; } = "";
 
     /// <summary><c>meta.json</c> 的写入时间（UTC ticks）与长度 → 判断是否被改动。</summary>
     public long MetaTicks { get; set; }
@@ -197,7 +199,7 @@ public static class LibraryService
                 {
                     Meta = meta,
                     Mappings = package.Mappings.Select(ToSnapshot).ToList(),
-                    OriginalMappings = package.OriginalMappings.Select(ToSnapshot).ToList(),
+                    BlkText = package.BlkText,
                     MetaTicks = metaTicks,
                     MetaLength = metaLength,
                     BlkTicks = blkTicks,
@@ -357,23 +359,11 @@ public static class LibraryService
             IsResource = snapshot.Meta.IsResource
         };
 
+        package.BlkText = snapshot.BlkText;
+
         foreach (var mapping in snapshot.Mappings)
         {
             package.Mappings.Add(new TexMapping
-            {
-                Mode = mapping.Mode,
-                FromModule = mapping.From,
-                ToFile = mapping.To,
-                Param = mapping.Param,
-                HasWildcard = mapping.HasWildcard,
-                TextureMissing = mapping.TextureMissing,
-                Issues = new List<string>(mapping.Issues)
-            });
-        }
-
-        foreach (var mapping in snapshot.OriginalMappings)
-        {
-            package.OriginalMappings.Add(new TexMapping
             {
                 Mode = mapping.Mode,
                 FromModule = mapping.From,

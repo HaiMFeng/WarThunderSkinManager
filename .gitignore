@@ -42,6 +42,9 @@ TestData/
 # 设计讨论纪要（不入库；方案落地后内容整合进 docs/软件功能设计.md）
 blk解析重构计划.md
 
+# 本地安装的 AI 技能（发布流程等，仅本机使用，不入库）
+.codebuddy/skills/
+
 # 发布产物（单文件 exe 与 zip），不入库
 dist/
 

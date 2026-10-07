@@ -17,7 +17,16 @@ public sealed class BlkFile
     /// <summary>载具内部标识 = blk 文件名（去扩展名），如 f_15a</summary>
     public string VehicleId { get; init; } = "";
 
-    /// <summary>blk 内所有映射条目</summary>
+    /// <summary>blk 内所有块（**逐字原文 + from/to 槽位**，见 <see cref="BlkBlock"/>）</summary>
+    public List<BlkBlock> Blocks { get; init; } = new();
+
+    /// <summary>
+    /// 无法归属的块（缺 <c>to</c> 或缺 <c>from</c>）——进「额外参数块」原样保留，
+    /// 绝不静默丢弃（新模型下这类块不再消失）。
+    /// </summary>
+    public List<BlkBlock> Unindexed { get; init; } = new();
+
+    /// <summary>blk 内所有映射条目（由「可归属块」派生，供候选池 / 标签 / 排除等既有功能使用）</summary>
     public List<TexMapping> Mappings { get; init; } = new();
 
     /// <summary>文件级校验问题</summary>

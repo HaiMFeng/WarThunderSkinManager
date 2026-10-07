@@ -62,26 +62,6 @@ public static class VehicleAggregator
 
                 part.Candidates.Add(mapping);
             }
-
-            // 原始映射（被「无」掉 / 移除的部件）：只产生部件行与候选，不参与输出（§3.5）
-            foreach (var mapping in package.OriginalMappings)
-            {
-                var key = NormalizeFrom(mapping.FromModule);
-                if (key.Length == 0) continue;
-
-                if (!parts.TryGetValue(key, out var originalPart))
-                {
-                    originalPart = new VehiclePart
-                    {
-                        From = key,
-                        DisplayName = key,
-                        Tags = PartTagResolver.Resolve(key, vehicleId)
-                    };
-                    parts[key] = originalPart;
-                }
-
-                originalPart.Candidates.Add(mapping);
-            }
         }
 
         vehicle.Parts = parts.Values
@@ -130,7 +110,9 @@ public static class VehicleAggregator
     }
 
     /// <summary>
-    /// 还原**单个包**（读 meta.parts，或解析 source.blk，再回填贴图引用）。
+    /// 还原**单个包**（§7 三层模型）：用 <see cref="BlkAssembler"/> 组装出**有效 blk 文本**，
+    /// 再解析它得到映射，最后按 <c>meta.textures</c> 回填贴图引用。
+    /// 资源包与用户包走同一条路径——资源包不写任何块级改动字段，组装结果 = 原文。
     /// 也是索引快照（<see cref="LibraryService"/>）构建时用的入口。
     /// </summary>
     public static SkinPackage BuildPackage(string resourceDir, PackageMeta meta)
@@ -145,67 +127,14 @@ public static class VehicleAggregator
             IsResource = meta.IsResource
         };
 
-        // **资源包**（§3.5）：只读素材——映射恒取 source.blk 原始内容，meta.parts 被忽略
-        // （资源包的 parts/textures 永不改写；编辑请复制为普通包）
-        if (meta.IsResource)
-        {
-            var resourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
-            if (File.Exists(resourceBlk))
-            {
-                var blk = BlkParser.Parse(resourceBlk, File.ReadAllText(resourceBlk, Encoding.UTF8));
-                package.Mappings.AddRange(blk.Mappings);
-            }
+        var assembled = BlkAssembler.Assemble(resourceDir, meta); // 组装时已应用「手动删除部件」（§3.10）
+        package.BlkText = assembled.Text;
+        package.Blocks = assembled.Blocks.ToList();
 
-            ApplyTextures(package, meta.Textures); // ⚠️ 别漏：blob 回填缺失会让激活输出全部“无可用贴图”
-            return package;
-        }
+        var blk = BlkParser.Parse(PackageStore.SourceBlkPath(resourceDir, meta.Id), assembled.Text);
+        package.Mappings.AddRange(blk.Mappings);
 
-        if (meta.PartsConfigured || meta.Parts.Count > 0)
-        {
-            var configured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var part in meta.Parts)
-            {
-                if (string.IsNullOrWhiteSpace(part.From) || string.IsNullOrWhiteSpace(part.To)) continue;
-
-                package.Mappings.Add(new TexMapping
-                {
-                    Mode = part.Mode,
-                    FromModule = part.From,
-                    ToFile = part.To,
-                    Param = part.Param,
-                    HasWildcard = part.From.Contains('*')
-                });
-                configured.Add(NormalizeFrom(part.From));
-            }
-
-            // 原始映射里未被配置覆盖的部件（含被用户设为「无」的）→ 记入 **OriginalMappings**：
-            // 不参与输出（输出只看 Mappings），但聚合与属性页保留部件行与候选——
-            // 「不选用」必须是可逆的，否则部件会从列表里永久消失（§3.5）
-            var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
-            if (File.Exists(sourceBlk))
-            {
-                var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
-                foreach (var mapping in blk.Mappings)
-                {
-                    var key = NormalizeFrom(mapping.FromModule);
-                    if (key.Length == 0 || configured.Contains(key)) continue;
-                    if (PartExclusionService.IsExcluded(meta.VehicleId, key)) continue;
-
-                    package.OriginalMappings.Add(mapping);
-                }
-            }
-        }
-        else
-        {
-            var sourceBlk = PackageStore.SourceBlkPath(resourceDir, meta.Id);
-            if (File.Exists(sourceBlk))
-            {
-                var blk = BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8));
-                package.Mappings.AddRange(blk.Mappings);
-            }
-        }
-
-        ApplyTextures(package, meta.Textures);
+        ApplyTextures(package, meta.Textures); // ⚠️ 别漏：blob 回填缺失会让激活输出全部“无可用贴图”
         return package;
     }
 

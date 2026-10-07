@@ -126,101 +126,114 @@ public static class PackageExporter
     }
 
     /// <summary>
-    /// 写出 blk 与贴图。导出条目 = **当前配置的组合**（§3.11）：
-    /// 属性页配置过（<c>PartsConfigured</c>）→ 用 <c>meta.parts</c> 生成 blk；
-    /// 未配置 → 用 source.blk 的原始映射（= 原始模组）。贴图只导出被引用的，
-    /// 文件名按命名规则计算，非原名时 blk 的 to 引用同步重写。
+    /// 写出 blk 与贴图（§3.11 / §7 三层模型）：blk = <see cref="BlkAssembler"/> 组装出的
+    /// **有效文本**（未改动的包 = <c>source.blk</c> 原文，逐字节）；命名规则非「原名」时
+    /// **只重写各块的 <c>to</c> 槽位**（其余字段含 <c>param</c> 原样保留）；
+    /// 贴图只导出被引用的，文件名按命名规则计算。
     /// </summary>
     private static void WriteBlkAndTextures(string resourceDir, PackageMeta meta,
         string sourceBlk, string targetDir, TextureNaming naming)
     {
-        // **以 PartsConfigured 为准**（即使 parts 为空 = 该包不输出任何部件，见 PackageMeta 注释）：
-        // 与激活侧 VehicleAggregator 的判定保持一致
-        var useConfiguredParts = meta.PartsConfigured;
+        var assembled = BlkAssembler.Assemble(resourceDir, meta); // 组装时已应用「手动删除部件」（§3.10）
+        var text = assembled.Text;
 
-        var entries = (useConfiguredParts
-                ? meta.Parts.Select(p => (From: p.From, ToFile: p.To, Mode: p.Mode, Param: p.Param))
-                : BlkParser.Parse(sourceBlk, File.ReadAllText(sourceBlk, Encoding.UTF8))
-                    .Mappings.Select(m => (From: m.FromModule, ToFile: m.ToFile, Mode: m.Mode, Param: m.Param)))
-            .Where(e => !string.IsNullOrWhiteSpace(e.ToFile))
-            // to 携带非法相对路径（§3.8 安全）→ 不导出该条
-            .Where(e => OutputService.IsSafeRelativeTexturePath(e.ToFile))
-            // 手动删除的部件（§3.10）不导出——导出与激活输出的组合保持一致
-            .Where(e => !PartExclusionService.IsExcluded(meta.VehicleId, VehicleAggregator.NormalizeFrom(e.From)))
-            .ToList();
-
-        // to → blob（meta.textures；属性页的配置选择会更新同名条目的 blob，即当前配置）
+        // to → blob（meta.textures；属性页的选择会更新同名条目的 blob，即当前内容）
         var blobByTo = meta.Textures
             .Where(t => !string.IsNullOrWhiteSpace(t.To))
             .GroupBy(t => t.To, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Blob, StringComparer.OrdinalIgnoreCase);
 
-        // 原始 to（含相对目录）→ 新相对路径；部件名规则取条目自己的 from（归一化）；
-        // 冲突回退原名。**包外引用（无本地 blob）的条目按原名写出**：名字先占位，
-        // 本地贴图的生成名避开它们（否则会把"指向游戏本体资源"顶替成我们写出的文件）
-        var rename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var hasBlob = (string to) =>
+            blobByTo.TryGetValue(to, out var blob)
+            && !string.IsNullOrWhiteSpace(blob)
+            && File.Exists(BlobStore.BlobPath(resourceDir, blob, Path.GetExtension(to).ToLowerInvariant()));
+
+        // 「包外引用」（to 指向游戏本体资源、包内无内容）的名字先占位：
+        // 本地贴图的生成名避开它们，否则会把作者的引用顶替成我们写出的文件
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var block in assembled.Blocks)
+            if (!string.IsNullOrWhiteSpace(block.To) && !hasBlob(block.To!)) used.Add(block.To!);
 
-        foreach (var entry in entries)
+        // to → 新相对路径（同一 to 只算一次）
+        var rename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var block in assembled.Blocks)
         {
-            if (!blobByTo.TryGetValue(entry.ToFile, out var reserved) || string.IsNullOrWhiteSpace(reserved))
-                used.Add(entry.ToFile);
-        }
+            var to = block.To;
+            if (string.IsNullOrWhiteSpace(to) || rename.ContainsKey(to!) || !hasBlob(to!)) continue;
 
-        foreach (var entry in entries)
-        {
-            if (!blobByTo.TryGetValue(entry.ToFile, out var blob) || string.IsNullOrWhiteSpace(blob)) continue;
+            blobByTo.TryGetValue(to!, out var blob);
 
-            var directory = Path.GetDirectoryName(entry.ToFile) ?? "";
-            var extension = Path.GetExtension(entry.ToFile).ToLowerInvariant();
+            var directory = Path.GetDirectoryName(to!) ?? "";
+            var extension = Path.GetExtension(to!).ToLowerInvariant();
 
             var fileName = naming switch
             {
                 TextureNaming.Hash => blob + extension,
                 // 部件名归一化后可能为空（异常 from）→ 回退原名，避免产生 ".dds" 这种空名文件
-                TextureNaming.PartName => VehicleAggregator.NormalizeFrom(entry.From) is { Length: > 0 } part
+                TextureNaming.PartName => VehicleAggregator.NormalizeFrom(block.From ?? "") is { Length: > 0 } part
                     ? part + extension
-                    : entry.ToFile,
-                _ => entry.ToFile
+                    : to!,
+                _ => to!
             };
 
             var relative = directory.Length == 0 ? fileName : Path.Combine(directory, fileName);
 
             if (!used.Add(relative))
             {
-                // 撞名（部件名规则生成的名字与他人原名相同）→ 唯一文件名（原名 + 贴图哈希前 8 位），
-                // 与激活输出同一算法——回退原名可能在"生成名 == 某贴图的原名"时与已占用名重合
-                relative = UniqueRelativeName(directory, fileName, blob, used);
+                // 撞名（部件名规则生成的名字与他人原名相同）→ 唯一文件名（原名 + 贴图哈希前 8 位）
+                relative = UniqueRelativeName(directory, fileName, blob!, used);
                 used.Add(relative);
             }
 
-            rename[entry.ToFile] = relative;
+            rename[to!] = relative;
         }
 
-        // blk：按命名规则生成（to = 新文件名；空白包 = 只有一行 name）。
-        // **包外引用条目照写原名**——导出与激活输出保持同一组合（§3.11 零失真）
-        var blkTarget = Path.Combine(targetDir, meta.VehicleId + ".blk");
-        var blkEntries = entries
-            .Select(e => new BlkWriter.Entry(e.Mode, e.From,
-                rename.TryGetValue(e.ToFile, out var renamed) ? renamed : e.ToFile, e.Param)); // param 原样保留
+        // 非「原名」规则 → 按块重写 to 槽位（用块原文定位，其余字节逐字保留）
+        if (naming != TextureNaming.Original)
+            text = RewriteToSlots(text, assembled.Blocks, rename);
 
-        File.WriteAllText(blkTarget, BlkWriter.Write(blkEntries), new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(targetDir, meta.VehicleId + ".blk"), text, new UTF8Encoding(false));
 
-        // 贴图：只导出被引用的 to（未引用的原始贴图不再混入）
-        foreach (var texture in meta.Textures)
+        // 贴图：只导出被引用的 to（未引用的原始贴图不混入）
+        foreach (var (to, relative) in rename)
         {
-            if (!rename.TryGetValue(texture.To, out var relative)) continue;
+            if (!blobByTo.TryGetValue(to, out var blob) || string.IsNullOrWhiteSpace(blob)) continue;
 
-            var extension = Path.GetExtension(texture.To).ToLowerInvariant();
-            var blob = Path.Combine(BlobStore.BlobsDirectory(resourceDir), texture.Blob + extension);
-            if (!File.Exists(blob)) continue;
+            var source = BlobStore.BlobPath(resourceDir, blob, Path.GetExtension(to).ToLowerInvariant());
+            if (!File.Exists(source)) continue;
 
             var dest = Path.Combine(targetDir, relative);
             var destDir = Path.GetDirectoryName(dest);
             if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
 
-            File.Copy(blob, dest, overwrite: true);
+            File.Copy(source, dest, overwrite: true);
         }
+    }
+
+    /// <summary>按块原文在文本中的位置依次重写 <c>to</c> 槽位（只动引号内的值）。</summary>
+    private static string RewriteToSlots(string text,
+        IReadOnlyList<EffectiveBlock> blocks, IReadOnlyDictionary<string, string> rename)
+    {
+        var sb = new System.Text.StringBuilder();
+        var cursor = 0;
+
+        foreach (var block in blocks)
+        {
+            if (string.IsNullOrWhiteSpace(block.To) || !rename.TryGetValue(block.To!, out var newName)) continue;
+
+            var at = text.IndexOf(block.Text, cursor, StringComparison.Ordinal);
+            if (at < 0) continue;
+
+            sb.Append(text, cursor, at - cursor);
+
+            var parsed = BlkParser.ParseBlocks(block.Text).FirstOrDefault();
+            sb.Append(parsed != null ? parsed.WithTo(newName).Text : block.Text);
+
+            cursor = at + block.Text.Length;
+        }
+
+        sb.Append(text, cursor, text.Length - cursor);
+        return sb.ToString();
     }
 
     /// <summary>为撞名的导出文件生成唯一名：原文件名 + 贴图哈希前 8 位（仍撞加序号）。保留相对目录。与激活输出同款算法。</summary>

@@ -45,50 +45,76 @@ public static class BlkParser
         var vehicleId = Path.GetFileNameWithoutExtension(filePath);
         var blk = new BlkFile { FilePath = filePath, Directory = directory, VehicleId = vehicleId };
 
-        var blocks = 0;
+        var index = 0;
 
         foreach (Match block in BlockRegex.Matches(text))
         {
-            blocks++;
+            var raw = block.Value;
+            var command = block.Groups["cmd"].Value.ToLowerInvariant();
 
-            var isSet = block.Groups["cmd"].Value.Equals("set_tex", StringComparison.OrdinalIgnoreCase);
-            var mode = isSet ? MappingMode.Set : MappingMode.Replace;
+            var froms = new List<(string Value, int Start)>();
+            (string Value, int Start)? to = null;
+            (string Value, int Start)? param = null;
 
-            var froms = new List<string>();
-            string? to = null;
-            string? param = null;
-
-            foreach (Match field in FieldRegex.Matches(block.Groups["body"].Value))
+            // 字段偏移按**块原文**计算（组装时只替换这几个字符，其余字节逐字冻结）
+            foreach (Match field in FieldRegex.Matches(raw))
             {
-                var key = field.Groups["key"].Value;
+                var key = field.Groups["key"].Value.ToLowerInvariant();
                 var value = field.Groups["value"].Value;
 
-                if (key.Equals("from", StringComparison.OrdinalIgnoreCase)) froms.Add(value);
-                else if (key.Equals("to", StringComparison.OrdinalIgnoreCase)) to = value; // 多个 to：最后一个生效（与游戏一致）
-                else param = value;
+                if (key == "from") froms.Add((value, field.Groups["value"].Index));
+                else if (key == "to") to = (value, field.Groups["value"].Index); // 多个 to：最后一个生效（与游戏一致）
+                else param = (value, field.Groups["value"].Index);
             }
 
-            if (to == null || froms.Count == 0)
+            var blkBlock = new BlkBlock
             {
-                // 缺 from / to 的块：不产出映射，但**明确报出**（原先静默丢弃）
-                var sample = to ?? (froms.Count > 0 ? froms[0] : block.Value);
+                Index = index++,
+                Text = raw,
+                Start = block.Index,
+                Length = block.Length,
+                Command = command,
+                From = froms.Count > 0 ? froms[0].Value : null,
+                To = to?.Value,
+                Param = param?.Value,
+                FromValueStart = froms.Count > 0 ? froms[0].Start : -1,
+                ToValueStart = to?.Start ?? -1
+            };
+
+            blk.Blocks.Add(blkBlock);
+
+            if (!blkBlock.IsIndexed || froms.Count == 0)
+            {
+                // 缺 from / to 的块：**原样保留**（进「额外参数块」）并明确报出——绝不静默丢弃
+                blk.Unindexed.Add(blkBlock);
+
+                var sample = blkBlock.To ?? blkBlock.From ?? raw;
                 blk.Issues.Add(Loc.Format("parser.warn.incompleteBlock",
                     sample.Trim().Length > 60 ? sample.Trim()[..60] + "…" : sample.Trim()));
                 continue;
             }
 
+            var mode = blkBlock.IsSet ? MappingMode.Set : MappingMode.Replace;
+
             // 块内多个 from → 每个 from 一条映射（共用同一 to / param）
-            foreach (var from in froms)
-                blk.Mappings.Add(Build(mode, from, to, param, blk));
+            foreach (var (from, _) in froms)
+            {
+                var mapping = Build(mode, from, blkBlock.To!, blkBlock.Param, blk);
+                mapping.BlockIndex = blkBlock.Index;
+                blk.Mappings.Add(mapping);
+            }
         }
 
         // 命令出现次数多于解析到的块数 → 存在未闭合 / 结构异常的块
         var opens = CommandOpenRegex.Matches(text).Count;
-        if (opens > blocks)
-            blk.Issues.Add(Loc.Format("parser.warn.unclosedBlock", opens - blocks));
+        if (opens > blk.Blocks.Count)
+            blk.Issues.Add(Loc.Format("parser.warn.unclosedBlock", opens - blk.Blocks.Count));
 
         return blk;
     }
+
+    /// <summary>只取块清单（无文件上下文）——组装 / 输出 / 导出时按块定位用。</summary>
+    public static List<BlkBlock> ParseBlocks(string text) => Parse("", text).Blocks;
 
     /// <summary>
     /// 在 <paramref name="directory"/> 下解析 <paramref name="to"/> 指向的贴图；

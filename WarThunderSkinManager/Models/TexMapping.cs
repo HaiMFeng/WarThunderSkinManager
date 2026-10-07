@@ -39,6 +39,12 @@ public partial class TexMapping : ObservableObject
     /// <summary>校验问题（缺 * / 缺扩展名 / 缺 param / 贴图缺失等）</summary>
     [ObservableProperty] private List<string> _issues = new();
 
+    /// <summary>
+    /// 来源块在文件中的序号（<see cref="BlkBlock.Index"/>；-1 = 无来源块）。
+    /// 属性页按块编辑时据此定位要覆写的块。
+    /// </summary>
+    [ObservableProperty] private int _blockIndex = -1;
+
     /// <summary>是否已关联到可用贴图（无贴图的部件不参与输出，见 §3.8）</summary>
     public bool HasTexture => !string.IsNullOrWhiteSpace(TextureRef);
 

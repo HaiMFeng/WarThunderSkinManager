@@ -8,7 +8,17 @@ namespace WarThunderSkinManager.Views;
 /// <summary>涂装包属性对话框：显示名 + 预览图。</summary>
 public partial class PackageEditorWindow : Window
 {
-    public PackageEditorWindow() => InitializeComponent();
+    public PackageEditorWindow()
+    {
+        InitializeComponent();
+
+        // 「复制为普通包」：视图模型置标记并请求关闭（本次编辑不写回）
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is PackageEditorViewModel vm)
+                vm.CloseRequested += (_, _) => DialogResult = false;
+        };
+    }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
