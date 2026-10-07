@@ -189,6 +189,13 @@ public partial class PackageEditorViewModel : ObservableObject
         var rows = new ObservableCollection<PartRow>();
         _canEditParts = false;
 
+        // 本包当前生效的映射（按 from 分组）：**未改动的部件保存时按原样逐条写回**——
+        // 作者常用 `set_tex` + `replace_tex` 配对（装甲车迷彩），界面是「每 from 一行」，
+        // 若一律压成一行会丢掉配对、改变透明度/迷彩渲染（§3.6 / §3.8）。
+        // 先清空（含 vehicle == null 的早退路径），避免留着上一轮的状态
+        _sourceMappingsByFrom.Clear();
+        _initialRowState.Clear();
+
         var vehicle = string.IsNullOrWhiteSpace(_resourceDir)
             ? null
             : VehicleAggregator.BuildVehicle(_resourceDir, _meta.VehicleId);
@@ -198,12 +205,6 @@ public partial class PackageEditorViewModel : ObservableObject
             Parts = rows;
             return;
         }
-
-        // 本包当前生效的映射（按 from 分组）：**未改动的部件保存时按原样逐条写回**——
-        // 作者常用 `set_tex` + `replace_tex` 配对（装甲车迷彩），界面是「每 from 一行」，
-        // 若一律压成一行会丢掉配对、改变透明度/迷彩渲染（§3.6 / §3.8）
-        _sourceMappingsByFrom.Clear();
-        _initialRowState.Clear();
 
         foreach (var package in vehicle.SkinPackages)
         {
@@ -315,32 +316,29 @@ public partial class PackageEditorViewModel : ObservableObject
                 ? chosen
                 : row.Candidates[0];
 
-            // 记录进窗口时的选择（ApplyParts 据此识别「未改动」的行，未改动的部件原样逐条写回）
-            _initialRowState[key] = (row.SelectedCandidate?.To ?? "", row.IsSetMode);
+            // 记录进窗口时的选择（ApplyParts 据此识别「未改动」的行，未改动的部件原样逐条写回）：
+            // **必须含内容（blob）与 param** —— 候选池允许「同名不同内容」并存，
+            // 只比 to 名 + 滑块会把「换选同名贴图」误判成未改动而静默丢弃
+            _initialRowState[key] = (row.SelectedCandidate?.To ?? "", row.IsSetMode,
+                row.SelectedCandidate?.Blob ?? "", row.SelectedCandidate?.Param ?? "");
 
             row.ConfirmModeToggle = ConfirmModeToggle;
             rows.Add(row);
         }
 
-        // 初始签名按**本包当前全部映射**（含 set/replace 配对）计算：
-        // 未改动的部件保存时逐条写回原映射，签名一致 → 不会把"打开一次"变成配置动作
-        _initialPartsSignature = PartsSignature(_sourceMappingsByFrom.Values
-            .SelectMany(list => list)
-            .Select(m => (VehicleAggregator.NormalizeFrom(m.FromModule), m.Mode == MappingMode.Set, m.ToFile)));
-
         _canEditParts = true;
         Parts = rows;
     }
-
-    /// <summary>进窗口时的部件选择签名（<see cref="ApplyParts"/> 据此判断「用户真改过」）。</summary>
-    private string _initialPartsSignature = "";
 
     /// <summary>本包当前映射（按归一化 from 分组）：未改动的部件按原样逐条写回（保留 set/replace 配对）。</summary>
     private readonly Dictionary<string, List<TexMapping>> _sourceMappingsByFrom =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>各部件行进窗口时的选择（from → to / 写入方式），用于识别「未改动」的行。</summary>
-    private readonly Dictionary<string, (string To, bool IsSet)> _initialRowState =
+    /// <summary>
+    /// 各部件行进窗口时的选择（from → to / 写入方式 / 内容 / param），用于识别「未改动」的行。
+    /// 四元组缺一不可：blob 区分「同名不同内容」，param 区分「同名同内容不同写法」。
+    /// </summary>
+    private readonly Dictionary<string, (string To, bool IsSet, string Blob, string Param)> _initialRowState =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -527,7 +525,9 @@ public partial class PackageEditorViewModel : ObservableObject
             var unchanged = choice is { IsNone: false }
                             && _initialRowState.TryGetValue(row.From, out var initial)
                             && string.Equals(initial.To, choice.To, StringComparison.OrdinalIgnoreCase)
-                            && initial.IsSet == row.IsSetMode;
+                            && initial.IsSet == row.IsSetMode
+                            && string.Equals(initial.Blob, choice.Blob, StringComparison.Ordinal)
+                            && string.Equals(initial.Param, choice.Param ?? "", StringComparison.Ordinal);
             if (unchanged && _sourceMappingsByFrom.TryGetValue(row.From, out var sourceMappings))
             {
                 foreach (var source in sourceMappings)
@@ -577,22 +577,37 @@ public partial class PackageEditorViewModel : ObservableObject
                 entry.Blob = choice.Blob; // 同名贴图以当前配置为准
         }
 
-        // 用户没有实际改动（选择签名与进窗口时一致）→ 不固化 parts 快照：
+        // 用户没有实际改动（逐行比对进窗口时的选择：to / 写入方式 / 内容 / param）→ 不固化 parts 快照：
         // 普通包继续沿用 source.blk（to 名 / 映射来源零失真），也不会把「打开一次」变成配置动作
-        var signature = PartsSignature(parts.Select(
-            p => (VehicleAggregator.NormalizeFrom(p.From), p.Mode == MappingMode.Set, p.To)));
-        if (string.Equals(signature, _initialPartsSignature, StringComparison.Ordinal)) return;
+        if (!AnyRowChanged()) return;
 
         _meta.Parts = parts;
         _meta.PartsConfigured = true;
         _meta.Textures = textures;
     }
 
-    /// <summary>部件选择的签名（归一化 from|写入方式|to，按 from 排序）：用于判断用户是否真的改动过。</summary>
-    private static string PartsSignature(IEnumerable<(string From, bool IsSet, string To)> rows)
-        => string.Join("|", rows
-            .OrderBy(r => r.From, StringComparer.Ordinal)
-            .Select(r => $"{r.From}:{(r.IsSet ? "set" : "replace")}:{r.To}"));
+    /// <summary>
+    /// 是否有任一部件行的选择发生变化——四元组（to / 写入方式 / 内容 blob / param）逐项比对。
+    /// 只比 to 名与滑块会把「换选同名不同内容的贴图」「param 变化」误判为未改动而静默丢弃。
+    /// </summary>
+    private bool AnyRowChanged()
+    {
+        foreach (var row in Parts)
+        {
+            if (!_initialRowState.TryGetValue(row.From, out var initial)) return true;
+
+            var to = row.SelectedCandidate?.To ?? "";
+            var blob = row.SelectedCandidate?.Blob ?? "";
+            var param = row.SelectedCandidate?.Param ?? "";
+
+            if (!string.Equals(initial.To, to, StringComparison.OrdinalIgnoreCase)) return true;
+            if (initial.IsSet != row.IsSetMode) return true;
+            if (!string.Equals(initial.Blob, blob, StringComparison.Ordinal)) return true;
+            if (!string.Equals(initial.Param, param, StringComparison.Ordinal)) return true;
+        }
+
+        return false;
+    }
 
     /// <summary>为撞名的 to 生成唯一文件名：原名 + 所选贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
     private static string UniqueTextureTo(string to, string blob, List<TextureEntry> textures)

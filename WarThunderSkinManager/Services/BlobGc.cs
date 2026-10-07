@@ -51,24 +51,31 @@ public static class BlobGc
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
             return report;
 
-        // 0) **保守闸门**：存在读不出来的 meta 时，引用集合必然不完整（该包的贴图不在其中），
-        //    此时回收会误删仍在使用的 blob → 直接放弃本次回收（只记提示）
-        var unreadable = PackageStore.CountUnreadableMetas(resourceDir);
-        if (unreadable > 0)
-        {
-            report.Errors.Add(Loc.Format("blobgc.unreadableMeta", unreadable));
-            return report;
-        }
-
-        // 1) 收集所有包引用的 blob（哈希，不含扩展名；跨包共享同一份只算一个）
+        // 1) **单遍扫描**：同时收集引用集合与「读不出的 meta」计数。
+        //    读不出的 meta 意味着其引用无法计入 → 引用集合不完整 → **整体放弃回收**（避免误删）
         var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var meta in PackageStore.LoadAll(resourceDir))
+        var unreadable = 0;
+
+        foreach (var packageId in PackageStore.EnumerateMetaIds(resourceDir))
         {
+            var meta = PackageStore.Load(resourceDir, packageId);
+            if (meta == null)
+            {
+                unreadable++;
+                continue;
+            }
+
             foreach (var texture in meta.Textures)
             {
                 if (!string.IsNullOrWhiteSpace(texture.Blob))
                     referenced.Add(texture.Blob);
             }
+        }
+
+        if (unreadable > 0)
+        {
+            report.Errors.Add(Loc.Format("blobgc.unreadableMeta", unreadable));
+            return report;
         }
 
         report.ReferencedBlobs = referenced.Count;

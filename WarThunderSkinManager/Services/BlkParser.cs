@@ -25,7 +25,8 @@ public static class BlkParser
     /// 行式状态机对单行块、`}` 与字段同行、块内多个 from、`from :t=` 之类空格变体会静默丢条目）。
     /// </summary>
     private static readonly Regex BlockRegex = new(
-        @"(?<cmd>replace_tex|set_tex)\s*\{(?<body>[^}]*)\}",
+        // 块体允许引号内出现 `}`（值里真的可能带大括号）——引号外的 `}` 才是块结束
+        @"(?<cmd>replace_tex|set_tex)\s*\{(?<body>(?:[^""{}]|""[^""]*"")*)\}",
         RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
     /// <summary>命令起始（用于与解析到的块数比对，发现未闭合块）。</summary>

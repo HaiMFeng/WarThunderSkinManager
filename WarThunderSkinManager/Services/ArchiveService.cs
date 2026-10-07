@@ -97,31 +97,20 @@ public static class ArchiveService
         IProgress<ArchiveExtractProgress>? progress, CancellationToken cancellationToken)
     {
         var options = new ReaderOptions();
-
-        // 压缩包内文件名的默认编码（不带 UTF-8 标志的条目按此解码）：
-        // 中文工具打包的 zip 常见「GBK 字节 + 未置 UTF-8 标志」，库默认按 UTF-8 解 →
-        // 文件名乱码 → blk 的 to 找不到贴图（表现为「手动解压正常、程序导入后部分贴图缺失」）。
-        // ASCII 名两种编码等价；带 UTF-8 标志的条目不受影响。
-        try
-        {
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            options.ArchiveEncoding.Default = Encoding.GetEncoding(936);
-        }
-        catch
-        {
-            // 取不到 GBK（极端环境）→ 保持库默认
-        }
-
         if (!string.IsNullOrEmpty(password)) options.Password = password;
 
-        IArchive archive;
-        try
+        // 条目名解码：先用库默认（UTF-8，带 UTF-8 标志的 zip 一定正确）；若解出替换字符
+        // （= 非 UTF-8 字节被按 UTF-8 解码，中文工具打包的 zip 常见「GBK 字节 + 未置标志」），
+        // 再用 GBK 重开一次。**按需回退**而非一律 GBK——否则「UTF-8 字节但未置标志」的包会被解错。
+        var archive = OpenArchive(archivePath, options, password);
+        if (HasCorruptedNames(archive))
         {
-            archive = ArchiveFactory.OpenArchive(archivePath, options);
-        }
-        catch (Exception ex) when (IsPasswordRelated(ex))
-        {
-            throw PasswordError(password, ex);
+            var fallback = TryReopenWithGbk(archivePath, password);
+            if (fallback != null)
+            {
+                archive.Dispose();
+                archive = fallback;
+            }
         }
 
         using (archive)
@@ -175,6 +164,51 @@ public static class ArchiveService
                 ? "import.archive.needPassword"
                 : "import.archive.wrongPassword"],
             inner);
+
+    /// <summary>打开压缩包；密码相关异常统一转成「需要密码」的提示。</summary>
+    private static IArchive OpenArchive(string archivePath, ReaderOptions options, string? password)
+    {
+        try
+        {
+            return ArchiveFactory.OpenArchive(archivePath, options);
+        }
+        catch (Exception ex) when (IsPasswordRelated(ex))
+        {
+            throw PasswordError(password, ex);
+        }
+    }
+
+    /// <summary>条目名是否含替换字符（U+FFFD）——意味着字节被按错误的编码解码。</summary>
+    private static bool HasCorruptedNames(IArchive archive)
+    {
+        try
+        {
+            return archive.Entries.Any(entry => (entry.Key ?? "").Contains('\uFFFD'));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>用 GBK（代码页 936）重开压缩包；取不到编码或打开失败返回 null。</summary>
+    private static IArchive? TryReopenWithGbk(string archivePath, string? password)
+    {
+        try
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+            var options = new ReaderOptions();
+            options.ArchiveEncoding.Default = Encoding.GetEncoding(936);
+            if (!string.IsNullOrEmpty(password)) options.Password = password;
+
+            return ArchiveFactory.OpenArchive(archivePath, options);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     /// <summary>异常是否与「密码 / 加密」有关（类型名与消息都查一遍，兼容各库的异常类型）。</summary>
     private static bool IsPasswordRelated(Exception exception)

@@ -240,8 +240,6 @@ public static class PartTagResolver
 
         foreach (var (keyword, key) in Parts)
         {
-            if (!seen.Add(key)) continue; // 同一文案 key 只出一个标签
-
             int pos;
             if (keyword.Contains('_'))
             {
@@ -258,7 +256,9 @@ public static class PartTagResolver
                 }
             }
 
-            if (pos >= 0) results.Add((pos, key));
+            // 同一文案 key 只出一个标签——**命中之后**才去重：
+            // 否则同 key 的备用关键字（如 `aim` 未命中时的 `sidewinder`、`net` 未命中时的 `at`）永无机会命中
+            if (pos >= 0 && seen.Add(key)) results.Add((pos, key));
         }
 
         // 出现位置升序；同位置按关键字优先级（OrderBy 稳定排序保持 Parts 顺序）

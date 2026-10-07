@@ -165,23 +165,14 @@ public static class PackageStore
     }
 
     /// <summary>
-    /// 数一数**读不出来的 meta**（存在 meta.json 但反序列化失败）。
-    /// 引用扫描（<see cref="BlobGc"/>）据此决定是否保守放弃回收：
-    /// 读不出的包，其引用的 blob 无法计入引用集合，回收会误删。
+    /// 枚举包目录名（只列目录，不读内容）——供 <see cref="BlobGc"/> 做**单遍**扫描：
+    /// 一次 <see cref="Load"/> 同时判断「meta 是否读得出」与收集贴图引用。
     /// </summary>
-    public static int CountUnreadableMetas(string resourceDir)
+    public static IEnumerable<string> EnumerateMetaIds(string resourceDir)
     {
         var root = PackagesDirectory(resourceDir);
-        if (!Directory.Exists(root)) return 0;
+        if (!Directory.Exists(root)) return Array.Empty<string>();
 
-        var count = 0;
-        foreach (var dir in Directory.GetDirectories(root))
-        {
-            if (File.Exists(MetaPath(resourceDir, Path.GetFileName(dir)))
-                && Load(resourceDir, Path.GetFileName(dir)) == null)
-                count++;
-        }
-
-        return count;
+        return Directory.GetDirectories(root).Select(Path.GetFileName).OfType<string>();
     }
 }

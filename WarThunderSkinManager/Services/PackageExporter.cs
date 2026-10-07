@@ -134,7 +134,9 @@ public static class PackageExporter
     private static void WriteBlkAndTextures(string resourceDir, PackageMeta meta,
         string sourceBlk, string targetDir, TextureNaming naming)
     {
-        var useConfiguredParts = meta.PartsConfigured && meta.Parts.Count > 0;
+        // **以 PartsConfigured 为准**（即使 parts 为空 = 该包不输出任何部件，见 PackageMeta 注释）：
+        // 与激活侧 VehicleAggregator 的判定保持一致
+        var useConfiguredParts = meta.PartsConfigured;
 
         var entries = (useConfiguredParts
                 ? meta.Parts.Select(p => (From: p.From, ToFile: p.To, Mode: p.Mode, Param: p.Param))
@@ -154,9 +156,16 @@ public static class PackageExporter
             .ToDictionary(g => g.Key, g => g.First().Blob, StringComparer.OrdinalIgnoreCase);
 
         // 原始 to（含相对目录）→ 新相对路径；部件名规则取条目自己的 from（归一化）；
-        // 冲突回退原名；贴图缺失（blob 拿不到）的条目不导出——与激活输出同一规则
+        // 冲突回退原名。**包外引用（无本地 blob）的条目按原名写出**：名字先占位，
+        // 本地贴图的生成名避开它们（否则会把"指向游戏本体资源"顶替成我们写出的文件）
         var rename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in entries)
+        {
+            if (!blobByTo.TryGetValue(entry.ToFile, out var reserved) || string.IsNullOrWhiteSpace(reserved))
+                used.Add(entry.ToFile);
+        }
 
         foreach (var entry in entries)
         {
@@ -188,11 +197,12 @@ public static class PackageExporter
             rename[entry.ToFile] = relative;
         }
 
-        // blk：按命名规则生成（to = 新文件名；空白包 = 只有一行 name）
+        // blk：按命名规则生成（to = 新文件名；空白包 = 只有一行 name）。
+        // **包外引用条目照写原名**——导出与激活输出保持同一组合（§3.11 零失真）
         var blkTarget = Path.Combine(targetDir, meta.VehicleId + ".blk");
         var blkEntries = entries
-            .Where(e => rename.ContainsKey(e.ToFile))
-            .Select(e => new BlkWriter.Entry(e.Mode, e.From, rename[e.ToFile], e.Param)); // param 原样保留（两种命令）
+            .Select(e => new BlkWriter.Entry(e.Mode, e.From,
+                rename.TryGetValue(e.ToFile, out var renamed) ? renamed : e.ToFile, e.Param)); // param 原样保留
 
         File.WriteAllText(blkTarget, BlkWriter.Write(blkEntries), new UTF8Encoding(false));
 

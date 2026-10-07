@@ -166,30 +166,46 @@ public static class OutputService
 
             // 本包内是否有该贴图 → 决定要不要调度文件；**条目本身都照写**：
             // `to` 可能指向**游戏本体资源**（真实涂装常见，如 ussr_camo_green.tga），
-            // 这类条目在手动安装时是生效的，丢弃会造成"程序输出 ≠ 手动安装"（§3.8）
+            // 这类条目在手动安装时是生效的，丢弃会造成"程序输出 ≠ 手动安装"（§3.8）。
+            // 两种"没有本地贴图"（包外引用 / 贴图真的缺失）都给出说明性告警（**不再说"已跳过"**）。
             string? blobFile = null;
             if (!string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
                 var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
                 if (File.Exists(blobPath)) blobFile = mapping.TextureRef;
-                else report.Warnings.Add(Loc.Format("output.warn.textureMissing", selection.Key, mapping.TextureRef));
+                else report.Warnings.Add(Loc.Format("output.warn.textureMissing", selection.Key, mapping.ToFile));
             }
-            else if (!mapping.TextureMissing)
+            else
             {
-                report.Warnings.Add(Loc.Format("output.warn.noTexture", selection.Key));
+                report.Warnings.Add(Loc.Format("output.warn.noTexture", selection.Key, mapping.ToFile));
             }
 
             var mode = selection.ModeOverride ?? mapping.Mode;
             var from = BlkWriter.EnsureWildcard(mapping.FromModule);
 
-            // to 撞名防御：同一 to 名已被**其他部件**用不同贴图占用（跨包选择可能撞名）时，
-            // 为本条生成唯一文件名——否则后调度的贴图会覆盖先调度的，两个部件显示同一张图。
-            // 无本地贴图的条目（to 指游戏本体资源）按原名写出，不参与撞名改写
             var assignedTo = mapping.ToFile;
-            if (blobFile != null
-                && used.Any(u => string.Equals(u.To, assignedTo, StringComparison.OrdinalIgnoreCase)
-                              && !string.Equals(u.BlobFile, blobFile, StringComparison.OrdinalIgnoreCase)))
+
+            if (blobFile == null)
+            {
+                // **包外引用**（to 指向游戏本体资源）：名字必须原样保留，否则指向的对象就变了。
+                // 若与前面某条**本地贴图**同名 → 改本地那条的名字（我们能自由改的是自己写出的文件），
+                // 让包外引用拿到它原本要指向的名字
+                for (var i = 0; i < used.Count; i++)
+                {
+                    if (used[i].BlobFile == null) continue;
+                    if (!string.Equals(used[i].To, assignedTo, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var renamed = UniqueTextureName(used[i].To, used[i].BlobFile!, used);
+                    entries[i] = entries[i] with { To = renamed };
+                    used[i] = (renamed, used[i].BlobFile);
+                }
+            }
+            else if (used.Any(u => string.Equals(u.To, assignedTo, StringComparison.OrdinalIgnoreCase)
+                                && !string.Equals(u.BlobFile, blobFile, StringComparison.OrdinalIgnoreCase)))
+            {
+                // 本地贴图与已有条目（本地贴图或包外引用）同名 → 本条目改名
                 assignedTo = UniqueTextureName(assignedTo, blobFile, used);
+            }
 
             entries.Add(new BlkWriter.Entry(mode, from, assignedTo, mapping.Param)); // param 原样保留（两种命令都要）
 
@@ -197,11 +213,11 @@ public static class OutputService
         }
 
         // 调度贴图：blob → WTSM/<载具Id>/<to 原名>
-        // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出
-        foreach (var (to, blobFile) in used)
+        // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出。
+        // 同一 (to, blob) 被多条映射复用时只调度一次（Distinct），避免对大贴图重复做内容比对
+        foreach (var (to, blobFile) in used.Where(u => u.BlobFile != null).Distinct())
         {
-            if (blobFile == null) continue; // to 指游戏本体资源（包内没有）→ 无需调度
-            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile);
+            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile!);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
@@ -220,8 +236,11 @@ public static class OutputService
         }
 
         // 清理不再被引用的贴图（WTSM 由程序维护）。
-        // 保留集用**相对路径**（to 可能含子目录）：按文件名匹配会把其它子目录下的同名残留误当保留
-        var keep = used.Select(u => u.To.Replace('\\', '/'))
+        // 保留集 = **真正被调度写出**的文件（相对路径，to 可能含子目录）；
+        // 包外引用条目的名字**不进保留集**：若输出目录里留着上一次的同名残留文件，
+        // 游戏会优先加载残留（把"指向本体资源"变成"指向旧文件"）→ 必须清掉
+        var keep = used.Where(u => u.BlobFile != null)
+                       .Select(u => u.To.Replace('\\', '/'))
                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories))
         {

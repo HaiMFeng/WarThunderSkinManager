@@ -379,6 +379,11 @@ internal static class SelfTest
                                  .Select(t => t.Text + ToneMark(t.Tone))) + "]");
             }
 
+            // 同文案 key 的备用关键字（去重必须发生在命中之后）：
+            // sidewinder 无 aim、ats（复数 at）无 net 时仍应各出 1 个部件标签（+1 贴图类型 = 2）
+            log.AppendLine($"标签备用关键字: sidewinder(无 aim) = {PartTagResolver.Resolve("f_15e_sidewinder_c", "f_15e").Count}（应 2），"
+                         + $"ats(复数 at，无 net) = {PartTagResolver.Resolve("f_15e_ats_c", "f_15e").Count}（应 2）");
+
             // ---- 库级部件表 / 跨载具复用（§3.5 / §3.6）----
             log.AppendLine();
             log.AppendLine("---- 部件表（跨载具复用）----");
