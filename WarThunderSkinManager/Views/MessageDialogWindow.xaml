@@ -22,7 +22,7 @@
                 <TextBlock x:Name="HeaderText" Margin="14,0" VerticalAlignment="Center"
                            FontWeight="SemiBold" Foreground="{StaticResource BrushText}"
                            TextTrimming="CharacterEllipsis"/>
-                <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                <Button Style="{StaticResource TitleBarCloseButton}"
                         HorizontalAlignment="Right" Click="Cancel_Click"/>
             </Grid>
 

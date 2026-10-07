@@ -499,47 +499,63 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
-    <!-- ============ 标题栏按钮（悬停背景色 120ms 过渡、按下时图标变淡；关闭键悬停 = 危险红） ============ -->
+    <!-- ============ 标题栏按钮：**自绘矢量图标**（不使用系统图标字体的 E921/E922/E923/E8BB） ============
+         图标几何画在 10×10 的框里、以 Tag 传入；描边跟随 Foreground（悬停提亮）；
+         悬停 = 主题表面色**圆角底**（120ms 淡入，不是系统那种整块矩形），按下 = 图标变淡；
+         关闭键悬停 = 危险色软底 + 危险色图标。 -->
+    <PathGeometry x:Key="TitleBarIconMinimize" Figures="M0.6,5 H9.4"/>
+    <PathGeometry x:Key="TitleBarIconMaximize" Figures="M0.6,0.6 H9.4 V9.4 H0.6 Z"/>
+    <PathGeometry x:Key="TitleBarIconRestore" Figures="M0.6,3.4 H6.6 V9.4 H0.6 Z M3.4,0.6 H9.4 V6"/>
+    <PathGeometry x:Key="TitleBarIconClose" Figures="M1,1 L9,9 M9,1 L1,9"/>
+
     <Style x:Key="TitleBarButton" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
         <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Width" Value="46"/>
-        <Setter Property="Height" Value="32"/>
+        <Setter Property="Width" Value="40"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Margin" Value="2,0"/>
         <Setter Property="Cursor" Value="Hand"/>
-        <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
-        <Setter Property="FontSize" Value="10"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <!-- #00FFFFFF：自建可动画画刷（"Transparent" 是冻结画刷，颜色动不了） -->
-                    <Border x:Name="bd" Background="{StaticResource BrushTransparent}">
-                        <ContentPresenter x:Name="cp" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Border x:Name="bd" CornerRadius="6"
+                            Background="{StaticResource BrushSurface2}" Opacity="0">
+                        <Path x:Name="icon" Data="{TemplateBinding Tag}"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.1" StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Width="10" Height="10" Stretch="None"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="bd"
-                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                        To="{StaticResource ColorHover}" Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.12"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.EnterActions>
                             <Trigger.ExitActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="bd"
-                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                        To="{StaticResource ColorTransparent}" Duration="0:0:0.15"/>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.15"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="cp" Property="Opacity" Value="0.55"/>
+                            <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -548,37 +564,44 @@
     </Style>
 
     <Style x:Key="TitleBarCloseButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
+        <!-- 关闭键的几何直接写在样式里：调用方不必再传 Tag / 字形 -->
+        <Setter Property="Tag" Value="{StaticResource TitleBarIconClose}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" Background="{StaticResource BrushTransparent}">
-                        <ContentPresenter x:Name="cp" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Border x:Name="bd" CornerRadius="6"
+                            Background="{StaticResource BrushDangerSoftBg}" Opacity="0">
+                        <Path x:Name="icon" Data="{TemplateBinding Tag}"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.1" StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Width="10" Height="10" Stretch="None"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Foreground" Value="{StaticResource BrushOnAccent}"/>
+                            <Setter Property="Foreground" Value="{StaticResource BrushDanger}"/>
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="bd"
-                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                        To="{StaticResource ColorDanger}" Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.12"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.EnterActions>
                             <Trigger.ExitActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="bd"
-                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                        To="{StaticResource ColorTransparent}" Duration="0:0:0.15"/>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.15"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushDangerPressed}"/>
-                            <Setter TargetName="cp" Property="Opacity" Value="0.8"/>
+                            <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

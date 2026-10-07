@@ -1,4 +1,4 @@
-<Window x:Class="WarThunderSkinManager.Views.BlkEditorWindow"
+﻿<Window x:Class="WarThunderSkinManager.Views.BlkEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
@@ -26,7 +26,7 @@
                   MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <TextBlock Text="{Binding Title}" Margin="14,0" VerticalAlignment="Center"
                            FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;"
+                <Button Style="{StaticResource TitleBarCloseButton}"
                         HorizontalAlignment="Right" Click="Cancel_Click"/>
             </Grid>
 

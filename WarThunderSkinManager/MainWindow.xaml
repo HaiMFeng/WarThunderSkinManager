@@ -58,23 +58,26 @@
                      连续相同消息不重新赋值，改由 StatusFlash 驱动一次主色光晕脉冲（见 MainWindow.xaml.cs） -->
                 <TextBlock x:Name="StatusText" Grid.Column="1"
                            Style="{StaticResource TitleBarStatusText}" Text="{Binding StatusMessage}"/>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource TitleBarButton}" Content="&#xE921;" Click="Minimize_Click"/>
-                    <!-- 最大化 ⇄ 还原：图标随窗口状态切换 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,6,0">
+                    <!-- 三个窗口按钮均为**自绘矢量图标**（几何见 Themes/ThemeResources.xaml 的
+                         TitleBarIcon*；不用系统图标字体的 E921/E922/E923/E8BB，避免"系统原生"观感） -->
+                    <Button Style="{StaticResource TitleBarButton}"
+                            Tag="{StaticResource TitleBarIconMinimize}" Click="Minimize_Click"/>
+                    <!-- 最大化 ⇄ 还原：几何随窗口状态切换 -->
                     <Button Click="Maximize_Click">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
-                                <Setter Property="Content" Value="&#xE922;"/>
+                                <Setter Property="Tag" Value="{StaticResource TitleBarIconMaximize}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
                                                  Value="Maximized">
-                                        <Setter Property="Content" Value="&#xE923;"/>
+                                        <Setter Property="Tag" Value="{StaticResource TitleBarIconRestore}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Style="{StaticResource TitleBarCloseButton}" Content="&#xE8BB;" Click="Close_Click"/>
+                    <Button Style="{StaticResource TitleBarCloseButton}" Click="Close_Click"/>
                 </StackPanel>
             </Grid>
             </Border>
