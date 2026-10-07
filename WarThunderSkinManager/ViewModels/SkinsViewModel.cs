@@ -141,14 +141,23 @@ public partial class SkinsViewModel : ObservableObject
 
         item.Cts?.Cancel(); // 掐断本轮（取消会走 catch → 标记「已取消」，随即被重跑覆盖）
 
-        if (item.Running != null)
+        // 串行化：连点两次不会变成两轮并发（后一次等前一次收尾后才重跑）
+        await item.Gate.WaitAsync();
+        try
         {
-            try { await item.Running; }
-            catch { /* 本轮自己的异常已在内部处理 */ }
-        }
+            if (item.Running != null)
+            {
+                try { await item.Running; }
+                catch { /* 本轮自己的异常已在内部处理 */ }
+            }
 
-        ShowStatus(Loc.Format("wtlive.started", item.FileName));
-        RunWtLiveDownload(item);
+            ShowStatus(Loc.Format("wtlive.started", item.FileName));
+            RunWtLiveDownload(item);
+        }
+        finally
+        {
+            item.Gate.Release();
+        }
     }
 
     /// <summary>启动一轮下载 / 导入（每轮独立取消源，与程序退出联动）。</summary>
@@ -174,6 +183,11 @@ public partial class SkinsViewModel : ObservableObject
         // 任一路失败时另一路可能仍在写盘，先删文件会「删了又被写回」，留下孤儿文件
         Task? zipTask = null;
         Task? previewTask = null;
+
+        // 本轮**内部**取消源：收尾时用它掐掉仍在跑的那一路（否则失败后兄弟任务继续下载白耗带宽，
+        // 而且 finally 得一直等它跑完）
+        using var run = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var runToken = run.Token;
 
         var resourceDir = _config.ResourceDirectory;
         var wtliveDir = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive");
@@ -226,11 +240,11 @@ public partial class SkinsViewModel : ObservableObject
             item.StateText = Loc["wtlive.state.downloading0"];
 
             zipTask = Task.Run(() => WTLiveService.DownloadFileAsync(
-                item.FileLink, zipPath, item.FileSize, zipProgress, ct, ReportAttempt), ct);
+                item.FileLink, zipPath, item.FileSize, zipProgress, runToken, ReportAttempt), runToken);
 
             previewTask = hasPreview
                 ? Task.Run(() => WTLiveService.DownloadFileAsync(
-                    item.PreviewUrl!, previewImagePath!, null, previewProgress, ct, ReportAttempt), ct)
+                    item.PreviewUrl!, previewImagePath!, null, previewProgress, runToken, ReportAttempt), runToken)
                 : Task.CompletedTask;
 
             // **预览图与压缩包都下载完成**才进入安装（预览图是下载的一部分，失败即本项失败 → 可重试）
@@ -240,8 +254,8 @@ public partial class SkinsViewModel : ObservableObject
             item.State = WtLiveDownloadState.Importing;
             item.StateText = Loc["wtlive.state.importing"];
 
-            extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir), ct);
-            var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, item.FileName), ct);
+            extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir), runToken);
+            var candidates = await Task.Run(() => ImportService.Scan(extracted, ImportSourceType.Archive, item.FileName), runToken);
 
             // 同一帖子内的载具互通 → 显示名应用于全部候选（预览窗可再改）
             if (item.DisplayName.Length > 0)
@@ -314,7 +328,10 @@ public partial class SkinsViewModel : ObservableObject
         }
         finally
         {
-            // 两路下载都收尾（成功或异常都吞掉）再清理，避免「删了又被写回」
+            // 先掐断仍在跑的那一路（失败时兄弟任务可能还在下载），再等两路都收尾
+            // ——「等它收尾」是为了不出现「删了又被写回」的孤儿文件
+            run.Cancel();
+
             foreach (var task in new[] { zipTask, previewTask })
             {
                 if (task == null) continue;

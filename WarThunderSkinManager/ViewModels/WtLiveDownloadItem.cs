@@ -57,6 +57,12 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
     internal Task? Running { get; set; }
 
     /// <summary>
+    /// 重试串行化闸门：连点两次「重试」时，后一次要等前一次收尾后再重跑，
+    /// 不会出现两轮并发下载（并发会重复导入同一份压缩包 → 生成重复涂装包）。
+    /// </summary>
+    internal SemaphoreSlim Gate { get; } = new(1, 1);
+
+    /// <summary>
     /// 是否显示「重试」按钮：**下载中与失败时都常驻**（下载中 = 可掐断重来；
     /// 导入中 / 已完成则没有可重试的下载）。
     /// </summary>
