@@ -872,6 +872,31 @@ internal static class SelfTest
                          + $"，无关包 E 未纳入 = {!relatedIds.Contains("E")}（应 True）"
                          + $"，列表文案 = {RelatedPackageService.Find(relatedLib, "C", null).First(r => r.Id == "C").Display}（应 v3.C）");
 
+            // 尺度上限（§3.4）：整目录批量导入的「系列」与通用贴图的「共用」都必须免疫——
+            // 否则作者库那种「1110 个包同批次」的形状会变成「删一个 = 删全库」
+            for (var i = 0; i < 25; i++)
+                WriteRelatedMeta($"big{i:00}", $"bigv{i:00}", "BIG", $"bigblob{i:00}");
+            var bigBatch = RelatedPackageService.Find(relatedLib, "big00", null).Count;
+
+            for (var i = 0; i < 6; i++) // 6 个包共用同一张"通用贴图"（各自不同批次）
+                WriteRelatedMeta($"uni{i}", $"univ{i}", $"UNI{i}", "commonBlob");
+            var universalTexture = RelatedPackageService.Find(relatedLib, "uni0", null).Count;
+
+            for (var i = 0; i < RelatedPackageService.MaxSharedTextureFanout; i++) // 恰好等于扇出上限 → 仍算共用
+                WriteRelatedMeta($"fiv{i}", $"fivv{i}", $"FIV{i}", "sharedFive");
+            var fanoutBoundary = RelatedPackageService.Find(relatedLib, "fiv0", null).Count;
+
+            for (var i = 0; i < RelatedPackageService.MaxSeriesSize; i++) // 恰好等于批次上限 → 仍算同系列
+                WriteRelatedMeta($"ser{i:00}", $"serv{i:00}", "SER20", $"serblob{i:00}");
+            var seriesBoundary = RelatedPackageService.Find(relatedLib, "ser00", null).Count;
+
+            log.AppendLine($"关联删除上限: 25 包同批次 → {bigBatch}（应 1：不算系列）"
+                         + $"，通用贴图 6 包共用 → {universalTexture}（应 1：免疫）"
+                         + $"，贴图恰好 {RelatedPackageService.MaxSharedTextureFanout} 包共用 → {fanoutBoundary}"
+                         + $"（应 {RelatedPackageService.MaxSharedTextureFanout}）"
+                         + $"，批次恰好 {RelatedPackageService.MaxSeriesSize} 包 → {seriesBoundary}"
+                         + $"（应 {RelatedPackageService.MaxSeriesSize}）");
+
             ArchiveService.CleanupStaging(new[] { extractDir });
             log.AppendLine($"清理暂存目录后仍存在: {Directory.Exists(extractDir)}");
 

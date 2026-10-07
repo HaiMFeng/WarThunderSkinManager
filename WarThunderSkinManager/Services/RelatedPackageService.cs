@@ -32,9 +32,40 @@ public sealed record RelatedPackage(string Id, string VehicleId, string VehicleN
 public static class RelatedPackageService
 {
     /// <summary>
+    /// 「同一系列」的规模上限：一次导入的包数超过它 → **不算同一系列**。
+    /// </summary>
+    /// <remarks>
+    /// 一次导入 = 一个 <c>sourceImportId</c>，而「一键导入整个 UserSkins / 导入一个大文件夹」会把
+    /// **几百上千个包**记成同一次导入。实测（作者库 1151 个包）：1110 个包共用同一个
+    /// <c>sourceImportId</c> —— 不加这条，随便哪个包点「删除关联」都会列出**全库**。
+    /// 用户说的「同个压缩包导入（同一系列）」指的是一个压缩包里那几个包，不是整目录批量入库。
+    /// </remarks>
+    public const int MaxSeriesSize = 20;
+
+    /// <summary>
+    /// 「共用贴图」的复用上限：一张贴图被**超过**这么多包引用 → 视为**通用贴图**，不参与连带。
+    /// </summary>
+    /// <remarks>
+    /// 飞行载具的通用修复贴图会被大量涂装复用，且内容一模一样 → 按内容寻址去重成**同一个 blob**。
+    /// 实测（作者库）：<c>aircraft_normal_detail_n.dds</c> 被 59 个包引用、<c>aircraft_normal_detail_lo_n.dds</c> 51、
+    /// <c>n.tga</c> 48、<c>n.dds</c> 39……不加这条，一张通用法线贴图就能把几百个**毫无关系**的涂装串成一团
+    /// （实测某包的关联数 = 1133 / 1151）。带上这条后同样的包降到个位数，才是"共用私有贴图"的本意。
+    /// </remarks>
+    public const int MaxSharedTextureFanout = 5;
+
+    /// <summary>
     /// 找出与该包连带的全部包（**含它自己**）；结果按「载具显示名 + 包名」排序，顺序稳定。
     /// 目标包不存在时返回空列表。
     /// </summary>
+    /// <remarks>
+    /// 两条关系都带**尺度上限**（见 <see cref="MaxSeriesSize"/> / <see cref="MaxSharedTextureFanout"/>）：
+    /// 整目录批量导入的"系列"与通用贴图的"共用"都不是用户语义里的连带，必须排除，否则会误删全库。
+    /// <para>
+    /// 另外说明**为什么可以放心少删**：贴图按内容寻址，<c>BlobGc</c> 只回收"任何剩余包都不再引用"的 blob，
+    /// 所以删掉一个包**不会**让其他包的贴图丢失（哪怕它们共用同一张通用贴图）。
+    /// 本功能是"顺带一起删"的便利，不是安全必需 → 宁可少列，不可多删。
+    /// </para>
+    /// </remarks>
     public static List<RelatedPackage> Find(string resourceDir, string packageId, string? configDir)
     {
         if (string.IsNullOrWhiteSpace(resourceDir) || string.IsNullOrWhiteSpace(packageId))
@@ -47,6 +78,28 @@ public static class RelatedPackageService
         var byId = metas.ToDictionary(m => m.Id, StringComparer.Ordinal);
         var blobs = metas.ToDictionary(m => m.Id, BlobSet, StringComparer.Ordinal);
 
+        // ① 同一系列：只保留**小批次**（一次导入的包数 ≤ MaxSeriesSize）——
+        //    「一键导入整个 UserSkins / 大文件夹」那种几百上千包的批量入库不算"系列"
+        var series = metas
+            .Where(m => !string.IsNullOrWhiteSpace(m.SourceImportId))
+            .GroupBy(m => m.SourceImportId, StringComparer.Ordinal)
+            .Where(g => g.Count() <= MaxSeriesSize)
+            .ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList(), StringComparer.Ordinal);
+
+        // ② 共用内容：只保留**私有贴图**（被 ≤ MaxSharedTextureFanout 个包引用）；
+        //    通用贴图（aircraft_normal_detail_n.dds 之类，被几十个包共用）一律免疫
+        var blobRefs = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var meta in metas)
+        {
+            foreach (var blob in blobs[meta.Id])
+            {
+                if (!blobRefs.TryGetValue(blob, out var list))
+                    blobRefs[blob] = list = new List<string>();
+
+                list.Add(meta.Id);
+            }
+        }
+
         var related = new HashSet<string>(StringComparer.Ordinal) { target.Id };
         var queue = new Queue<string>();
         queue.Enqueue(target.Id);
@@ -55,25 +108,20 @@ public static class RelatedPackageService
         {
             var meta = byId[queue.Dequeue()];
 
-            // ① 同一系列（同一次导入）
-            if (!string.IsNullOrWhiteSpace(meta.SourceImportId))
+            if (!string.IsNullOrWhiteSpace(meta.SourceImportId)
+                && series.TryGetValue(meta.SourceImportId, out var siblings))
             {
-                foreach (var other in metas)
-                {
-                    if (!string.Equals(other.SourceImportId, meta.SourceImportId, StringComparison.Ordinal)) continue;
-                    if (related.Add(other.Id)) queue.Enqueue(other.Id);
-                }
+                foreach (var id in siblings)
+                    if (related.Add(id)) queue.Enqueue(id);
             }
 
-            // ② 共用内容（贴图 blob 相交）
-            var own = blobs[meta.Id];
-            if (own.Count == 0) continue;
-
-            foreach (var other in metas)
+            foreach (var blob in blobs[meta.Id])
             {
-                if (related.Contains(other.Id)) continue;
-                if (!blobs[other.Id].Overlaps(own)) continue;
-                if (related.Add(other.Id)) queue.Enqueue(other.Id);
+                if (!blobRefs.TryGetValue(blob, out var refs)) continue;
+                if (refs.Count > MaxSharedTextureFanout) continue; // 通用贴图 → 不连带
+
+                foreach (var id in refs)
+                    if (related.Add(id)) queue.Enqueue(id);
             }
         }
 
