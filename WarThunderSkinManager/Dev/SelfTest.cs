@@ -843,6 +843,35 @@ internal static class SelfTest
                          + $"，无单一顶层 = {PackageNaming.AppendNested("Skin", @"A\ver1")}（应 Skin.A.ver1）"
                          + $"，无嵌套 = {PackageNaming.AppendNested("Skin", "")}（应 Skin）");
 
+            // ---- 「删除所有关联的涂装包」的连带范围（§3.4）----
+            // 合成 5 个包（只需 meta：关联只看 sourceImportId 与 textures[].blob）：
+            //   A 与 B 同系列；C 与 A 共用贴图；D 与 C 同系列（连带）；E 无关
+            var relatedLib = Path.Combine(workDir, "related-lib");
+            Directory.CreateDirectory(Path.Combine(relatedLib, "packages"));
+
+            void WriteRelatedMeta(string id, string vehicleId, string importId, params string[] blobs)
+                => PackageStore.SaveMeta(relatedLib, new PackageMeta
+                {
+                    Id = id,
+                    VehicleId = vehicleId,
+                    Name = id,
+                    SourceImportId = importId,
+                    Textures = blobs.Select(b => new TextureEntry { To = b + ".dds", Blob = b }).ToList()
+                });
+
+            WriteRelatedMeta("A", "v1", "S1", "blobA");
+            WriteRelatedMeta("B", "v2", "S1", "blobB");
+            WriteRelatedMeta("C", "v3", "S2", "blobA");
+            WriteRelatedMeta("D", "v4", "S2", "blobD");
+            WriteRelatedMeta("E", "v5", "S3", "blobE");
+
+            var relatedIds = RelatedPackageService.Find(relatedLib, "A", null).Select(r => r.Id).ToList();
+            log.AppendLine($"关联删除   : A 的连带 = {string.Join(",", relatedIds)}"
+                         + "（应 A,B,C,D：B 同系列 / C 共用贴图 / D 是 C 的同系列连带）"
+                         + $"，共 {relatedIds.Count} 个（应 4）"
+                         + $"，无关包 E 未纳入 = {!relatedIds.Contains("E")}（应 True）"
+                         + $"，列表文案 = {RelatedPackageService.Find(relatedLib, "C", null).First(r => r.Id == "C").Display}（应 v3.C）");
+
             ArchiveService.CleanupStaging(new[] { extractDir });
             log.AppendLine($"清理暂存目录后仍存在: {Directory.Exists(extractDir)}");
 

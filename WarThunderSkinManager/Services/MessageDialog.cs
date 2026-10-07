@@ -4,6 +4,19 @@ using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.Services;
 
+/// <summary>带「附加分支」的三键确认框结果（§3.4：「删除」确认框里的「删除关联…」）。</summary>
+public enum ConfirmChoice
+{
+    /// <summary>主按钮（如「删除」）</summary>
+    Primary,
+
+    /// <summary>附加按钮（按钮行**最左侧**，如「删除关联…」）</summary>
+    Extra,
+
+    /// <summary>取消 / 关闭窗口</summary>
+    Cancel
+}
+
 /// <summary>
 /// 统一风格的消息框：全程序**不再使用系统 <c>MessageBox</c>**，
 /// 一律走这里 → <see cref="MessageDialogWindow"/>，与主界面共用设计系统
@@ -34,6 +47,30 @@ public static class MessageDialog
             primaryText ?? loc["common.ok"],
             cancelText ?? loc["common.cancel"],
             danger, owner);
+    }
+
+    /// <summary>
+    /// 三键确认：主按钮 + **按钮行最左侧的附加分支**（外加取消）。
+    /// 用于「删除」这类确认框上再挂一个分支动作，例如「删除关联的涂装包」（§3.4）。
+    /// </summary>
+    public static ConfirmChoice ConfirmWithExtra(string message, string extraText,
+        string? title = null, string? primaryText = null, string? cancelText = null,
+        bool danger = false, DialogIcon icon = DialogIcon.Question, Window? owner = null)
+    {
+        var loc = LocalizationManager.Instance;
+        var dialog = new MessageDialogWindow();
+        dialog.Configure(
+            string.IsNullOrWhiteSpace(title) ? loc["common.tip"] : title,
+            message, icon,
+            primaryText ?? loc["common.ok"],
+            cancelText ?? loc["common.cancel"],
+            danger, checkText: null, extraText);
+
+        var host = ResolveOwner(owner);
+        if (host != null) dialog.Owner = host;
+
+        if (dialog.ShowDialog() == true) return ConfirmChoice.Primary;
+        return dialog.ExtraPressed ? ConfirmChoice.Extra : ConfirmChoice.Cancel;
     }
 
     /// <summary>

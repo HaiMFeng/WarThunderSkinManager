@@ -879,18 +879,29 @@ public partial class SkinsViewModel : ObservableObject
             }));
     }
 
+    /// <summary>
+    /// 删除当前选中的涂装包。确认框的下方按钮**最左侧**多一个「删除关联…」分支（§3.4）：
+    /// 点了就转为删除**所有关联的涂装包**（先弹警告 + 列表再确认）。
+    /// </summary>
     [RelayCommand]
     private void DeletePackage()
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        var confirmed = MessageDialog.Confirm(
+        var choice = MessageDialog.ConfirmWithExtra(
             Loc.Format("pkg.deleteConfirm", SelectedPackage.Name),
+            Loc["pkg.deleteRelated"],
             Loc["pkg.deleteTitle"],
             Loc["pkg.delete"], Loc["common.cancel"],
             danger: true, icon: DialogIcon.Danger);
 
-        if (!confirmed) return;
+        if (choice == ConfirmChoice.Cancel) return;
+
+        if (choice == ConfirmChoice.Extra)
+        {
+            DeleteRelatedPackages(SelectedPackage);
+            return;
+        }
 
         try
         {
@@ -921,6 +932,86 @@ public partial class SkinsViewModel : ObservableObject
                     if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
                     else if (cleared) status += Loc["pkg.deletedClearedOutput"];
                 }
+            }
+
+            RefreshLibrary();
+            ShowStatus(status);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("pkg.operationFailed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// 删除**所有关联的涂装包**（§3.4）：连带范围 = 同一次导入的系列包 + 共用贴图的包
+    /// （即「引用了该包内容」的包），并取**传递闭包**（同系列的连带包一并纳入）。
+    /// 先弹「警告 + 删除列表」窗口，确认后逐个删除，最后统一回收无引用贴图。
+    /// 删掉的包若是其所在载具的激活包 → 一并取消激活并清空输出（与单个删除同一条规则）。
+    /// </summary>
+    private void DeleteRelatedPackages(SkinPackage package)
+    {
+        var related = RelatedPackageService.Find(_config.ResourceDirectory, package.Id, _config.ConfigDirectory);
+
+        // 没有别的关联包 → 不走危险流程（列表里只有它自己，等同普通删除）
+        if (related.Count <= 1)
+        {
+            MessageDialog.Info(Loc["pkg.related.none"], Loc["pkg.related.title"]);
+            return;
+        }
+
+        var window = new RelatedDeleteWindow { Owner = Application.Current?.MainWindow };
+        window.Configure(package.Name, related);
+        if (window.ShowDialog() != true) return;
+
+        try
+        {
+            var resourceDir = _config.ResourceDirectory;
+            var configDir = _config.ConfigDirectory;
+            var userSkins = _config.UserSkinsDirectory;
+
+            var removed = 0;
+            var deactivated = new List<string>();
+
+            foreach (var item in related)
+            {
+                // 是不是所在载具的激活包（读激活设置要在删除前）
+                var wasActive = string.Equals(
+                    LoadoutService.LoadActivation(configDir, item.VehicleId).ActivePackageId,
+                    item.Id, StringComparison.Ordinal);
+
+                PreviewStore.Delete(configDir, item.Id);
+                PackageStore.Delete(resourceDir, item.Id);
+                removed++;
+
+                if (!wasActive) continue;
+
+                LoadoutService.Activate(configDir, item.VehicleId, "");
+                deactivated.Add(item.VehicleId);
+            }
+
+            // 被删包独占的贴图成为无引用 blob → 后台静默回收（§6.5，不阻塞界面）
+            BlobGc.CollectInBackground(resourceDir);
+
+            PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
+            LoadActivation();
+
+            var status = Loc.Format("pkg.related.deleted", removed);
+
+            if (!string.IsNullOrWhiteSpace(userSkins) && Directory.Exists(userSkins))
+            {
+                var cleared = 0;
+                string? error = null;
+
+                foreach (var vehicleId in deactivated)
+                {
+                    var (done, failure) = OutputService.ClearVehicle(userSkins, vehicleId);
+                    if (failure != null) error = failure;
+                    else if (done) cleared++;
+                }
+
+                if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
+                else if (cleared > 0) status += Loc.Format("pkg.related.clearedOutput", cleared);
             }
 
             RefreshLibrary();
