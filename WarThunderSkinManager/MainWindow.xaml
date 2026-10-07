@@ -59,8 +59,9 @@
                 <TextBlock x:Name="StatusText" Grid.Column="1"
                            Style="{StaticResource TitleBarStatusText}" Text="{Binding StatusMessage}"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,6,0">
-                    <!-- 置顶：点一下置顶、再点一下取消（自绘图钉；置顶时图标变主色以示状态） -->
-                    <Button Click="Pin_Click" Margin="2,0,10,0" ToolTip="{loc:Loc app.window.pin}">
+                    <!-- 置顶：点一下置顶、再点一下取消（自绘图钉；置顶时图标变主色以示状态。
+                         与其余窗口按钮同款间距，不额外留间隔） -->
+                    <Button Click="Pin_Click" ToolTip="{loc:Loc app.window.pin}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
                                 <Setter Property="Tag" Value="{StaticResource TitleBarIconPin}"/>
