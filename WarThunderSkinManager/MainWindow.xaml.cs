@@ -144,6 +144,13 @@ public partial class MainWindow : Window
 
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
+    /// <summary>
+    /// 置顶开关（标题栏图钉）：点一下置顶、再点一下取消。
+    /// 图标颜色随 <c>Topmost</c> 变主色以示状态（绑定在 XAML 的 DataTrigger 上）；
+    /// 仅本次运行有效，不落盘（如需记住状态再加配置项）。
+    /// </summary>
+    private void Pin_Click(object sender, RoutedEventArgs e) => Topmost = !Topmost;
+
     private void Maximize_Click(object sender, RoutedEventArgs e) => ToggleMaximize();
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

@@ -1,5 +1,6 @@
 {
   "app.title": "WarThunder Skin Manager",
+  "app.window.pin": "置顶（再次点击取消）",
   "app.language.name": "简体中文",
   "nav.header": "导航",
   "nav.skins": "涂装管理",

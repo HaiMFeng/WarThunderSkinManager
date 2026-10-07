@@ -507,6 +507,9 @@
     <PathGeometry x:Key="TitleBarIconMaximize" Figures="M0.6,0.6 H9.4 V9.4 H0.6 Z"/>
     <PathGeometry x:Key="TitleBarIconRestore" Figures="M0.6,3.4 H6.6 V9.4 H0.6 Z M3.4,0.6 H9.4 V6"/>
     <PathGeometry x:Key="TitleBarIconClose" Figures="M1,1 L9,9 M9,1 L1,9"/>
+    <!-- 置顶（图钉）：帽 + 钉身 + 针 -->
+    <PathGeometry x:Key="TitleBarIconPin"
+                  Figures="M3.4,1 H6.6 M4.3,1 V3.6 L2.6,5.4 H7.4 L5.7,3.6 V1 M5,5.4 V9"/>
 
     <Style x:Key="TitleBarButton" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
@@ -609,6 +612,27 @@
                             <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============ 提示气泡（自绘：默认 ToolTip 是系统样式，与整体不一致） ============ -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{StaticResource BrushSurface2}"
+                            BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                            CornerRadius="6" Padding="9,5" MaxWidth="360">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270"
+                                              Opacity="0.10" Color="{StaticResource ColorShadow}"/>
+                        </Border.Effect>
+                        <ContentPresenter/>
+                    </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

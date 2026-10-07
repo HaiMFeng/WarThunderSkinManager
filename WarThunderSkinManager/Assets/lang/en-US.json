@@ -1,5 +1,6 @@
 {
   "app.title": "WarThunder Skin Manager",
+  "app.window.pin": "Always on top (click again to unstick)",
   "app.language.name": "English",
   "nav.header": "Navigation",
   "nav.skins": "Skin Management",
