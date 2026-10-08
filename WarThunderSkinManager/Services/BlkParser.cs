@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -39,7 +40,22 @@ public static class BlkParser
         @"(?<key>from|to|param)\s*:\s*t\s*=\s*""(?<value>[^""]*)""",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public static BlkFile Parse(string filePath, string text)
+    /// <summary>
+    /// 解析 blk 文本为 <see cref="BlkFile"/>。
+    /// </summary>
+    /// <param name="resolveTextures">
+    /// 是否探测每条映射 <c>to</c> 指向的贴图**是否真的存在于 blk 同目录**（决定
+    /// <see cref="TexMapping.TextureMissing"/> 与对应告警）。
+    /// <para>
+    /// **导入时必须为 true**（源目录里就是贴图本体，导入预览要报"贴图缺失"）；
+    /// **从已入库的包重建时必须为 false**——包目录里只有 <c>meta.json</c> + <c>source.blk</c>，
+    /// 贴图早已按内容寻址存进 blobs（可用性由 <c>meta.textures</c> 回填，见
+    /// <c>VehicleAggregator.ApplyTextures</c>），逐条探测纯属浪费：探测结果全被丢弃，
+    /// 却要付出 `File.Exists` + 失败后 `EnumerateFiles` 的系统调用代价——
+    /// 实测全库重建（1151 包 × 每个包解析两次）因此要 3~4.7 秒。
+    /// </para>
+    /// </param>
+    public static BlkFile Parse(string filePath, string text, bool resolveTextures = true)
     {
         var directory = Path.GetDirectoryName(filePath) ?? "";
         var vehicleId = Path.GetFileNameWithoutExtension(filePath);
@@ -99,7 +115,7 @@ public static class BlkParser
             // 块内多个 from → 每个 from 一条映射（共用同一 to / param）
             foreach (var (from, _) in froms)
             {
-                var mapping = Build(mode, from, blkBlock.To!, blkBlock.Param, blk);
+                var mapping = Build(mode, from, blkBlock.To!, blkBlock.Param, blk, resolveTextures);
                 mapping.BlockIndex = blkBlock.Index;
                 blk.Mappings.Add(mapping);
             }
@@ -117,6 +133,52 @@ public static class BlkParser
     public static List<BlkBlock> ParseBlocks(string text) => Parse("", text).Blocks;
 
     /// <summary>
+    /// 目录清单缓存（`文件夹 → (最后写入时间, 文件名 → 完整路径)`）。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ResolveTexture"/> 一次导入要为**同一目录**的上千条映射找文件名，
+    /// 逐条 `File.Exists` + 失败后 `Directory.EnumerateFiles` 是系统调用密集区
+    /// （性能分析报告实测：全库重建里 `ResolveTexture` 合计 3~4.7 秒）。
+    /// 目录内容没变（最后写入时间相同）就直接命中 → 一次导入每个目录只枚举一次。
+    /// </remarks>
+    private static readonly ConcurrentDictionary<string, (DateTime Stamp, Dictionary<string, string> Files)>
+        DirectoryListings = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>取目录清单（缓存；目录不存在 / 无权限 → 空清单）。</summary>
+    private static Dictionary<string, string> ListingOf(string directory)
+    {
+        if (!Directory.Exists(directory))
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        DateTime stamp;
+        try
+        {
+            stamp = Directory.GetLastWriteTimeUtc(directory);
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (DirectoryListings.TryGetValue(directory, out var cached) && cached.Stamp == stamp)
+            return cached.Files;
+
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(directory))
+                files[Path.GetFileName(file)] = file;
+        }
+        catch
+        {
+            // 无权限 / 被占用 → 视为空清单（等同"没找到"，与旧行为一致）
+        }
+
+        DirectoryListings[directory] = (stamp, files);
+        return files;
+    }
+
+    /// <summary>
     /// 在 <paramref name="directory"/> 下解析 <paramref name="to"/> 指向的贴图；
     /// 精确名不存在时回退**大小写不敏感**匹配（格式文档 §9）。
     /// </summary>
@@ -127,19 +189,18 @@ public static class BlkParser
         warning = null;
         if (string.IsNullOrWhiteSpace(to)) return null;
 
+        // 精确命中：Windows 文件系统本身大小写不敏感，一次 File.Exists 即可（与旧行为一致）
         var exact = Path.Combine(directory, to);
         if (File.Exists(exact)) return exact;
 
+        // 回退：查（缓存的）目录清单做大小写不敏感匹配
         var targetDir = Path.GetDirectoryName(exact);
-        var fileName = Path.GetFileName(exact);
-        if (string.IsNullOrEmpty(targetDir) || !Directory.Exists(targetDir)) return null;
+        if (string.IsNullOrEmpty(targetDir)) return null;
 
-        var match = Directory.EnumerateFiles(targetDir).FirstOrDefault(
-            f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));
+        if (!ListingOf(targetDir).TryGetValue(Path.GetFileName(exact), out var match))
+            return null;
 
-        if (match != null)
-            warning = Loc.Format("parser.warn.caseMismatch", Path.GetFileName(match));
-
+        warning = Loc.Format("parser.warn.caseMismatch", Path.GetFileName(match));
         return match;
     }
 
@@ -155,7 +216,8 @@ public static class BlkParser
         return from.Length > 1 && char.IsLetter(from[0]) && from[1] == ':';
     }
 
-    private static TexMapping Build(MappingMode mode, string from, string to, string? param, BlkFile blk)
+    private static TexMapping Build(MappingMode mode, string from, string to, string? param, BlkFile blk,
+        bool resolveTextures = true)
     {
         var issues = new List<string>();
 
@@ -175,13 +237,19 @@ public static class BlkParser
         if (mode == MappingMode.Replace && param != null)
             issues.Add(Loc["parser.warn.replaceTexParam"]);
 
-        // 贴图校验（关键）：找不到贴图的条目视为「无贴图」，不参与聚合与输出
-        var resolved = ResolveTexture(blk.Directory, to, out var caseWarning);
-        var missing = resolved == null;
-        if (missing)
-            issues.Add(Loc.Format("parser.warn.textureMissing", to));
-        else if (caseWarning != null)
-            issues.Add(caseWarning);
+        // 贴图校验：只在**导入扫描**时做（resolveTextures）；从已入库的包重建时跳过——
+        // 包目录里没有贴图本体（贴图按内容寻址在 blobs），探测只会得到"全缺失"，
+        // 而"这个块有没有可用贴图"另有 meta.textures 为准（VehicleAggregator.ApplyTextures）
+        var missing = false;
+        if (resolveTextures)
+        {
+            var resolved = ResolveTexture(blk.Directory, to, out var caseWarning);
+            missing = resolved == null;
+            if (missing)
+                issues.Add(Loc.Format("parser.warn.textureMissing", to));
+            else if (caseWarning != null)
+                issues.Add(caseWarning);
+        }
 
         return new TexMapping
         {

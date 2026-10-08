@@ -337,6 +337,60 @@
                                Foreground="{StaticResource BrushPrimary}" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Border>
+
+            <!-- 全局"处理中"遮罩（§2.6）：复制 / 删除 / 导入 / 重建资源库这类操作要 1 秒以上，
+                 耗时部分虽在后台线程（界面不冻结），但**用户侧没有反馈** → 容易被当成没反应而连点。
+                 遮罩既给出反馈（加载圈 + 文案），又挡住交互（从根上杜绝重复触发）。
+                 文案与可见性由 BusyIndicator 驱动（嵌套时取最外层文案）。 -->
+            <Grid Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="50">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Busy.IsBusy}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+
+                <!-- 压暗底：沿用主题背景色（四套主题自动一致），只压不填实，保留页面轮廓 -->
+                <Border Background="{StaticResource BrushBackground}" Opacity="0.72"/>
+
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{StaticResource BrushSurface}"
+                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                        CornerRadius="10" Padding="22,16">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.22" Color="#000000"/>
+                    </Border.Effect>
+
+                    <StackPanel Orientation="Horizontal">
+                        <!-- 加载圈：缺口圆环（FA circle-notch）持续旋转，直到遮罩消失 -->
+                        <TextBlock Text="&#xF110;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                   Foreground="{StaticResource BrushPrimary}" VerticalAlignment="Center"
+                                   RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform>
+                                <RotateTransform/>
+                            </TextBlock.RenderTransform>
+                            <TextBlock.Triggers>
+                                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation
+                                                Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                From="0" To="360" Duration="0:0:1.1"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </TextBlock.Triggers>
+                        </TextBlock>
+
+                        <TextBlock Text="{Binding Busy.Text}" Margin="12,0,0,0" FontSize="13"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Grid>
     </Border>
 </Window>

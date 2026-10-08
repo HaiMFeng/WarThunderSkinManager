@@ -796,6 +796,9 @@ public partial class SkinsViewModel : ObservableObject
             return;
         }
 
+        // 属性窗已关（遮罩只能在这之后开，否则会罩着属性窗）+ 后面是保存与重建（秒级）→ 给"处理中"反馈
+        using var busy = BusyIndicator.Instance.Begin(Loc["busy.save"]);
+
         try
         {
             editor.Apply();
@@ -839,23 +842,30 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (SelectedVehicle == null || !EnsureResourceDir()) return;
 
-        try
-        {
-            var meta = PackageStore.CreateBlank(_config.ResourceDirectory, SelectedVehicle.Id,
-                Loc["pkg.blankDefaultName"],
-                SelectedVehicle.SkinPackages.Select(p => p.Id).ToList()); // 兄弟包 id：免全库扫描（KI-1）
+        PackageMeta meta;
 
-            PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
-            await RefreshLibraryAsync();
-            SelectPackage(meta.Id);
-            ShowStatus(Loc.Format("pkg.createdBlank", meta.Name));
-
-            await OpenEditor(meta);
-        }
-        catch (Exception ex)
+        // 遮罩范围**必须止于属性窗前**：属性窗是独立窗口，遮罩留着会一直罩着主窗口
+        using (BusyIndicator.Instance.Begin(Loc["busy.createBlank"]))
         {
-            ShowStatus(Loc.Format("pkg.operationFailed", ex.Message));
+            try
+            {
+                meta = PackageStore.CreateBlank(_config.ResourceDirectory, SelectedVehicle.Id,
+                    Loc["pkg.blankDefaultName"],
+                    SelectedVehicle.SkinPackages.Select(p => p.Id).ToList()); // 兄弟包 id：免全库扫描（KI-1）
+
+                PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
+                await RefreshLibraryAsync();
+                SelectPackage(meta.Id);
+                ShowStatus(Loc.Format("pkg.createdBlank", meta.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(Loc.Format("pkg.operationFailed", ex.Message));
+                return;
+            }
         }
+
+        await OpenEditor(meta);
     }
 
     [RelayCommand]
@@ -873,6 +883,8 @@ public partial class SkinsViewModel : ObservableObject
     /// </summary>
     private async Task<PackageMeta?> DuplicatePackageCore(string packageId, string sourceName)
     {
+        using var busy = BusyIndicator.Instance.Begin(Loc["busy.duplicate"]);
+
         try
         {
             var resourceDir = _config.ResourceDirectory;
@@ -1014,6 +1026,9 @@ public partial class SkinsViewModel : ObservableObject
             return;
         }
 
+        // 确认框已关 → 开遮罩：删除本身很快，慢的是随后的库重建（秒级）
+        using var busy = BusyIndicator.Instance.Begin(Loc["busy.delete"]);
+
         try
         {
             var id = SelectedPackage.Id;
@@ -1063,9 +1078,15 @@ public partial class SkinsViewModel : ObservableObject
     /// </summary>
     private async Task DeleteRelatedPackages(SkinPackage package)
     {
-        // 关联查找要**读全库 meta**（1151 个包实测 ~0.6 秒）→ 放后台，别在 UI 线程上扫（KI-1 同类问题）
-        var related = await Task.Run(() =>
-            RelatedPackageService.Find(_config.ResourceDirectory, package.Id, _config.ConfigDirectory));
+        // 关联查找要**读全库 meta**（1151 个包实测 ~0.6 秒）→ 放后台，别在 UI 线程上扫（KI-1 同类问题）；
+        // 这段等待在弹窗前，必须给"处理中"反馈（否则点了「删除关联…」像是没反应）
+        List<RelatedPackage> related;
+
+        using (BusyIndicator.Instance.Begin(Loc["busy.relatedSearch"]))
+        {
+            related = await Task.Run(() =>
+                RelatedPackageService.Find(_config.ResourceDirectory, package.Id, _config.ConfigDirectory));
+        }
 
         // 没有别的关联包 → 不走危险流程（列表里只有它自己，等同普通删除）
         if (related.Count <= 1)
@@ -1081,6 +1102,9 @@ public partial class SkinsViewModel : ObservableObject
 
         var selected = editor.Selected; // 只删用户勾选的
         if (selected.Count == 0) return; // 按钮已禁用，双保险
+
+        // 勾选窗已关 → 开遮罩覆盖"删除 + 回收 + 重建"整段
+        using var busy = BusyIndicator.Instance.Begin(Loc["busy.deleteRelated"]);
 
         try
         {
@@ -1244,6 +1268,10 @@ public partial class SkinsViewModel : ObservableObject
     /// </remarks>
     private async Task RefreshLibraryAsync()
     {
+        // "处理中"遮罩（§2.6）：这条路径是复制 / 删除 / 导入 / 保存的**共同慢尾巴**，
+        // 放在这里保证任何一条入口都有反馈；外层若已开遮罩，文案取外层（更具体）那次
+        using var busy = BusyIndicator.Instance.Begin(Loc["busy.refresh"]);
+
         await _refreshGate.WaitAsync();
         try
         {
@@ -1611,20 +1639,25 @@ public partial class SkinsViewModel : ObservableObject
             var message = result.Canceled
                 ? Loc.Format("import.canceled", result.Packages.Count)
                 : Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
-            // 源清理 / 删压缩包都是**文件 IO**（整目录递归删除，几十 GB 的源可能很慢）→ 放后台，别卡住界面
-            if (!result.Canceled && preview.DeleteSource)
+            // 源清理 / 删压缩包都是**文件 IO**（整目录递归删除，几十 GB 的源可能很慢）→ 放后台；
+            // 连同末尾的库重建一起开遮罩：进度窗此时已关，这一段是"看不见的收尾"（用户以为已经结束）
+            using (BusyIndicator.Instance.Begin(Loc["busy.import"]))
             {
-                var root = sourcePath;
-                var whole = preview.DeleteWholeRoot;
-                message += await Task.Run(() => CleanupImportedSource(root, candidates, result, whole));
+                if (!result.Canceled && preview.DeleteSource)
+                {
+                    var root = sourcePath;
+                    var whole = preview.DeleteWholeRoot;
+                    message += await Task.Run(() => CleanupImportedSource(root, candidates, result, whole));
+                }
+
+                if (!result.Canceled && preview.DeleteArchive && archives is { Count: > 0 } list)
+                    message += await Task.Run(() => DeleteArchives(list));
+
+                message += extraStatus;
+
+                await RefreshLibraryAsync();
             }
 
-            if (!result.Canceled && preview.DeleteArchive && archives is { Count: > 0 } list)
-                message += await Task.Run(() => DeleteArchives(list));
-
-            message += extraStatus;
-
-            await RefreshLibraryAsync();
             ShowStatus(message);
 
             return result;

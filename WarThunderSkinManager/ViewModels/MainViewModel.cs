@@ -95,6 +95,12 @@ public partial class MainViewModel : ObservableObject
     /// <summary>「多源复用」导航入口是否可见（跟随设置开关）。</summary>
     public bool PartReuseVisible => Config.PartReuseEnabled;
 
+    /// <summary>
+    /// 全局"处理中"指示（§2.6）：主窗口遮罩 + 加载圈 + 文案。
+    /// 任何模块的长操作都可以 <c>BusyIndicator.Instance.Begin(...)</c>，界面绑定这里读状态。
+    /// </summary>
+    public BusyIndicator Busy => BusyIndicator.Instance;
+
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     /// <summary>
@@ -1396,25 +1402,43 @@ public partial class MainViewModel : ObservableObject
 
         ShowStatus(Loc["settings.rebuild.running"]);
 
+        // 「处理中」遮罩：重建是秒级～十秒级，界面不冻结但**没有任何反馈**（连点等于没反应）。
+        // 跨线程持有，重建结束（成功 / 失败都算）在 UI 线程上撤掉
+        var busy = BusyIndicator.Instance.Begin(Loc["busy.refresh"]);
+
         var configDir = Config.ConfigDirectory;
         var resourceDir = Config.ResourceDirectory;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            busy.Dispose(); // 无 UI 线程（退出中 / 自检）→ 别让遮罩卡住
+            return;
+        }
 
         Task.Run(() => LibraryService.Build(configDir, resourceDir)).ContinueWith(t =>
         {
             // Background 优先级：全量重建结果重排两个页面，不与进行中的动画 / 渲染抢 UI 线程
-            Application.Current?.Dispatcher.BeginInvoke(() =>
+            dispatcher.BeginInvoke(() =>
             {
-                Interlocked.Exchange(ref _rebuilding, 0);
-
-                if (t.IsFaulted)
+                try
                 {
-                    ShowStatus(Loc.Format("settings.rebuild.failed",
-                        t.Exception?.GetBaseException().Message ?? "?"));
-                    return;
-                }
+                    Interlocked.Exchange(ref _rebuilding, 0);
 
-                ApplyRebuiltSnapshot(t.Result);
-                ShowStatus(Loc.Format("settings.rebuild.done", t.Result.Packages.Count));
+                    if (t.IsFaulted)
+                    {
+                        ShowStatus(Loc.Format("settings.rebuild.failed",
+                            t.Exception?.GetBaseException().Message ?? "?"));
+                        return;
+                    }
+
+                    ApplyRebuiltSnapshot(t.Result);
+                    ShowStatus(Loc.Format("settings.rebuild.done", t.Result.Packages.Count));
+                }
+                finally
+                {
+                    busy.Dispose();
+                }
             });
         });
     }

@@ -183,8 +183,9 @@ public static class VehicleAggregator
         package.BlkText = assembled.Text;
         package.Blocks = assembled.Blocks.ToList();
 
-        var blk = BlkParser.Parse(PackageStore.SourceBlkPath(resourceDir, meta.Id), assembled.Text);
-        package.Mappings.AddRange(blk.Mappings);
+        // ⚠️ 不要再解析一遍：组装时已按**有效文本**解析出映射（未改动则复用原文解析），
+        // 且那条路径关掉了贴图探测（包目录里没有贴图本体）——全库重建的耗时大头就在这两点上
+        package.Mappings.AddRange(assembled.Mappings);
 
         ApplyTextures(package, meta.Textures); // ⚠️ 别漏：blob 回填缺失会让激活输出全部“无可用贴图”
         return package;

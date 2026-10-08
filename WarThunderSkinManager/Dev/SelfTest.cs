@@ -414,7 +414,8 @@ internal static class SelfTest
                 ("窗口最小化", 0xF2D1), ("窗口最大化", 0xF2D0), ("窗口还原", 0xF2D2),
                 ("窗口关闭", 0xF00D), ("置顶", 0xF08D),
                 ("涂装管理", 0xF1FC), ("载具管理", 0xF072), ("多源复用", 0xF24D), ("设置", 0xF013),
-                ("拖入导入", 0xF56F), ("WT Live 列表", 0xF0ED), ("下载重试", 0xF021), ("缩略图占位", 0xF03E), ("部件", 0xF12E),
+                ("拖入导入", 0xF56F), ("WT Live 列表", 0xF0ED), ("下载重试", 0xF021), ("处理中加载圈", 0xF110),
+                ("缩略图占位", 0xF03E), ("部件", 0xF12E),
                 ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023)
             };
             var missingIcons = iconFontOk && iconGlyphs != null
@@ -959,6 +960,51 @@ internal static class SelfTest
                          + $"meta.preview = {dupCopy?.Preview}（应 {dupCopy?.Id}.png）；"
                          + $"源无预览 → 副本为空 = {plainPreviewOk}（应 True）"
                          + $"（另：副本 Id 与源不同 = {dupCopy != null && dupCopy.Id != dupSource.Id}）");
+
+            // ---- 贴图探测（性能：全库重建曾因此多花 3~4.7 秒）----
+            // ① ResolveTexture：精确命中 / 大小写不同仍能找到 / 缺失返回 null（目录清单缓存必须语义不变）
+            var texDir = Path.Combine(workDir, "tex-resolve");
+            Directory.CreateDirectory(texDir);
+            File.WriteAllText(Path.Combine(texDir, "Body.dds"), "x");
+
+            var exactHit = BlkParser.ResolveTexture(texDir, "Body.dds", out var exactWarn) != null
+                && exactWarn == null;
+            var caseHit = BlkParser.ResolveTexture(texDir, "body.dds", out _) != null;
+            var missHit = BlkParser.ResolveTexture(texDir, "nope.dds", out _) == null;
+
+            log.AppendLine($"贴图探测   : 精确命中 = {exactHit}（应 True）、大小写不同仍能找到 = {caseHit}（应 True）、"
+                         + $"缺失 = {missHit}（应 True）");
+
+            // ② 重建路径必须**不再探测**（包目录里没有贴图本体）：可用性一律以 meta.textures 为准
+            var noResolveLib = Path.Combine(workDir, "noresolve-lib");
+            var noResolveMeta = PackageStore.CreateBlank(noResolveLib, "f_4e", "N");
+            noResolveMeta.Textures.Add(new TextureEntry { To = "body.dds", Blob = "deadbeef" });
+            PackageStore.SaveMeta(noResolveLib, noResolveMeta);
+
+            File.WriteAllText(PackageStore.SourceBlkPath(noResolveLib, noResolveMeta.Id),
+                "name:t=\"user\"" + Environment.NewLine
+                + BlkAssembler.MinimalBlock("x_body_c", "body.dds") + Environment.NewLine,
+                new UTF8Encoding(false));
+
+            var noResolvePackage = VehicleAggregator.BuildPackage(noResolveLib, noResolveMeta);
+            var noResolveOk = noResolvePackage.Mappings.Count == 1
+                && !noResolvePackage.Mappings[0].TextureMissing   // 不再报"缺失"
+                && noResolvePackage.Mappings[0].HasTexture        // 可用性由 meta.textures 回填
+                && noResolvePackage.Mappings[0].Issues.Count == 0;
+
+            // 对照：**导入扫描**仍必须照常报缺失（源目录里就是贴图本体）
+            var scanBlkPath = Path.Combine(workDir, "scan-missing.blk");
+            File.WriteAllText(scanBlkPath,
+                "name:t=\"user\"" + Environment.NewLine
+                + BlkAssembler.MinimalBlock("x_body_c", "nope.dds") + Environment.NewLine,
+                new UTF8Encoding(false));
+
+            var scanParsed = BlkParser.Parse(scanBlkPath,
+                File.ReadAllText(scanBlkPath, Encoding.UTF8));
+            var scanStillWarns = scanParsed.Mappings.Any(m => m.TextureMissing);
+
+            log.AppendLine($"解析贴图开关: 重建不探测 = {noResolveOk}（应 True：无缺失告警 + 可用性来自 meta）、"
+                         + $"导入扫描仍探测 = {scanStillWarns}（应 True）");
 
             // 「删除关联」清单的勾选（§3.4）：默认全选、全取消、再全选
             var relatedRows = RelatedPackageService.Find(relatedLib, "A", null);
@@ -1522,6 +1568,27 @@ internal static class SelfTest
                          + $"已取消 → 取消 = {canceled.IsCancelable}、重试 = {canceled.CanRetry}（应 False/True：按钮变「移除」），"
                          + $"已完成 → 移除 = {!completed.IsCancelable}、重试 = {completed.CanRetry}（应 True/False），"
                          + $"失败 → 重试 = {failed.CanRetry}、取消 = {failed.IsCancelable}（应 True/False）");
+
+            // ---- 「处理中」指示（§2.6）：可嵌套、文案取最外层、计数归零才隐藏、重复释放无害 ----
+            var busyIndicator = BusyIndicator.Instance;
+            var outerScope = busyIndicator.Begin("外层操作");
+            var busyEntered = busyIndicator.IsBusy;
+
+            var innerScope = busyIndicator.Begin("内层操作");
+            var textKeptOuter = busyIndicator.Text == "外层操作";
+
+            innerScope.Dispose();
+            innerScope.Dispose(); // 重复释放必须无害（否则计数会被减穿 → 遮罩卡死）
+
+            var stillBusy = busyIndicator.IsBusy;
+            var textStillOuter = busyIndicator.Text == "外层操作";
+
+            outerScope.Dispose();
+            var clearedAfterAll = !busyIndicator.IsBusy;
+
+            log.AppendLine($"处理中指示 : 进入 = {busyEntered}（应 True），嵌套文案取最外层 = {textKeptOuter}（应 True），"
+                         + $"内层释放后仍忙 = {stillBusy}、文案不变 = {textStillOuter}（应 True/True），"
+                         + $"全部释放 = {clearedAfterAll}（应 True）");
 
             // ---- blk 解析 / 输出健壮性（§3.5 / §3.6）----
             // 覆盖：replace_tex 的 param 保留、同一 to 被多个 from 复用、单行块 / 块内多 from、缺字段块告警

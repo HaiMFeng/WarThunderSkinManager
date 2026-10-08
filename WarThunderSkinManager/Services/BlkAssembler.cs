@@ -42,10 +42,14 @@ public static class BlkAssembler
     private static readonly Regex ParamLine = new(
         @"[ \t]*param\s*:\s*t\s*=\s*""[^""]*""[ \t]*\r?\n?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>组装结果：有效 blk 文本 + 逐块清单（供属性页展示 / 编辑）。</summary>
+    /// <summary>组装结果：有效 blk 文本 + 逐块清单（供属性页展示 / 编辑）+ 映射。</summary>
     /// <param name="Text">可直接写盘的 blk 文本</param>
     /// <param name="Blocks">有效块（含继承块与新增块，按输出顺序）</param>
-    public sealed record Result(string Text, IReadOnlyList<EffectiveBlock> Blocks);
+    /// <param name="Mappings">
+    /// 从**有效文本**解析出的映射（调用方**不要再解析一遍**）：未改动时直接复用原文那次解析的结果，
+    /// 有改动才解析一遍有效文本。省掉的是全库重建里每包一次的全量正则解析（实测 ~0.3 秒）。
+    /// </param>
+    public sealed record Result(string Text, IReadOnlyList<EffectiveBlock> Blocks, IReadOnlyList<TexMapping> Mappings);
 
     /// <summary>包自己的 source.blk 原文（不存在 → 空串 = 空白包）。</summary>
     public static string BaseText(string resourceDir, PackageMeta meta)
@@ -63,7 +67,10 @@ public static class BlkAssembler
         var text = BaseText(resourceDir, meta);
         var isBlank = string.IsNullOrWhiteSpace(text);
 
-        var parsed = BlkParser.Parse(PackageStore.SourceBlkPath(resourceDir, meta.Id), isBlank ? BlankHeader + NewLine : text);
+        // resolveTextures: false —— 组装读的是**包内** source.blk，包目录里只有 meta.json + source.blk，
+        // 贴图本体在 blobs（按内容寻址）。逐条探测纯属浪费（全库重建实测 3~4.7 秒都花在这里）
+        var parsed = BlkParser.Parse(PackageStore.SourceBlkPath(resourceDir, meta.Id),
+            isBlank ? BlankHeader + NewLine : text, resolveTextures: false);
         var baseBlocks = parsed.Blocks;
 
         var overrides = EffectiveOverrides(baseBlocks, meta);
@@ -119,7 +126,16 @@ public static class BlkAssembler
         if (!string.IsNullOrWhiteSpace(meta.ExtraBlkText))
             sb.Append(NewLine).Append(meta.ExtraBlkText.Trim()).Append(NewLine);
 
-        return new Result(sb.ToString(), effective);
+        var effectiveText = sb.ToString();
+
+        // 有效文本与原文**逐字节相同**（绝大多数 = 资源包 / 无改动的用户包）→ 复用上面那次解析的映射，
+        // 省掉第二次全量解析（全库重建里这是每包一次的整篇正则扫描）
+        var mappings = string.Equals(effectiveText, text, StringComparison.Ordinal)
+            ? parsed.Mappings
+            : BlkParser.Parse(PackageStore.SourceBlkPath(resourceDir, meta.Id), effectiveText,
+                resolveTextures: false).Mappings;
+
+        return new Result(effectiveText, effective, mappings);
     }
 
     /// <summary>把一行/一段文本按块解析成 <see cref="EffectiveBlock"/>（供编辑与展示）。</summary>
