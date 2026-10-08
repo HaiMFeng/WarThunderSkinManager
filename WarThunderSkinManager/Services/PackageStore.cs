@@ -64,16 +64,29 @@ public static class PackageStore
     /// 配置目录（预览图缓存 `previews/&lt;包Id&gt;.png` 在那里）——传入则**一并复制预览图**（§3.4）；
     /// 源包没有预览图时副本保持为空。
     /// </param>
-    public static PackageMeta? Duplicate(string resourceDir, string id, string newName, string? configDir = null)
+    /// <param name="siblingIds">
+    /// **同载具兄弟包**的 id（调用方从内存投影给出）：排序重编号只需碰这些包 → **不再 `LoadAll` 扫全库**
+    /// （1151 个包实测 ~0.6 秒、机械盘更久，见 docs/已知问题.md KI-1）。
+    /// 传 <c>null</c> 时退回"按同载具过滤全库扫描"（仅兼容旧调用 / 测试）。
+    /// </param>
+    public static PackageMeta? Duplicate(string resourceDir, string id, string newName,
+        string? configDir = null, IEnumerable<string>? siblingIds = null)
     {
         var source = Load(resourceDir, id);
         if (source == null) return null;
 
-        foreach (var sibling in LoadAll(resourceDir)
-                     .Where(m => !string.Equals(m.Id, id, StringComparison.Ordinal)
-                                 && string.Equals(m.VehicleId, source.VehicleId, StringComparison.OrdinalIgnoreCase)
-                                 && m.Order > source.Order))
+        var siblings = siblingIds
+            ?? LoadAll(resourceDir)
+                .Where(m => string.Equals(m.VehicleId, source.VehicleId, StringComparison.OrdinalIgnoreCase))
+                .Select(m => m.Id);
+
+        foreach (var siblingId in siblings)
         {
+            if (string.Equals(siblingId, id, StringComparison.Ordinal)) continue;
+
+            var sibling = Load(resourceDir, siblingId); // 逐个读 meta（同载具通常几个到几十个）
+            if (sibling == null || sibling.Order <= source.Order) continue;
+
             sibling.Order++;
             SaveMeta(resourceDir, sibling);
         }
@@ -133,13 +146,20 @@ public static class PackageStore
     /// 部件贴图在属性界面从库内其他包选择（含跨载具 / 多源复用候选）。
     /// 排在该载具现有包之后（Order = 现有最大值 + 1）。
     /// </summary>
-    public static PackageMeta CreateBlank(string resourceDir, string vehicleId, string name)
+    /// <param name="siblingIds">
+    /// **同载具兄弟包**的 id（调用方从内存投影给出）→ 取 Order 最大值只需读这些 meta，
+    /// **不再 `LoadAll` 扫全库**（1151 个包实测 ~0.6 秒，见 docs/已知问题.md KI-1）；
+    /// 传 <c>null</c> 时退回全库扫描。
+    /// </param>
+    public static PackageMeta CreateBlank(string resourceDir, string vehicleId, string name,
+        IEnumerable<string>? siblingIds = null)
     {
         if (string.IsNullOrWhiteSpace(vehicleId))
             throw new ArgumentException("载具标识不能为空", nameof(vehicleId));
 
-        var order = LoadAll(resourceDir)
-            .Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
+        var order = (siblingIds != null
+                ? siblingIds.Select(id => Load(resourceDir, id)).Where(m => m != null).Select(m => m!)
+                : LoadAll(resourceDir).Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase)))
             .Select(m => m.Order)
             .DefaultIfEmpty(-1)
             .Max();

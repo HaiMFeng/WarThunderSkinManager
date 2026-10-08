@@ -938,6 +938,23 @@ internal static class SelfTest
                 && plainCopy.Preview.Length == 0
                 && !PreviewStore.Exists(workDir, plainCopy.Id);
 
+            // ---- KI-1：复制 / 新建的排序重编号只碰"内存投影给出的兄弟包"（不再 LoadAll 扫全库）----
+            // 语义必须与旧实现一致：同载具里 Order 大于源包的兄弟整体后移一位；别的载具一律不动
+            var orderLib = Path.Combine(workDir, "order-lib");
+            var orderA = PackageStore.CreateBlank(orderLib, "v1", "P0");
+            var orderB = PackageStore.CreateBlank(orderLib, "v1", "P1", new[] { orderA.Id }); // 兄弟 id 路径
+            var orderOther = PackageStore.CreateBlank(orderLib, "v2", "X0");
+
+            var orderCopy = PackageStore.Duplicate(
+                orderLib, orderA.Id, "P0 - 副本", null, new[] { orderA.Id, orderB.Id });
+
+            var orders = string.Join("、", new[] { orderA.Id, orderB.Id, orderOther.Id, orderCopy!.Id }
+                .Select(id => PackageStore.Load(orderLib, id))
+                .Select(m => $"{m!.Name}={m.Order}"));
+
+            log.AppendLine($"排序重编号 : {orders}"
+                         + "（应 P0=0、P1=2、X0=0、P0 - 副本=1：只重编号同载具兄弟，别的载具不动）");
+
             log.AppendLine($"复制预览图 : 源有预览 → 副本有且内容相同 = {dupPreviewOk}（应 True），"
                          + $"meta.preview = {dupCopy?.Preview}（应 {dupCopy?.Id}.png）；"
                          + $"源无预览 → 副本为空 = {plainPreviewOk}（应 True）"

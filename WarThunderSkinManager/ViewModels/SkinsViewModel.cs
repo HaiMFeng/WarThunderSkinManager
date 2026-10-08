@@ -761,7 +761,7 @@ public partial class SkinsViewModel : ObservableObject
     // ---------- 涂装包操作（§3.4 / §3.6 / §3.11）----------
 
     [RelayCommand]
-    private void EditPackage()
+    private async Task EditPackage()
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
@@ -769,14 +769,14 @@ public partial class SkinsViewModel : ObservableObject
         if (meta == null) return;
 
         // 属性界面可配置该包的部件贴图（§3.5），需要配置对象以读取/记录「写入方式提示已确认」标记
-        OpenEditor(meta);
+        await OpenEditor(meta);
     }
 
     /// <summary>
     /// 打开涂装包属性界面（编辑 / 新建共用）：确定后写回 meta，改的若是激活包则立即重新输出。
     /// 资源包只读（§7）——属性页里点「复制为普通包」即复制一份并**直接在其副本上继续编辑**。
     /// </summary>
-    private void OpenEditor(PackageMeta meta)
+    private async Task OpenEditor(PackageMeta meta)
     {
         var editor = new PackageEditorViewModel(_config, meta);
         var window = new PackageEditorWindow { DataContext = editor, Owner = Application.Current?.MainWindow };
@@ -785,11 +785,11 @@ public partial class SkinsViewModel : ObservableObject
         {
             if (editor.DuplicateRequested)
             {
-                var copy = DuplicatePackageCore(meta.Id, meta.Name);
+                var copy = await DuplicatePackageCore(meta.Id, meta.Name);
                 if (copy != null)
                 {
                     SelectPackage(copy.Id);
-                    OpenEditor(copy);
+                    await OpenEditor(copy);
                 }
             }
 
@@ -812,7 +812,7 @@ public partial class SkinsViewModel : ObservableObject
 
         var wasActive = Packages.FirstOrDefault(
             p => string.Equals(p.Id, meta.Id, StringComparison.Ordinal))?.IsActive == true;
-        RefreshLibrary();
+        await RefreshLibraryAsync();
 
         // 预览图可能刚在属性页里被**替换 / 清除** → 立即刷新缩略图
         // （否则当前载具页面上看不到新图，要切走再切回）
@@ -835,21 +835,22 @@ public partial class SkinsViewModel : ObservableObject
     /// 建完直接打开属性界面改名并配置部件贴图（从库内其他包选择，含跨载具 / 多源复用候选）。
     /// </summary>
     [RelayCommand]
-    private void CreateBlankPackage()
+    private async Task CreateBlankPackage()
     {
         if (SelectedVehicle == null || !EnsureResourceDir()) return;
 
         try
         {
             var meta = PackageStore.CreateBlank(_config.ResourceDirectory, SelectedVehicle.Id,
-                Loc["pkg.blankDefaultName"]);
+                Loc["pkg.blankDefaultName"],
+                SelectedVehicle.SkinPackages.Select(p => p.Id).ToList()); // 兄弟包 id：免全库扫描（KI-1）
 
             PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
-            RefreshLibrary();
+            await RefreshLibraryAsync();
             SelectPackage(meta.Id);
             ShowStatus(Loc.Format("pkg.createdBlank", meta.Name));
 
-            OpenEditor(meta);
+            await OpenEditor(meta);
         }
         catch (Exception ex)
         {
@@ -858,11 +859,11 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void DuplicatePackage()
+    private async Task DuplicatePackage()
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
-        DuplicatePackageCore(SelectedPackage.Id, SelectedPackage.Name);
+        await DuplicatePackageCore(SelectedPackage.Id, SelectedPackage.Name);
     }
 
     /// <summary>
@@ -870,17 +871,26 @@ public partial class SkinsViewModel : ObservableObject
     /// 基准（<c>source.blk</c>）、块级改动与**预览图**一并克隆；资源包里的「无法归属的块」由
     /// <see cref="PackageStore.Duplicate"/> 搬进副本的**额外参数块**（§7 三层模型）。
     /// </summary>
-    private PackageMeta? DuplicatePackageCore(string packageId, string sourceName)
+    private async Task<PackageMeta?> DuplicatePackageCore(string packageId, string sourceName)
     {
         try
         {
+            var resourceDir = _config.ResourceDirectory;
             var newName = Loc.Format("pkg.copyName", sourceName);
+
+            // 排序重编号只需**同载具**的兄弟包；id 从内存投影给（避免 Duplicate 内部 LoadAll 扫全库，KI-1）
+            var sourceMeta = PackageStore.Load(resourceDir, packageId);
+            var siblingIds = _allVehicles
+                .FirstOrDefault(v => string.Equals(v.Id, sourceMeta?.VehicleId, StringComparison.OrdinalIgnoreCase))
+                ?.SkinPackages.Select(p => p.Id)
+                .ToList();
+
             var copy = PackageStore.Duplicate(
-                _config.ResourceDirectory, packageId, newName, _config.ConfigDirectory);
+                resourceDir, packageId, newName, _config.ConfigDirectory, siblingIds);
             if (copy == null) return null;
 
             PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建
-            RefreshLibrary();
+            await RefreshLibraryAsync();
             SelectPackage(copy.Id);
             ShowStatus(Loc.Format("pkg.duplicated", copy.Name));
             return copy;
@@ -985,7 +995,7 @@ public partial class SkinsViewModel : ObservableObject
     /// 点了就转为删除**所有关联的涂装包**（先弹警告 + 列表再确认）。
     /// </summary>
     [RelayCommand]
-    private void DeletePackage()
+    private async Task DeletePackage()
     {
         if (SelectedPackage == null || !EnsureResourceDir()) return;
 
@@ -1000,7 +1010,7 @@ public partial class SkinsViewModel : ObservableObject
 
         if (choice == ConfirmChoice.Extra)
         {
-            DeleteRelatedPackages(SelectedPackage);
+            await DeleteRelatedPackages(SelectedPackage);
             return;
         }
 
@@ -1035,7 +1045,7 @@ public partial class SkinsViewModel : ObservableObject
                 }
             }
 
-            RefreshLibrary();
+            await RefreshLibraryAsync();
             ShowStatus(status);
         }
         catch (Exception ex)
@@ -1051,9 +1061,11 @@ public partial class SkinsViewModel : ObservableObject
     /// 确认后只删**勾选项**，最后统一回收无引用贴图。
     /// 删掉的包若是其所在载具的激活包 → 一并取消激活并清空输出（与单个删除同一条规则）。
     /// </summary>
-    private void DeleteRelatedPackages(SkinPackage package)
+    private async Task DeleteRelatedPackages(SkinPackage package)
     {
-        var related = RelatedPackageService.Find(_config.ResourceDirectory, package.Id, _config.ConfigDirectory);
+        // 关联查找要**读全库 meta**（1151 个包实测 ~0.6 秒）→ 放后台，别在 UI 线程上扫（KI-1 同类问题）
+        var related = await Task.Run(() =>
+            RelatedPackageService.Find(_config.ResourceDirectory, package.Id, _config.ConfigDirectory));
 
         // 没有别的关联包 → 不走危险流程（列表里只有它自己，等同普通删除）
         if (related.Count <= 1)
@@ -1120,7 +1132,7 @@ public partial class SkinsViewModel : ObservableObject
                 else if (cleared > 0) status += Loc.Format("pkg.related.clearedOutput", cleared);
             }
 
-            RefreshLibrary();
+            await RefreshLibraryAsync();
             ShowStatus(status);
         }
         catch (Exception ex)
@@ -1220,18 +1232,42 @@ public partial class SkinsViewModel : ObservableObject
            && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// 全量重建库（**同步**，慢）：由本程序自己改了库之后调用（导入 / 删除 / 复制 / 改部件配置 / 清除数据），
-    /// 顺便把索引快照写成最新 —— 下次启动就只需读快照。
+    /// 程序自己改了库（导入 / 删除 / 复制 / 改属性 / 新建）之后的刷新：
+    /// **后台重建 + 后台投影 + 回 UI 应用**（与启动核对、设置页「全量重建」同一条路径）。
     /// </summary>
-    private void RefreshLibrary()
+    /// <remarks>
+    /// 重建要读全库 meta、并逐包组装 / 解析 blk（性能分析报告实测：1151 个包的
+    /// `BlkParser.ResolveTexture` 合计 ~4.7 秒、`PackageStore.LoadAll` ~0.6 秒），
+    /// **在 UI 线程上同步跑会整窗冻结 2 秒以上**（报告里的「UI 冻结 2.1~2.6 秒」）。
+    /// 投影（快照 → 载具视图）同样重，也一并放后台。
+    /// <para>用信号量串行化：并发重建会各自写索引快照、互相覆盖，且叠加 CPU 争抢。</para>
+    /// </remarks>
+    private async Task RefreshLibraryAsync()
     {
+        await _refreshGate.WaitAsync();
         try
         {
-            ApplySnapshot(LibraryService.Build(_config.ConfigDirectory, _config.ResourceDirectory));
+            var configDir = _config.ConfigDirectory;
+            var resourceDir = _config.ResourceDirectory;
+
+            if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir)) return;
+
+            var snapshot = await Task.Run(() => LibraryService.Build(configDir, resourceDir));
+            var vehicles = await Task.Run(() => LibraryService.ToVehicles(snapshot, LoadCountryOverrides()));
+
+            ApplySnapshot(snapshot, vehicles);
+
+            // 部件表在**后台**建好（几百个包是秒级）：留给 UI 线程首次查表会在打开
+            // 多源复用页 / 属性页时卡住界面
+            _ = Task.Run(() => PartCatalog.Prewarm(resourceDir));
         }
         catch (Exception ex)
         {
             ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+        finally
+        {
+            _refreshGate.Release();
         }
     }
 
@@ -1246,11 +1282,15 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>快照 → 界面：载具列表 → 显示名 → 国家横条与筛选（选中项尽量保持）。</summary>
-    public void ApplySnapshot(LibrarySnapshot snapshot)
+    /// <param name="projected">
+    /// 已算好的载具投影（<see cref="LibraryService.ToVehicles"/> 的结果）——重建路径会在**后台**先算好再传进来，
+    /// 避免这段投影工作落在 UI 线程上；为 <c>null</c> 时此方法自行投影（导航重新投影等场景）。
+    /// </param>
+    public void ApplySnapshot(LibrarySnapshot snapshot, List<Vehicle>? projected = null)
     {
         var previousPackageId = SelectedPackage?.Id;
 
-        _allVehicles = LibraryService.ToVehicles(snapshot, LoadCountryOverrides());
+        _allVehicles = projected ?? LibraryService.ToVehicles(snapshot, LoadCountryOverrides());
         ApplyVehicleMappings(_allVehicles);
         RebuildCountries();
         ApplyCountryFilter(); // 选中载具若已不存在会自动回退；变化会触发预览图加载
@@ -1318,6 +1358,11 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>预览图解码会话标记：切换载具后旧解码结果直接丢弃（避免回写过期载具的图）。</summary>
     private object? _previewDecodeToken;
+
+    /// <summary>
+    /// 库重建串行闸门（<see cref="RefreshLibraryAsync"/>）：并发重建会各写一次索引快照、互相覆盖。
+    /// </summary>
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
     // ---- 缩略图内存缓存（LRU，§3.6）：切换载具时命中缓存**立即**显示，消除「白 → 图」闪烁。
     //      按包 id 缓存已解码的降采样图（Freeze 过，跨线程安全）；上限 100 张控制内存；
@@ -1566,14 +1611,20 @@ public partial class SkinsViewModel : ObservableObject
             var message = result.Canceled
                 ? Loc.Format("import.canceled", result.Packages.Count)
                 : Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
+            // 源清理 / 删压缩包都是**文件 IO**（整目录递归删除，几十 GB 的源可能很慢）→ 放后台，别卡住界面
             if (!result.Canceled && preview.DeleteSource)
-                message += CleanupImportedSource(sourcePath, candidates, result, preview.DeleteWholeRoot);
+            {
+                var root = sourcePath;
+                var whole = preview.DeleteWholeRoot;
+                message += await Task.Run(() => CleanupImportedSource(root, candidates, result, whole));
+            }
+
             if (!result.Canceled && preview.DeleteArchive && archives is { Count: > 0 } list)
-                message += DeleteArchives(list);
+                message += await Task.Run(() => DeleteArchives(list));
 
             message += extraStatus;
 
-            RefreshLibrary();
+            await RefreshLibraryAsync();
             ShowStatus(message);
 
             return result;

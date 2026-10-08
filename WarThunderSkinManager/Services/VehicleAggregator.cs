@@ -125,9 +125,22 @@ public static class VehicleAggregator
     public static Vehicle? BuildVehicle(string resourceDir, string vehicleId,
         IReadOnlyDictionary<string, string>? countryOverrides = null)
     {
-        var metas = PackageStore.LoadAll(resourceDir)
-            .Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
+        // 走内存快照拿该载具的**包 id**，只读这些 meta —— `LoadAll` 要读全库 1151 个 meta.json
+        // （实测 ~0.6 秒，属性页每次打开都会走这里，UI 线程上会明显卡顿；见 docs/已知问题.md KI-1）。
+        // 无内存快照（首次启动后台仍在构建）时退回全库扫描。
+        var ids = LibraryService.TryGetCachedFor(resourceDir)?.Packages
+            .Where(p => string.Equals(p.Meta.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Meta.Id)
             .ToList();
+
+        var metas = ids is { Count: > 0 }
+            ? ids.Select(id => PackageStore.Load(resourceDir, id))
+                 .Where(m => m != null)
+                 .Select(m => m!)
+                 .ToList()
+            : PackageStore.LoadAll(resourceDir)
+                .Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
         return metas.Count == 0 ? null : Build(vehicleId, BuildPackages(resourceDir, metas), countryOverrides);
     }

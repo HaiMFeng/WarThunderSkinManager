@@ -549,8 +549,12 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            foreach (var vehicleId in PackageStore.LoadAll(Config.ResourceDirectory)
-                         .Select(m => m.VehicleId)
+            // 载具 id 优先取**内存快照**（纯内存），避免在 UI 线程上 LoadAll 扫全库（1151 个 meta 实测 ~0.6 秒）
+            var vehicleIds = LibraryService.TryGetCachedFor(Config.ResourceDirectory)?.Packages
+                                 .Select(p => p.Meta.VehicleId)
+                             ?? PackageStore.LoadAll(Config.ResourceDirectory).Select(m => m.VehicleId);
+
+            foreach (var vehicleId in vehicleIds
                          .Where(id => id.Length > 0)
                          .Distinct(StringComparer.OrdinalIgnoreCase))
             {
