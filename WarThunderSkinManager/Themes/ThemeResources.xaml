@@ -609,6 +609,64 @@
         </Setter>
     </Style>
 
+    <!-- ============ 图标按钮（**仅图标、紧凑**，用于列表行内的小动作） ============
+         比次级按钮小一圈（24×24），不占文字宽度；悬停 = 主题表面色**圆角底**（120ms 淡入），
+         按下 = 图标变淡，禁用 = 整体 45% 透明。字形走统一图标字体（`FontFamily` 已设），
+         调用方给 `Content`（如重试 `&#xF021;`）——**没有文字就必须给 `ToolTip`**。 -->
+    <Style x:Key="IconButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Width" Value="24"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <!-- 悬停底与图标是**兄弟节点**：只有背景参与淡入淡出，图标常显 -->
+                    <Grid>
+                        <Border x:Name="bd" CornerRadius="5"
+                                Background="{StaticResource BrushSurface2}" Opacity="0"/>
+                        <ContentPresenter x:Name="icon"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="bd"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.15"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="icon" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============ 提示气泡（自绘：默认 ToolTip 是系统样式，与整体不一致） ============ -->
     <Style TargetType="ToolTip">
         <Setter Property="Foreground" Value="{StaticResource BrushText}"/>

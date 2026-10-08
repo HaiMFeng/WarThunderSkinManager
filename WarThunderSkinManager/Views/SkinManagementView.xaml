@@ -103,16 +103,17 @@
                                                            ToolTip="{Binding FileName}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding StateText}"
                                                            Style="{StaticResource PageSubtitle}" Margin="12,0,0,0"/>
-                                                <!-- 常驻「重试」：下载中也能点 = 掐断当前下载并重跑（察觉卡死时直接掐断）。
-                                                     导入中 / 已完成后没有可重试的下载 → 隐藏（避免重复导入同一份压缩包） -->
-                                                <Button Grid.Column="2" Margin="10,0,0,0" Padding="8,2"
-                                                        Content="{loc:Loc wtlive.list.retry}"
+                                                <!-- 常驻「重试」（**图标按钮** &#xF021;，紧凑、不占文字宽度）：下载中也能点 =
+                                                     掐断当前下载并重跑（察觉卡死时直接掐断）。
+                                                     导入中 / 已完成后没有可重试的下载 → 隐藏（避免重复导入同一份压缩包）。
+                                                     仅图标 → 必须带 ToolTip（说明自动重试节奏与停滞超时） -->
+                                                <Button Grid.Column="2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                        Content="&#xF021;"
                                                         ToolTip="{loc:Loc wtlive.list.retryHint}"
                                                         Command="{Binding DataContext.Skins.RetryWtLiveDownloadCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                         CommandParameter="{Binding}">
                                                     <Button.Style>
-                                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-                                                            <Setter Property="FontSize" Value="11"/>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding CanRetry}" Value="True">
