@@ -72,10 +72,23 @@
                 <Button Content="{loc:Loc skins.wtlive}" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
                         Command="{Binding Skins.OpenWtLiveImportCommand}"/>
 
-                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停展开浮窗，移出关闭 -->
+                <!-- WT Live 下载列表：图标 = 向下箭头 + 底部一横；悬停展开浮窗，移出关闭。
+                     图标着色反映任务状态：**有下载 / 导入任务 = 主题主色**（一眼看出在忙），
+                     无任务或全部结束 = 次要色（与按钮默认观感一致） -->
                 <Button x:Name="WtLiveListButton" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"
                         Padding="10,6" MouseEnter="WtLiveListButton_MouseEnter" MouseLeave="WtLiveListButton_MouseLeave">
-                    <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14"/>
+                    <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Skins.HasActiveDownloads}" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </Button>
 
                 <!-- VerticalOffset：与下载按钮之间留出间距（贴太紧像按钮的一部分）；

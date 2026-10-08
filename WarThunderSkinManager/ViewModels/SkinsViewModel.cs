@@ -85,9 +85,41 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>WT Live 下载的总取消源（程序退出时统一取消）。</summary>
     private readonly CancellationTokenSource _downloadsCts = new();
 
-    /// <summary>是否有进行中的 WT Live 下载 / 导入（退出前须确认）。</summary>
+    /// <summary>
+    /// 是否有进行中的 WT Live 下载 / 导入：**退出前须确认**，界面侧也据此给「下载列表」按钮的
+    /// 图标着色（有任务 = 主题主色，无任务 / 全部结束 = 次要色）。
+    /// 变化时会发通知（见 <see cref="HookDownloadNotifications"/>）。
+    /// </summary>
     public bool HasActiveDownloads
         => WtLiveDownloads.Any(d => d.State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Importing);
+
+    /// <summary>
+    /// 让 <see cref="HasActiveDownloads"/> 随下载列表**实时通知界面**：
+    /// 列表增删（订阅 / 退订条目）与每条的状态变化都会触发它。
+    /// </summary>
+    private void HookDownloadNotifications()
+    {
+        WtLiveDownloads.CollectionChanged += (_, e) =>
+        {
+            if (e.NewItems != null)
+                foreach (WtLiveDownloadItem item in e.NewItems)
+                    item.PropertyChanged += OnDownloadItemPropertyChanged;
+
+            if (e.OldItems != null)
+                foreach (WtLiveDownloadItem item in e.OldItems)
+                    item.PropertyChanged -= OnDownloadItemPropertyChanged;
+
+            NotifyActiveDownloadsChanged();
+        };
+    }
+
+    private void OnDownloadItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WtLiveDownloadItem.State))
+            NotifyActiveDownloadsChanged();
+    }
+
+    private void NotifyActiveDownloadsChanged() => OnPropertyChanged(nameof(HasActiveDownloads));
 
     /// <summary>退出清理（主窗口 Closing 确认退出后调用）：取消下载 + 清空暂存区不留残留。</summary>
     public void CleanupOnExit()
@@ -380,6 +412,8 @@ public partial class SkinsViewModel : ObservableObject
             StatusMessage = "";
             _statusTimer.Stop();
         };
+
+        HookDownloadNotifications(); // 「有下载任务」状态要能实时反映到界面（下载按钮图标着色）
 
         InitializeLibrary();
     }
