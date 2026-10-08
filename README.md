@@ -11,6 +11,21 @@
 
 > 详细设计见 [`docs/`](docs/)。
 
+## 安装
+
+1. 到 [Releases](https://github.com/HaiMFeng/WarThunderSkinManager/releases) 下载
+   **`WarThunderSkinManager-Setup-<版本>-win-x64.exe`**（主渠道）；
+2. 运行安装器：默认装到当前用户目录 `%LOCALAPPDATA%\Programs\WarThunderSkinManager`（**不需要管理员权限**），
+   「创建桌面快捷方式」默认勾选；
+3. 从**开始菜单 / 桌面**启动；装成安装版后即可在「设置 → 更新应用」里检查并更新到新版本。
+
+- **便携使用（备用，不推荐）**：也可以用 Release 里的 zip 解压即用，或把安装目录里的
+  `WarThunderSkinManager.exe` 拷到任意位置运行——程序**不往自身目录写任何东西**。
+  便携运行**不能自动更新**（需要手动下载新版）。
+- **卸载**：控制面板 →「WarThunder Skin Manager」。卸载默认**保留**配置与预览缓存（卸载时会询问是否一并删除）；
+  涂装库与游戏内的激活输出一律不受影响。
+- **系统要求**：Windows 10/11 x64，无需安装 .NET 运行时（自包含单文件）。
+
 ## ⚠️ 使用声明
 
 - 本程序只是一个**本地管理工具**，设计意图是让用户**个人**管理、组合自己在游戏内使用的自定义涂装；程序本身不提供、不附带、不传播任何涂装资源。
