@@ -70,11 +70,10 @@ ArchitecturesInstallIn64BitMode=x64
 MinVersion=10.0
 
 [Languages]
-; 中文界面是**非官方翻译**（Inno Setup 不自带，实测 6.x 的 Languages\ 里没有 ChineseSimplified.isl）。
-; 想要中文安装界面：把 ChineseSimplified.isl 放到
-;   ① Inno 安装目录的 Languages\ 下（如 C:\Program Files (x86)\Inno Setup 6\Languages\），或
-;   ② 与本脚本同目录（installer\）
-; —— 下面会自动检测：**有就把它置为默认语言**（列在最前），都没有则只出英文界面（不影响功能）。
+; 中文界面是**非官方翻译**（Inno Setup 6 不自带 —— 实测它自带的 30 个语言里没有中文）。
+; 本仓库已把 `installer\ChineseSimplified.isl`（官方翻译页的 6.5.0+ 版）随脚本一起维护，
+; 因此**默认就是中文界面**；下面同时兼容"放在 Inno 安装目录的 Languages\ 下"的情形。
+; 两者都没有时退化为英文界面（不影响功能）。
 #if FileExists(AddBackslash(CompilerPath) + "Languages\ChineseSimplified.isl")
 Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 #elif FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
