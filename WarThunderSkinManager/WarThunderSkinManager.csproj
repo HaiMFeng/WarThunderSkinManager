@@ -12,6 +12,10 @@
         <Authors>HaiMFeng</Authors>
         <!-- exe / 窗口图标（多尺寸 ico，16–256） -->
         <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+        <!-- NuGet 漏洞审计取不到数据时（NU1900：国内访问不了 api.nuget.org）不打警告——
+             它描述的是"网络拿不到审计数据"，不是本项目的问题，却会让每次 restore 都刷一条警告。
+             **注意只屏蔽 NU1900**：审计本身仍然开启，网络可用时真实漏洞（NU1902/1903…）照常报出来。 -->
+        <NoWarn>$(NoWarn);NU1900</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
