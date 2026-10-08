@@ -724,7 +724,11 @@
                         <Border x:Name="box" Width="18" Height="18" CornerRadius="4"
                                 Background="{StaticResource BrushBackground}" BorderBrush="{StaticResource BrushBorderStrong}"
                                 BorderThickness="1" VerticalAlignment="Center" SnapsToDevicePixels="True">
+                            <!-- 勾号：几何自带偏移（M 4,9 …），而 `Stretch` 默认 `None` 时 Path 会按
+                                 **几何自身坐标系**绘制 —— 叠加居中布局的偏移后，勾号会落在框的右下角并溢出。
+                                 必须 `Stretch="Uniform"` + 显式尺寸，让几何被归一化并居中进这个框。 -->
                             <Path x:Name="check" Data="M 4,9 L 7.5,12.5 L 14,5"
+                                  Stretch="Uniform" Width="11" Height="11"
                                   Stroke="{StaticResource BrushOnAccent}" StrokeThickness="2" StrokeStartLineCap="Round"
                                   StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                   Opacity="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
