@@ -60,7 +60,11 @@ public static class PackageStore
     /// 复制涂装包：新 Id + 新 meta（textures 引用**相同的 blob**）→ **零字节增量**（功能设计 §6.5）。
     /// 副本插在源包之后（同载具内 order 更大的包整体后移）。
     /// </summary>
-    public static PackageMeta? Duplicate(string resourceDir, string id, string newName)
+    /// <param name="configDir">
+    /// 配置目录（预览图缓存 `previews/&lt;包Id&gt;.png` 在那里）——传入则**一并复制预览图**（§3.4）；
+    /// 源包没有预览图时副本保持为空。
+    /// </param>
+    public static PackageMeta? Duplicate(string resourceDir, string id, string newName, string? configDir = null)
     {
         var source = Load(resourceDir, id);
         if (source == null) return null;
@@ -81,7 +85,7 @@ public static class PackageStore
             Name = newName,
             SourceImportId = source.SourceImportId,
             IsResource = false, // 复制产物 = 普通包（可编辑；来源资源包不受影响，§3.5）
-            Preview = "", // 预览图缓存键跟随包，不自动继承
+            Preview = "", // 下面按源包**实际有无预览图**决定是否填（缓存键跟随包，指向副本自己）
             Order = source.Order + 1,
             Textures = new List<TextureEntry>(source.Textures),
             // 派生新组合：**完整克隆**源包的块级改动（§7 三层模型）——副本与源包同基线（source.blk 已复制），
@@ -114,6 +118,11 @@ public static class PackageStore
                     .ToList();
             }
         }
+
+        // 预览图**一并复制**并指向副本自己（§3.4）：预览图是包的一部分（属性页设的、WT Live 带来的），
+        // 复制包却不带预览图会让副本显示成"没有预览"。复制失败（权限 / 占用）不影响复制包本身
+        if (PreviewStore.Copy(configDir ?? "", id, copy.Id))
+            copy.Preview = PreviewStore.FileName(copy.Id);
 
         SaveMeta(resourceDir, copy);
         return copy;

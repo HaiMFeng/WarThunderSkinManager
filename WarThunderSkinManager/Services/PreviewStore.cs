@@ -35,6 +35,33 @@ public static class PreviewStore
     public static void SaveFromBitmap(string configDir, string packageId, BitmapSource bitmap)
         => Save(bitmap, FullPath(configDir, packageId));
 
+    /// <summary>
+    /// 把某个包的预览图**复制给另一个包**（复制涂装包时用，§3.4）。
+    /// 预览图是包的一部分（属性页设置的、WT Live 导入带来的），副本应当一并继承。
+    /// </summary>
+    /// <returns>源包没有预览图 / 读写失败 → <c>false</c>（复制包这件事本身不该因此失败）。</returns>
+    public static bool Copy(string configDir, string sourceId, string destId)
+    {
+        if (string.IsNullOrWhiteSpace(configDir)) return false;
+
+        var from = FullPath(configDir, sourceId);
+        if (!File.Exists(from)) return false;
+
+        try
+        {
+            var to = FullPath(configDir, destId);
+            var dir = Path.GetDirectoryName(to);
+            if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+
+            File.Copy(from, to, overwrite: true);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static void Delete(string configDir, string packageId)
     {
         var path = FullPath(configDir, packageId);

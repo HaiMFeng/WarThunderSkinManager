@@ -867,7 +867,7 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 复制涂装包为**普通包**（返回副本 meta）。
-    /// 基准（<c>source.blk</c>）与块级改动一并克隆；资源包里的「无法归属的块」由
+    /// 基准（<c>source.blk</c>）、块级改动与**预览图**一并克隆；资源包里的「无法归属的块」由
     /// <see cref="PackageStore.Duplicate"/> 搬进副本的**额外参数块**（§7 三层模型）。
     /// </summary>
     private PackageMeta? DuplicatePackageCore(string packageId, string sourceName)
@@ -875,7 +875,8 @@ public partial class SkinsViewModel : ObservableObject
         try
         {
             var newName = Loc.Format("pkg.copyName", sourceName);
-            var copy = PackageStore.Duplicate(_config.ResourceDirectory, packageId, newName);
+            var copy = PackageStore.Duplicate(
+                _config.ResourceDirectory, packageId, newName, _config.ConfigDirectory);
             if (copy == null) return null;
 
             PartCatalog.Invalidate(); // 新包 → 部件表下次访问重建

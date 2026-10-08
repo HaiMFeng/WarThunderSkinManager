@@ -897,6 +897,40 @@ internal static class SelfTest
                          + $"，批次恰好 {RelatedPackageService.MaxSeriesSize} 包 → {seriesBoundary}"
                          + $"（应 {RelatedPackageService.MaxSeriesSize}）");
 
+            // ---- 复制涂装包要**带上预览图**（§3.4）----
+            // 预览图是包的一部分（属性页设的、WT Live 带来的）→ 副本应拿到自己键下的一份；
+            // 源包没有预览图时副本保持为空（不产生空文件 / 悬空 meta.preview）
+            var dupLib = Path.Combine(workDir, "dup-lib");
+            var dupSource = PackageStore.CreateBlank(dupLib, "v1", "Src");
+
+            var pixels = new byte[] { 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255 };
+            PreviewStore.SaveFromBitmap(workDir, dupSource.Id,
+                System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96,
+                    System.Windows.Media.PixelFormats.Bgra32, null, pixels, 8));
+
+            dupSource.Preview = PreviewStore.FileName(dupSource.Id);
+            PackageStore.SaveMeta(dupLib, dupSource);
+
+            var dupCopy = PackageStore.Duplicate(dupLib, dupSource.Id, "Src - 副本", workDir);
+
+            var plainSource = PackageStore.CreateBlank(dupLib, "v1", "NoPreview");
+            var plainCopy = PackageStore.Duplicate(dupLib, plainSource.Id, "NoPreview - 副本", workDir);
+
+            var dupPreviewOk = dupCopy != null
+                && string.Equals(dupCopy.Preview, PreviewStore.FileName(dupCopy.Id), StringComparison.Ordinal)
+                && PreviewStore.Exists(workDir, dupCopy.Id)
+                && File.ReadAllBytes(PreviewStore.FullPath(workDir, dupCopy.Id))
+                    .SequenceEqual(File.ReadAllBytes(PreviewStore.FullPath(workDir, dupSource.Id)));
+
+            var plainPreviewOk = plainCopy != null
+                && plainCopy.Preview.Length == 0
+                && !PreviewStore.Exists(workDir, plainCopy.Id);
+
+            log.AppendLine($"复制预览图 : 源有预览 → 副本有且内容相同 = {dupPreviewOk}（应 True），"
+                         + $"meta.preview = {dupCopy?.Preview}（应 {dupCopy?.Id}.png）；"
+                         + $"源无预览 → 副本为空 = {plainPreviewOk}（应 True）"
+                         + $"（另：副本 Id 与源不同 = {dupCopy != null && dupCopy.Id != dupSource.Id}）");
+
             // 「删除关联」清单的勾选（§3.4）：默认全选、全取消、再全选
             var relatedRows = RelatedPackageService.Find(relatedLib, "A", null);
             var relatedVm = new RelatedDeleteViewModel("Skin1", relatedRows);
