@@ -1612,6 +1612,18 @@ internal static class SelfTest
                          + $"0.1.5-dev > 0.1.5-beta = {vDev > vBeta}（应 True）、+build 忽略 = {vBuild.Equals(vFive)}（应 True）、"
                          + $"解析 v0.1.4-dev = {vCur}、非法输入被拒 = {versionOk}（应 True）");
 
+            // ---- 构建标识（「关于」区）：版本串不带 + 号段，构建哈希取前 8 位十六进制 ----
+            // 用途：同一个版本号可能对应多个构建（改了代码没改版本号），
+            // 没有它就无法确认"装的到底是哪次构建"（实测踩过：装的是修 bug 之前的构建却看不出来）
+            var buildHash = AppInfo.BuildHash;
+            var versionClean = AppInfo.Version.StartsWith("v") && !AppInfo.Version.Contains('+');
+            var hashOk = buildHash.Length == 0
+                || (buildHash.Length == 8 && buildHash.All(Uri.IsHexDigit));
+
+            log.AppendLine($"构建标识   : 版本 = {AppInfo.Version}（应 v 开头且不含 +）= {versionClean}，"
+                         + $"完整串含源码修订号 = {AppInfo.InformationalVersion.Contains('+')}，"
+                         + $"构建哈希 = '{buildHash}'（应 8 位十六进制，或空）= {hashOk}（应 True）");
+
             // Releases API 解析 + 频道过滤 + 资产选择（fixture 覆盖真实形状：草稿 / 只有 zip / 缺 digest）
             const string releasesJson = """
             [

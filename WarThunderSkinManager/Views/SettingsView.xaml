@@ -530,6 +530,22 @@
                     </TextBlock>
                 </Grid>
 
+                <!-- 构建短哈希：同一版本号可能对应多个构建（改了代码但没改版本号）——
+                     没有这一行就没法确认"装的是哪次构建"（实测踩过：装的是修 bug 之前的构建却看不出来）。
+                     没有哈希时（某些本地构建）整行隐藏 -->
+                <TextBlock Text="{Binding AboutBuildText}" Margin="0,4,0,0" FontSize="11"
+                           Foreground="{StaticResource BrushTextMuted}" TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding AboutBuildText}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
                 <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
                     <Button Content="{loc:Loc settings.about.openProject}" Style="{StaticResource SecondaryButton}"
                             Command="{Binding OpenLinkCommand}"

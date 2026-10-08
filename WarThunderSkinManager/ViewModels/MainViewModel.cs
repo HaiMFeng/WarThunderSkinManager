@@ -150,6 +150,16 @@ public partial class MainViewModel : ObservableObject
     /// <summary>版本（csproj Version，设置页「关于」展示，便于区分构建）。</summary>
     public string AboutVersion => AppInfo.Version;
 
+    /// <summary>
+    /// 「关于」区的**构建哈希**一行（如"构建 1449859a"）；没有哈希时为空串 → 界面整行隐藏。
+    /// </summary>
+    /// <remarks>
+    /// 同一版本号可能对应多个构建（改了代码但没改版本号）——没有这一行就没法确认"装的是哪次构建"。
+    /// </remarks>
+    public string AboutBuildText => AppInfo.BuildHash.Length == 0
+        ? ""
+        : Loc.Format("settings.about.build", AppInfo.BuildHash);
+
     /// <summary>项目主页（设置页「关于」超链接 / 按钮）。</summary>
     public string ProjectUrl { get; } = "https://github.com/HaiMFeng/WarThunderSkinManager";
 
@@ -159,14 +169,16 @@ public partial class MainViewModel : ObservableObject
     /// <summary>作者主页。</summary>
     public string AuthorUrl { get; } = "https://github.com/HaiMFeng";
 
-    /// <summary>复制版本号到剪贴板（设置页「关于」点版本号）。</summary>
+    /// <summary>复制版本号到剪贴板（设置页「关于」点版本号）：**带构建哈希**，便于定位具体构建。</summary>
     [RelayCommand]
     private void CopyVersion()
     {
+        var full = "v" + AppInfo.InformationalVersion;
+
         try
         {
-            Clipboard.SetText(AppInfo.Version);
-            ShowStatus(Loc["settings.about.copied"]);
+            Clipboard.SetText(full);
+            ShowStatus(Loc.Format("settings.about.copiedWithBuild", full));
         }
         catch (ExternalException)
         {
