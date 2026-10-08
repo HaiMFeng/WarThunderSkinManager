@@ -444,6 +444,8 @@
   "settings.appUpdate.failDownload": "Download failed (retry; the partial file is resumed)",
   "settings.appUpdate.failChecksum": "Verification failed, the package was deleted (actual {0}) — retry or download manually",
   "settings.appUpdate.failInstallerMissing": "Installer file is missing (perhaps cleaned up); please download again",
+  "settings.appUpdate.failNotWritable": "Cannot write to the update folder: {0} (try running as administrator, or download the installer manually)",
+  "settings.appUpdate.failNoSpace": "Not enough disk space: about {0:F1} MB required, {1:F1} MB available",
   "settings.appUpdate.failInstall": "Could not start the installer: {0}",
   "settings.appUpdate.exitConfirmTitle": "Update in progress",
   "settings.appUpdate.exitConfirm": "The update is still downloading or waiting to be installed; exiting will cancel it. Exit anyway?",

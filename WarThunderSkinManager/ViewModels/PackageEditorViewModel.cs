@@ -254,9 +254,11 @@ public partial class PackageEditorViewModel : ObservableObject
         var rows = new ObservableCollection<PartRow>();
         _canEditParts = false;
 
+        // requiredPackageId：本包必须出现在聚合结果里（内存快照陈旧时会退回全库扫描，
+        // 否则本包被静默省略 → 部件行"当前使用"误显示为"无"）
         var vehicle = string.IsNullOrWhiteSpace(_resourceDir)
             ? null
-            : VehicleAggregator.BuildVehicle(_resourceDir, _meta.VehicleId);
+            : VehicleAggregator.BuildVehicle(_resourceDir, _meta.VehicleId, null, _meta.Id);
 
         if (vehicle == null)
         {

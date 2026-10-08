@@ -66,7 +66,8 @@ public static class PackageStore
     /// </param>
     /// <param name="siblingIds">
     /// **同载具兄弟包**的 id（调用方从内存投影给出）：排序重编号只需碰这些包 → **不再 `LoadAll` 扫全库**
-    /// （1151 个包实测 ~0.6 秒、机械盘更久，见 docs/已知问题.md KI-1）。
+    /// （1151 个包实测 ~0.6 秒、机械盘更久；这是**原 KI-1**，已在 v0.2.0-dev 修复，
+    /// 背景见 `docs/软件功能设计.md` 的"快照只影响读"一节）。
     /// 传 <c>null</c> 时退回"按同载具过滤全库扫描"（仅兼容旧调用 / 测试）。
     /// </param>
     public static PackageMeta? Duplicate(string resourceDir, string id, string newName,
@@ -75,8 +76,12 @@ public static class PackageStore
         var source = Load(resourceDir, id);
         if (source == null) return null;
 
-        var siblings = siblingIds
-            ?? LoadAll(resourceDir)
+        // 兄弟包集合：**空集合要按"没给"处理**（陈旧投影可能一个兄弟都没有）
+        // → 退回全库扫描，否则副本的 Order 可能与磁盘上真实的兄弟冲突
+        var siblingList = siblingIds?.ToList();
+        var siblings = siblingList is { Count: > 0 }
+            ? siblingList
+            : LoadAll(resourceDir)
                 .Where(m => string.Equals(m.VehicleId, source.VehicleId, StringComparison.OrdinalIgnoreCase))
                 .Select(m => m.Id);
 
@@ -148,7 +153,7 @@ public static class PackageStore
     /// </summary>
     /// <param name="siblingIds">
     /// **同载具兄弟包**的 id（调用方从内存投影给出）→ 取 Order 最大值只需读这些 meta，
-    /// **不再 `LoadAll` 扫全库**（1151 个包实测 ~0.6 秒，见 docs/已知问题.md KI-1）；
+    /// **不再 `LoadAll` 扫全库**（1151 个包实测 ~0.6 秒；原 KI-1，已在 v0.2.0-dev 修复）；
     /// 传 <c>null</c> 时退回全库扫描。
     /// </param>
     public static PackageMeta CreateBlank(string resourceDir, string vehicleId, string name,
@@ -157,8 +162,13 @@ public static class PackageStore
         if (string.IsNullOrWhiteSpace(vehicleId))
             throw new ArgumentException("载具标识不能为空", nameof(vehicleId));
 
-        var order = (siblingIds != null
-                ? siblingIds.Select(id => Load(resourceDir, id)).Where(m => m != null).Select(m => m!)
+        // 空集合要按"没给"处理：否则 `DefaultIfEmpty(-1).Max()` = -1 → 新包 Order = 0，
+        // 可能排到已有包前面（陈旧投影里一个兄弟都没有时就会这样）
+        var siblingList = siblingIds?.ToList();
+        if (siblingList is { Count: 0 }) siblingList = null;
+
+        var order = (siblingList != null
+                ? siblingList.Select(id => Load(resourceDir, id)).Where(m => m != null).Select(m => m!)
                 : LoadAll(resourceDir).Where(m => string.Equals(m.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase)))
             .Select(m => m.Order)
             .DefaultIfEmpty(-1)

@@ -122,18 +122,30 @@ public static class VehicleAggregator
     }
 
     /// <summary>只重建**单个载具**（涂装包属性界面用，避免解析整个库的 blk）。</summary>
+    /// <param name="requiredPackageId">
+    /// 调用方**必须看到**的那个包（属性页打开某包时传它的 id）。
+    /// 内存快照可能是**陈旧的**（外部改动后、启动后台核对完成前）——若快照里没有这个包，
+    /// 就退回全库扫描；否则该包会被**静默省略**，属性页会把"当前使用"误显示为"无"，
+    /// 用户据此改选还会写出多余的块。
+    /// </param>
     public static Vehicle? BuildVehicle(string resourceDir, string vehicleId,
-        IReadOnlyDictionary<string, string>? countryOverrides = null)
+        IReadOnlyDictionary<string, string>? countryOverrides = null, string? requiredPackageId = null)
     {
         // 走内存快照拿该载具的**包 id**，只读这些 meta —— `LoadAll` 要读全库 1151 个 meta.json
-        // （实测 ~0.6 秒，属性页每次打开都会走这里，UI 线程上会明显卡顿；见 docs/已知问题.md KI-1）。
+        // （实测 ~0.6 秒，属性页每次打开都会走这里，UI 线程上会明显卡顿；原 KI-1，已在 v0.2.0-dev 修复）。
         // 无内存快照（首次启动后台仍在构建）时退回全库扫描。
         var ids = LibraryService.TryGetCachedFor(resourceDir)?.Packages
             .Where(p => string.Equals(p.Meta.VehicleId, vehicleId, StringComparison.OrdinalIgnoreCase))
             .Select(p => p.Meta.Id)
             .ToList();
 
-        var metas = ids is { Count: > 0 }
+        // 快照可用 = 该载具在快照里有包，**并且**（调用方指定了必须看到的包时）包含那个包；
+        // 否则退回全库扫描（陈旧快照下宁可慢一点，也不能少给一个包）
+        var cacheUsable = ids is { Count: > 0 }
+            && (string.IsNullOrEmpty(requiredPackageId)
+                || ids.Contains(requiredPackageId, StringComparer.Ordinal));
+
+        var metas = cacheUsable && ids != null
             ? ids.Select(id => PackageStore.Load(resourceDir, id))
                  .Where(m => m != null)
                  .Select(m => m!)

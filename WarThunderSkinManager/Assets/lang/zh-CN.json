@@ -445,6 +445,8 @@
   "settings.appUpdate.failDownload": "下载失败（可重试；已下载部分会续传）",
   "settings.appUpdate.failChecksum": "校验不通过，安装包已删除（实际 {0}）——请重试或手动下载",
   "settings.appUpdate.failInstallerMissing": "安装包不存在（可能被清理），请重新下载",
+  "settings.appUpdate.failNotWritable": "无法写入更新目录：{0}（可尝试以管理员身份运行，或手动下载安装）",
+  "settings.appUpdate.failNoSpace": "磁盘空间不足：需要约 {0:F1} MB，当前可用 {1:F1} MB",
   "settings.appUpdate.failInstall": "启动安装器失败：{0}",
   "settings.appUpdate.exitConfirmTitle": "更新进行中",
   "settings.appUpdate.exitConfirm": "更新正在下载 / 等待安装，退出会中断这次更新。确定退出？",

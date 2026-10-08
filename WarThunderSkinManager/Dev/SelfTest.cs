@@ -1749,6 +1749,19 @@ internal static class SelfTest
                          + $"路径 = {ShortcutService.PathFor(@"C:\Users\u\Desktop")}，"
                          + $"规则校验 = {shortcutOk}（应 True）；当前桌面是否存在 = {ShortcutService.Exists()}");
 
+            // ---- 下载前置预检（§6.1 第 3 步）：目录可写 + 磁盘空间；失败要给出**可直接展示**的原因 ----
+            var probeDir = Path.Combine(workDir, "update-precheck");
+            var precheckOk = AppUpdateService.CheckPrerequisites(probeDir, 8, out _)
+                && !File.Exists(Path.Combine(probeDir, ".probe")); // 探测文件必须已清理
+
+            var blockedDir = Path.Combine(workDir, "update-precheck-blocked");
+            File.WriteAllText(blockedDir, "x"); // 用"文件"占住该路径 → 建目录必然失败
+            var precheckBlocked = !AppUpdateService.CheckPrerequisites(blockedDir, 8, out var precheckError)
+                && precheckError.Length > 0;
+
+            log.AppendLine($"更新前置预检: 可写目录通过 = {precheckOk}（应 True，探测文件已清理），"
+                         + $"不可写路径被拒 = {precheckBlocked}（应 True，原因非空）");
+
 
             // ---- blk 解析 / 输出健壮性（§3.5 / §3.6）----
             // 覆盖：replace_tex 的 param 保留、同一 to 被多个 from 复用、单行块 / 块内多 from、缺字段块告警

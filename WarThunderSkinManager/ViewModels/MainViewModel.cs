@@ -1723,8 +1723,9 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsMaintenance));
         OnPropertyChanged(nameof(SettingsEnabled));
 
-        using var busy = BusyIndicator.Instance.Begin(Loc["settings.appUpdate.downloadingBusy"]);
-
+        // ⚠️ 下载阶段**不能开全屏遮罩**：下载可能持续几分钟，遮罩会挡住卡片上的「取消下载」
+        // 按钮（实测踩过：取消入口完全不可达）。所以下载改为**卡片内反馈**（进度条 + 速度 + 取消），
+        // 其它重操作由 `IsMaintenance` / `SettingsEnabled` 闸门挡住（「更新资源」卡等已在 XAML 绑定）。
         AppUpdateState = AppUpdateUiState.Downloading;
         AppUpdateText = Loc["settings.appUpdate.downloading"];
         AppUpdateProgress = 0;
@@ -1736,6 +1737,14 @@ public partial class MainViewModel : ObservableObject
         {
             var updatesDir = AppUpdateService.UpdatesDirectory(Config.ConfigDirectory);
             var installerPath = Path.Combine(updatesDir, release.Version + ".exe");
+
+            // 前置预检（§6.1 第 3 步）：目录可写 + 磁盘空间足够 —— 别让用户等完整下载（几十 MB）后才失败
+            if (!AppUpdateService.CheckPrerequisites(updatesDir, release.AssetSize, out var precheckError))
+            {
+                AppUpdateState = AppUpdateUiState.Failed;
+                AppUpdateText = precheckError;
+                return;
+            }
 
             var progress = new Progress<AppUpdateService.DownloadProgress>(report =>
             {

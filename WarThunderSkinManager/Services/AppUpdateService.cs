@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -216,6 +217,9 @@ public sealed class AppUpdateState
 /// </remarks>
 public static class AppUpdateService
 {
+    /// <summary>语言（本项目约定：每个用到文案的类各自持有这个私有属性）。</summary>
+    private static LocalizationManager Loc => LocalizationManager.Instance;
+
     /// <summary>更新源仓库。</summary>
     public const string RepoOwner = "HaiMFeng";
     public const string RepoName = "WarThunderSkinManager";
@@ -360,6 +364,59 @@ public static class AppUpdateService
     /// <summary>静默安装的参数（§5.1）：不允许安装器自行重启；把日志放在配置目录便于排障。</summary>
     public static string SilentInstallArguments(string logPath)
         => $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=\"{logPath}\"";
+
+    /// <summary>
+    /// **下载前置预检**（§6.1 第 3 步）：安装包目录可写 + 磁盘剩余空间 ≥ 2× 包体积。
+    /// </summary>
+    /// <remarks>
+    /// 不预检的后果很具体：装到受保护目录 / 磁盘将满时，用户会先等完整下载（几十 MB、国内可能几分钟）
+    /// 才在最后一步失败。这里提前拦住，失败原因**可直接展示**。
+    /// 取不到磁盘信息时不拦（宁可放过，不可误拦）。
+    /// </remarks>
+    public static bool CheckPrerequisites(string updatesDir, long assetSize, out string error)
+    {
+        error = "";
+
+        try
+        {
+            Directory.CreateDirectory(updatesDir);
+
+            var probe = Path.Combine(updatesDir, ".probe");
+            File.WriteAllBytes(probe, new byte[] { 0 });
+            File.Delete(probe);
+        }
+        catch (Exception ex)
+        {
+            error = Loc.Format("settings.appUpdate.failNotWritable", ex.Message);
+            return false;
+        }
+
+        if (assetSize > 0)
+        {
+            try
+            {
+                var root = Path.GetPathRoot(Path.GetFullPath(updatesDir));
+                if (!string.IsNullOrEmpty(root))
+                {
+                    var drive = new DriveInfo(root);
+                    var required = assetSize * 2; // 暂存 + 余量（改名瞬间新旧文件并存）
+
+                    if (drive.AvailableFreeSpace < required)
+                    {
+                        error = Loc.Format("settings.appUpdate.failNoSpace",
+                            required / 1024d / 1024d, drive.AvailableFreeSpace / 1024d / 1024d);
+                        return false;
+                    }
+                }
+            }
+            catch
+            {
+                // 取不到磁盘信息（网络盘等）→ 不拦
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>下载地址白名单（§11 不变量 3）：只信 GitHub 的发布下载地址。</summary>
     public static bool IsTrustedDownloadUrl(string? url)
@@ -509,27 +566,54 @@ public static class AppUpdateService
             var watch = Stopwatch.StartNew();
             var received = already;
 
+            // **停滞超时**：`HttpClient.Timeout` 在 `ResponseHeadersRead` 下只管到响应头，
+            // 正文读取不受它约束（实测语义如此）——所以每次"读不动"都要能自己掐断：
+            // 每读到一块就重置计时，超过 `AttemptTimeoutSeconds` 没进展即取消本次尝试，
+            // 交给下一轮从断点续传（等价于"停滞即掐断 + 重试"）。
+            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            attemptCts.CancelAfter(TimeSpan.FromSeconds(AttemptTimeoutSeconds));
+
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 if (already > 0) request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(already, null);
 
-                using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+                using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attemptCts.Token);
+
+                // 416：本地 `.part` 已经不小于远端长度（多为"上次其实下完了，但改名失败"）→
+                // 丢掉重下，否则 Range 永远越界、重试 5 次全失败（需用户手删文件才能恢复）
+                if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+                {
+                    try { File.Delete(partPath); } catch { /* 删不掉则下一轮还是会 416，由重试上限兜住 */ }
+                    continue;
+                }
+
                 response.EnsureSuccessStatusCode();
+
+                // 服务端**忽略 Range**（返回 200 + 完整内容）时不能 Append（会重复追加、校验必失败）→
+                // 只在拿到 206 时才续传，否则截断重写
+                var resuming = already > 0 && response.StatusCode == HttpStatusCode.PartialContent;
+                if (already > 0 && !resuming)
+                {
+                    already = 0;
+                    received = 0;
+                    try { File.Delete(partPath); } catch { /* 打不开就由 FileMode.Create 截断 */ }
+                }
 
                 var total = already + (response.Content.Headers.ContentLength ?? 0);
 
-                await using (var source = await response.Content.ReadAsStreamAsync(token))
-                await using (var target = new FileStream(partPath, already > 0 ? FileMode.Append : FileMode.Create,
+                await using (var source = await response.Content.ReadAsStreamAsync(attemptCts.Token))
+                await using (var target = new FileStream(partPath, resuming ? FileMode.Append : FileMode.Create,
                                  FileAccess.Write, FileShare.None, BufferSize, useAsync: true))
                 {
                     var buffer = new byte[BufferSize];
                     int read;
 
-                    while ((read = await source.ReadAsync(buffer, token)) > 0)
+                    while ((read = await source.ReadAsync(buffer, attemptCts.Token)) > 0)
                     {
-                        await target.WriteAsync(buffer.AsMemory(0, read), token);
+                        await target.WriteAsync(buffer.AsMemory(0, read), attemptCts.Token);
                         received += read;
+                        attemptCts.CancelAfter(TimeSpan.FromSeconds(AttemptTimeoutSeconds)); // 有进展 → 重置停滞计时
 
                         var seconds = Math.Max(watch.Elapsed.TotalSeconds, 0.001);
                         progress?.Report(new DownloadProgress(received, total,
@@ -545,8 +629,9 @@ public static class AppUpdateService
             {
                 return false; // 用户取消：保留 .part 供续传
             }
-            catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
+            catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException)
             {
+                // 含"停滞被 attemptCts 掐断"（OperationCanceledException 而 token 未取消）
                 if (attempt == DownloadAttempts) return false;
 
                 await Task.Delay(TimeSpan.FromSeconds(1), token); // 固定间隔重试（不退还退避，次数有限）

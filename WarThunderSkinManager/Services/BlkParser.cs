@@ -130,7 +130,12 @@ public static class BlkParser
     }
 
     /// <summary>只取块清单（无文件上下文）——组装 / 输出 / 导出时按块定位用。</summary>
-    public static List<BlkBlock> ParseBlocks(string text) => Parse("", text).Blocks;
+    /// <remarks>
+    /// `resolveTextures: false`：这里**没有文件上下文**（`filePath` 为空 → `directory` 为空），
+    /// 逐块 `File.Exists(to)` 只会拿相对当前工作目录瞎试，既拿不到有效结果，
+    /// 又会往目录清单缓存里塞脏键（组装路径每输出一块就会调一次）。
+    /// </remarks>
+    public static List<BlkBlock> ParseBlocks(string text) => Parse("", text, resolveTextures: false).Blocks;
 
     /// <summary>
     /// 目录清单缓存（`文件夹 → (最后写入时间, 文件名 → 完整路径)`）。
