@@ -1590,6 +1590,154 @@ internal static class SelfTest
                          + $"内层释放后仍忙 = {stillBusy}、文案不变 = {textStillOuter}（应 True/True），"
                          + $"全部释放 = {clearedAfterAll}（应 True）");
 
+            // ---- 应用自更新（§6，docs/应用自更新设计.md）：离线可验证的部分 ----
+            // 版本比较：必须按 SemVer（字符串比会在 0.1.10 vs 0.1.9 上翻车；-dev 是预发布标识）
+            AppVersion.TryParse("v0.1.4-dev", out var vCur);
+            AppVersion.TryParse("0.1.10", out var vTen);
+            AppVersion.TryParse("0.1.9", out var vNine);
+            AppVersion.TryParse("0.1.5", out var vFive);
+            AppVersion.TryParse("0.1.5+abc123", out var vBuild);
+            AppVersion.TryParse("0.1.5-dev", out var vDev);
+            AppVersion.TryParse("0.1.5-beta", out var vBeta);
+
+            var versionOk = vTen > vNine                     // 语义比较（不是字符串）
+                && vFive > vDev                              // 正式版 > 同号预发布
+                && vDev > vBeta                              // 预发布标识按字母序
+                && vBuild.Equals(vFive)                      // +build 不参与比较
+                && vCur.ToString() == "0.1.4-dev"            // 往返
+                && !AppVersion.TryParse("abc", out _)        // 非法输入
+                && !AppVersion.TryParse("", out _);
+
+            log.AppendLine($"版本比较   : 0.1.10 > 0.1.9 = {vTen > vNine}（应 True）、0.1.5 > 0.1.5-dev = {vFive > vDev}（应 True）、"
+                         + $"0.1.5-dev > 0.1.5-beta = {vDev > vBeta}（应 True）、+build 忽略 = {vBuild.Equals(vFive)}（应 True）、"
+                         + $"解析 v0.1.4-dev = {vCur}、非法输入被拒 = {versionOk}（应 True）");
+
+            // Releases API 解析 + 频道过滤 + 资产选择（fixture 覆盖真实形状：草稿 / 只有 zip / 缺 digest）
+            const string releasesJson = """
+            [
+              { "tag_name": "v0.1.13", "prerelease": false, "draft": false, "html_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/tag/v0.1.13",
+                "published_at": "2026-10-09T00:00:00Z", "body": "无 digest 的版本",
+                "assets": [ { "name": "WarThunderSkinManager-Setup-0.1.13-win-x64.exe", "size": 100,
+                              "browser_download_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.13/WarThunderSkinManager-Setup-0.1.13-win-x64.exe" } ] },
+              { "tag_name": "v0.1.12", "prerelease": false, "draft": false, "html_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/tag/v0.1.12",
+                "published_at": "2026-10-08T00:00:00Z", "body": "只有 zip 的版本",
+                "assets": [ { "name": "WarThunderSkinManager-0.1.12-win-x64.zip", "size": 200,
+                              "browser_download_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.12/WarThunderSkinManager-0.1.12-win-x64.zip",
+                              "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" } ] },
+              { "tag_name": "v0.1.11-dev", "prerelease": true, "draft": false, "html_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/tag/v0.1.11-dev",
+                "published_at": "2026-10-07T00:00:00Z", "body": "预发布",
+                "assets": [ { "name": "WarThunderSkinManager-Setup-0.1.11-dev-win-x64.exe", "size": 300,
+                              "browser_download_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.11-dev/WarThunderSkinManager-Setup-0.1.11-dev-win-x64.exe",
+                              "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222" } ] },
+              { "tag_name": "v0.1.10", "prerelease": false, "draft": false, "html_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/tag/v0.1.10",
+                "published_at": "2026-10-06T00:00:00Z", "body": "正式版",
+                "assets": [ { "name": "WarThunderSkinManager-Setup-0.1.10-win-x64.exe", "size": 400,
+                              "browser_download_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.10/WarThunderSkinManager-Setup-0.1.10-win-x64.exe",
+                              "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333" } ] },
+              { "tag_name": "v0.1.14", "prerelease": false, "draft": true, "html_url": "",
+                "assets": [ { "name": "WarThunderSkinManager-Setup-0.1.14-win-x64.exe", "size": 500,
+                              "browser_download_url": "https://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.14/WarThunderSkinManager-Setup-0.1.14-win-x64.exe",
+                              "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444" } ] }
+            ]
+            """;
+
+            var releases = AppUpdateService.ParseReleases(releasesJson);
+            AppVersion.TryParse("0.1.12", out var vNewest); // 高于所有"可用"版本（0.1.12/0.1.13 都不可用 → 应判定已最新）
+
+            var stablePick = AppUpdateService.SelectUpdate(releases, vNine, acceptPrerelease: false);
+            var stablePickFromNewer = AppUpdateService.SelectUpdate(releases, vTen, acceptPrerelease: false);
+            var prePick = AppUpdateService.SelectUpdate(releases, vTen, acceptPrerelease: true);
+            var upToDate = AppUpdateService.SelectUpdate(releases, vNewest, acceptPrerelease: true);
+            var zipOnly = releases.FirstOrDefault(r => r.Version == "0.1.12");
+            var noDigest = releases.FirstOrDefault(r => r.Version == "0.1.13");
+            var draftSkipped = releases.All(r => r.Version != "0.1.14");
+
+            log.AppendLine($"更新源解析 : 解析 {releases.Count} 条（应 4：草稿被跳过 = {draftSkipped}）、"
+                         + $"0.1.9 → 选到 {stablePick?.Version}（应 0.1.10）、"
+                         + $"0.1.10（不含预发布）→ {stablePickFromNewer?.Version ?? "(无)"}（应无：0.1.11-dev 被频道过滤、0.1.12/0.1.13 不可用）、"
+                         + $"0.1.10（含预发布）→ {prePick?.Version}（应 0.1.11-dev）、"
+                         + $"当前已 0.1.12（无更高可用版本）→ 判定已最新 = {upToDate == null}（应 True）；"
+                         + $"只有 zip → 不可用 = {zipOnly is { IsUsable: false }}（应 True）、"
+                         + $"缺 digest → 不可用 = {noDigest is { IsUsable: false }}（应 True）");
+
+            // 下载地址白名单（§11 不变量 3）+ 静默参数（§5.1）
+            var urlTrustedOk = AppUpdateService.IsTrustedDownloadUrl(
+                    "https://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.5-dev/a.exe")
+                && AppUpdateService.IsTrustedDownloadUrl(
+                    "https://objects.githubusercontent.com/HaiMFeng/WarThunderSkinManager/releases/download/v0.1.5-dev/a.exe")
+                && !AppUpdateService.IsTrustedDownloadUrl("https://evil.example.com/HaiMFeng/WarThunderSkinManager/releases/download/v1/a.exe")
+                && !AppUpdateService.IsTrustedDownloadUrl("http://github.com/HaiMFeng/WarThunderSkinManager/releases/download/v1/a.exe")
+                && !AppUpdateService.IsTrustedDownloadUrl("https://github.com/other/repo/releases/download/v1/a.exe")
+                && !AppUpdateService.IsTrustedDownloadUrl("");
+
+            var silentArgs = AppUpdateService.SilentInstallArguments(@"C:\cfg\updates\install.log");
+            var silentArgsOk = silentArgs.Contains("/VERYSILENT") && silentArgs.Contains("/SUPPRESSMSGBOXES")
+                && silentArgs.Contains("/NORESTART") && silentArgs.Contains("/LOG=\"");
+
+            log.AppendLine($"下载与安装 : 地址白名单（github / objects 通过，异域名 / http / 别的仓库 / 空 被拒）= {urlTrustedOk}（应 True），"
+                         + $"静默参数 = {silentArgs}");
+
+            // 校验：正确 sha256 通过；改一字节 / 大小不符 / digest 形状不对 → 必须失败
+            var hashFile = Path.Combine(workDir, "app-update-verify.bin");
+            File.WriteAllBytes(hashFile, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+            var goodHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(hashFile))).ToLowerInvariant();
+
+            var verifyGood = AppUpdateService.VerifyFile(hashFile, 8, goodHash, out _);
+            File.WriteAllBytes(hashFile, new byte[] { 1, 2, 3, 4, 5, 6, 7, 9 });
+            var verifyTampered = !AppUpdateService.VerifyFile(hashFile, 8, goodHash, out _);
+            var verifyWrongSize = !AppUpdateService.VerifyFile(hashFile, 7, goodHash, out _);
+            var verifyShortDigest = !AppUpdateService.VerifyFile(hashFile, 8, "abc", out _);
+
+            log.AppendLine($"校验安装包 : 正确 sha256 通过 = {verifyGood}（应 True），"
+                         + $"改一字节失败 = {verifyTampered}（应 True）、大小不符失败 = {verifyWrongSize}（应 True）、"
+                         + $"digest 形状不对失败 = {verifyShortDigest}（应 True）");
+
+            // 状态文件（原子写；安装器不碰配置目录，所以能跨版本存活）
+            var stateDir = Path.Combine(workDir, "update-state");
+            Directory.CreateDirectory(stateDir);
+            AppUpdateService.SaveState(stateDir, new AppUpdateState
+            {
+                Phase = AppUpdatePhase.PendingInstall,
+                TargetVersion = "0.1.5-dev",
+                InstallerPath = @"C:\cfg\updates\0.1.5-dev.exe",
+                Sha256 = goodHash,
+                SkippedVersion = "0.1.6-dev"
+            });
+
+            var loaded = AppUpdateService.LoadState(stateDir);
+            var stateOk = loaded.Phase == AppUpdatePhase.PendingInstall
+                && loaded.TargetVersion == "0.1.5-dev"
+                && loaded.SkippedVersion == "0.1.6-dev"
+                && loaded.Sha256 == goodHash
+                && File.Exists(AppUpdateService.StatePath(stateDir));
+
+            log.AppendLine($"更新状态   : 往返一致 = {stateOk}（应 True：phase/targetVersion/skippedVersion/sha256），"
+                         + $"文件 = {Path.GetFileName(AppUpdateService.StatePath(stateDir))}");
+
+            // 安装身份（§4.3）：安装根与当前进程目录一致才算"安装版"
+            var identityOk = AppUpdateService.IsCanonicalInstallPath(
+                    @"C:\Users\u\AppData\Local\Programs\WarThunderSkinManager\WarThunderSkinManager.exe",
+                    @"C:\Users\u\AppData\Local\Programs\WarThunderSkinManager\")
+                && !AppUpdateService.IsCanonicalInstallPath(
+                    @"D:\Downloads\WarThunderSkinManager.exe",
+                    @"C:\Users\u\AppData\Local\Programs\WarThunderSkinManager\")
+                && !AppUpdateService.IsCanonicalInstallPath("", @"C:\x")
+                && !AppUpdateService.IsCanonicalInstallPath(@"C:\x\a.exe", "");
+
+            log.AppendLine($"安装身份   : 规范目录判定（一致 True / 拷到别处 False / 空值 False）= {identityOk}（应 True），"
+                         + $"当前是否安装版 = {AppUpdateService.IsInstalled()}（本机未装安装器 → 应为 False）");
+
+            // 桌面快捷方式（§7.4）：名字必须与安装器 MyAppName 一致；路径用 DesktopDirectory 拼（不碰真实桌面）
+            var shortcutOk = ShortcutService.ShortcutName == "WarThunder Skin Manager"
+                && ShortcutService.PathFor(@"C:\Users\u\Desktop") == @"C:\Users\u\Desktop\WarThunder Skin Manager.lnk"
+                && ShortcutService.ShortcutName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+
+            log.AppendLine($"桌面快捷方式: 名字 = 「{ShortcutService.ShortcutName}」（须与 installer 的 MyAppName 一致），"
+                         + $"路径 = {ShortcutService.PathFor(@"C:\Users\u\Desktop")}，"
+                         + $"规则校验 = {shortcutOk}（应 True）；当前桌面是否存在 = {ShortcutService.Exists()}");
+
+
             // ---- blk 解析 / 输出健壮性（§3.5 / §3.6）----
             // 覆盖：replace_tex 的 param 保留、同一 to 被多个 from 复用、单行块 / 块内多 from、缺字段块告警
             log.AppendLine();
