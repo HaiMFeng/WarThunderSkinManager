@@ -50,6 +50,18 @@ public partial class AppConfig : ObservableObject
     [ObservableProperty] private bool _partReuseNoticeSeen;
 
     /// <summary>
+    /// 启动后**自动检查应用更新**（§3.16，默认开启）：延迟几十秒、每 24 小时至多一次、失败静默。
+    /// 关掉只是不自动查，设置页的「检查更新」始终可用。
+    /// </summary>
+    [ObservableProperty] private bool _autoCheckAppUpdate = true;
+
+    /// <summary>用户「跳过此版本」的版本号（如 <c>0.1.6-dev</c>；空 = 没跳过）。</summary>
+    [ObservableProperty] private string _skippedAppVersion = "";
+
+    /// <summary>上次检查应用更新的时间（ISO 8601；用于 24 小时节流）。</summary>
+    [ObservableProperty] private string _lastAppUpdateCheckUtc = "";
+
+    /// <summary>
     /// 进阶功能（设置页）：允许在涂装包属性页**手动编辑 blk 块原文**（§7.3）——
     /// 面向懂技术的用户；关闭时属性页只提供"选贴图"，不显示「编辑 blk 块」入口。
     /// </summary>

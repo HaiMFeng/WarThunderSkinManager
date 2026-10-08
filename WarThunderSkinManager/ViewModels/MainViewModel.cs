@@ -53,6 +53,41 @@ public sealed class ThemeItem
 }
 
 /// <summary>主窗体导航页。</summary>
+/// <summary>
+/// 「更新应用」卡片的状态（§3.16）。**唯一事实来源**：按钮可见性 / 可用性全部由它派生
+/// （见 <c>MainViewModel.AppUpdateCanCheck</c> 等），避免多处布尔量互相打架。
+/// </summary>
+public enum AppUpdateUiState
+{
+    /// <summary>尚未检查 / 24 小时内已查过（显示上次检查时间）</summary>
+    Idle,
+
+    /// <summary>正在检查</summary>
+    Checking,
+
+    /// <summary>已是最新</summary>
+    UpToDate,
+
+    /// <summary>有新版本，可点「更新」</summary>
+    Available,
+
+    /// <summary>下载 / 校验中（可取消）</summary>
+    Downloading,
+
+    /// <summary>已下载并校验通过，等待「立即重启并安装」</summary>
+    Ready,
+
+    /// <summary>检查 / 下载 / 校验失败（可重试，或手动下载）</summary>
+    Failed,
+
+    /// <summary>当前不是（规范）安装版 → 不能自动更新，只能手动下载安装器</summary>
+    NotInstalled,
+
+    /// <summary>用户已「跳过此版本」</summary>
+    Skipped
+}
+
+/// <summary>左侧导航的页面键。</summary>
 public enum TabKey
 {
     Skins,
@@ -293,6 +328,9 @@ public partial class MainViewModel : ObservableObject
 
         // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
         if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
+
+        // 应用自更新（§3.16）：快捷方式状态 → 上次更新的首启提示 → 延迟自动检查
+        InitAppUpdate();
     }
 
     /// <summary>
@@ -1376,6 +1414,430 @@ public partial class MainViewModel : ObservableObject
         {
             ShowStatus(Loc.Format("datatables.exportFailed", ex.Message));
         }
+    }
+
+    // ---------- 应用自更新（§3.16；规格见 docs/应用自更新设计.md）----------
+
+    /// <summary>「更新应用」卡片的界面状态（唯一事实来源——按钮可见性全部由它派生）。</summary>
+    [ObservableProperty] private AppUpdateUiState _appUpdateState = AppUpdateUiState.NotInstalled;
+
+    /// <summary>状态行文案（"正在检查更新…"/"已是最新（v0.1.4-dev）"…）</summary>
+    [ObservableProperty] private string _appUpdateText = "";
+
+    /// <summary>新版本一行摘要（版本 + 日期 + 体积）</summary>
+    [ObservableProperty] private string _appUpdateVersionText = "";
+
+    /// <summary>发布说明要点（**纯文本**、已裁剪，见 §11 不变量 4）</summary>
+    [ObservableProperty] private string _appUpdateNotesText = "";
+
+    /// <summary>下载进度 0..1</summary>
+    [ObservableProperty] private double _appUpdateProgress;
+
+    /// <summary>进度文字（百分比 + 速度）</summary>
+    [ObservableProperty] private string _appUpdateProgressText = "";
+
+    /// <summary>桌面快捷方式当前是否存在（「关于」区的两态按钮用）</summary>
+    [ObservableProperty] private bool _hasDesktopShortcut;
+
+    /// <summary>待安装的新版本（Available / Downloading / Ready 期间有效）</summary>
+    private AppReleaseInfo? _appUpdateRelease;
+
+    private CancellationTokenSource? _appUpdateCts;
+
+    /// <summary>更新流程进行中标志（0/1）：下载 / 校验 / 待安装期间为 1 → 设置页其它重操作禁用</summary>
+    private int _appUpdateBusy;
+
+    private DispatcherTimer? _appUpdateTimer;
+
+    partial void OnAppUpdateStateChanged(AppUpdateUiState value)
+    {
+        OnPropertyChanged(nameof(AppUpdateCanCheck));
+        OnPropertyChanged(nameof(AppUpdateCanUpdate));
+        OnPropertyChanged(nameof(AppUpdateIsDownloading));
+        OnPropertyChanged(nameof(AppUpdateCanInstall));
+        OnPropertyChanged(nameof(AppUpdateHasDetails));
+        OnPropertyChanged(nameof(AppUpdateCanUnskip));
+        OnPropertyChanged(nameof(AppUpdateReleaseUrl));
+        OnPropertyChanged(nameof(SettingsEnabled));
+        OnPropertyChanged(nameof(IsMaintenance));
+    }
+
+    partial void OnHasDesktopShortcutChanged(bool value)
+        => OnPropertyChanged(nameof(DesktopShortcutActionText));
+
+    /// <summary>「更新流程进行中」= 其它会改库 / 改配置的重操作一律禁用（§7.3 第 4 条）</summary>
+    public bool IsMaintenance => Volatile.Read(ref _appUpdateBusy) == 1;
+
+    /// <summary>设置页重操作区的可用性（维护中一律禁用，双保险：命令内也会 early return）</summary>
+    public bool SettingsEnabled => !IsMaintenance;
+
+    public bool AppUpdateCanCheck => AppUpdateState
+        is AppUpdateUiState.Idle or AppUpdateUiState.UpToDate or AppUpdateUiState.Failed
+        or AppUpdateUiState.Skipped or AppUpdateUiState.NotInstalled;
+
+    public bool AppUpdateCanUpdate => AppUpdateState == AppUpdateUiState.Available;
+
+    public bool AppUpdateIsDownloading => AppUpdateState == AppUpdateUiState.Downloading;
+
+    public bool AppUpdateCanInstall => AppUpdateState == AppUpdateUiState.Ready;
+
+    public bool AppUpdateHasDetails => AppUpdateVersionText.Length > 0;
+
+    /// <summary>是否已「跳过此版本」（可撤销）</summary>
+    public bool AppUpdateCanUnskip => AppUpdateState == AppUpdateUiState.Skipped;
+
+    /// <summary>新版本 Release 页（「查看完整说明」；空 = 无）</summary>
+    public string AppUpdateReleaseUrl => _appUpdateRelease?.HtmlUrl ?? "";
+
+    /// <summary>「关于」区那个按钮的文案（两态）</summary>
+    public string DesktopShortcutActionText => HasDesktopShortcut
+        ? Loc["settings.about.shortcut.remove"]
+        : Loc["settings.about.shortcut.create"];
+
+    /// <summary>启动期初始化（构造末尾调用）：桌面快捷方式状态 → 上次更新的首启提示 → 自动检查。</summary>
+    private void InitAppUpdate()
+    {
+        RefreshDesktopShortcutState();
+        HandleUpdateNotice();
+
+        if (!Config.AutoCheckAppUpdate) return;
+
+        // 24 小时节流（失败静默；手动检查不受限）
+        if (DateTime.TryParse(Config.LastAppUpdateCheckUtc, out var last)
+            && DateTime.UtcNow - last.ToUniversalTime() < TimeSpan.FromHours(24))
+        {
+            AppUpdateState = AppUpdateUiState.Idle;
+            AppUpdateText = Loc.Format("settings.appUpdate.lastChecked", last.ToLocalTime().ToString("g"));
+            return;
+        }
+
+        // 启动后延迟检查：避开启动期扫描 / 同步的争抢（§6.1 第 1 步）
+        _appUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
+        _appUpdateTimer.Tick += (_, _) =>
+        {
+            _appUpdateTimer?.Stop();
+            _ = CheckAppUpdateAsync(silent: true);
+        };
+        _appUpdateTimer.Start();
+    }
+
+    /// <summary>
+    /// 上次更新是否已完成 → **一次性**非模态提示（§6.1 第 9 步的简化版：状态栏 + 卡片显示更新内容，
+    /// 不弹模态框打断用户；"成功"的口径 = 走到了这里（配置与主视图都已就绪））。
+    /// </summary>
+    private void HandleUpdateNotice()
+    {
+        var state = AppUpdateService.LoadState(Config.ConfigDirectory);
+        if (state.Phase != AppUpdatePhase.PendingInstall || state.TargetVersion.Length == 0) return;
+
+        var current = AppInfo.Version.TrimStart('v', 'V');
+        if (!string.Equals(current, state.TargetVersion, StringComparison.OrdinalIgnoreCase)) return;
+
+        // 新版本起来了 → 记为已完成（这就是"健康确认"：能加载配置、能建主视图）
+        state.Phase = AppUpdatePhase.Installed;
+        var firstNotice = state.TargetVersion != state.NotifiedVersion;
+        state.NotifiedVersion = state.TargetVersion;
+        AppUpdateService.SaveState(Config.ConfigDirectory, state);
+
+        if (firstNotice) ShowStatus(Loc.Format("settings.appUpdate.updatedNotice", "v" + state.TargetVersion));
+    }
+
+    /// <summary>刷新「关于」区快捷方式按钮的两态状态。</summary>
+    private void RefreshDesktopShortcutState() => HasDesktopShortcut = ShortcutService.Exists();
+
+    /// <summary>
+    /// 创建 / 移除桌面快捷方式（§7.4）。失败**只写状态栏**（便利功能，不该弹错误框）。
+    /// </summary>
+    [RelayCommand]
+    private void ToggleDesktopShortcut()
+    {
+        if (HasDesktopShortcut)
+        {
+            if (ShortcutService.Remove(out var removeError))
+            {
+                ShowStatus(Loc["settings.about.shortcut.removed"]);
+            }
+            else
+            {
+                ShowStatus(Loc.Format("settings.about.shortcut.failed", removeError));
+            }
+        }
+        else
+        {
+            if (ShortcutService.Create(out var createError))
+            {
+                // 便携运行创建出来的快捷方式指向这个 exe —— 顺带轻量提示"装成安装版才能自动更新"
+                ShowStatus(AppUpdateService.IsInstalled()
+                    ? Loc["settings.about.shortcut.created"]
+                    : Loc["settings.about.shortcut.createdPortable"]);
+            }
+            else
+            {
+                ShowStatus(Loc.Format("settings.about.shortcut.failed", createError));
+            }
+        }
+
+        RefreshDesktopShortcutState();
+    }
+
+    /// <summary>检查应用更新（<paramref name="silent"/> = 启动期自动检查：失败不打扰）。</summary>
+    [RelayCommand]
+    private async Task CheckAppUpdateAsync(bool silent = false)
+    {
+        if (IsMaintenance) return;
+
+        // 便携运行（不是规范安装版）→ 不能自动更新，直接给结论与入口（§4.3）
+        if (!AppUpdateService.IsInstalled())
+        {
+            AppUpdateState = AppUpdateUiState.NotInstalled;
+            AppUpdateText = Loc["settings.appUpdate.notInstalled"];
+            AppUpdateVersionText = "";
+            AppUpdateNotesText = "";
+            return;
+        }
+
+        AppUpdateState = AppUpdateUiState.Checking;
+
+        try
+        {
+            var releases = await AppUpdateService.FetchReleasesAsync(CancellationToken.None);
+
+            if (releases.Count == 0)
+            {
+                // 网络不可达 / 限流（国内常见）→ 静默或给可重试的结论
+                AppUpdateState = AppUpdateUiState.Failed;
+                if (!silent) AppUpdateText = Loc["settings.appUpdate.failNetwork"];
+                return;
+            }
+
+            Config.LastAppUpdateCheckUtc = DateTime.UtcNow.ToString("o");
+            AutoSave();
+
+            AppVersion.TryParse(AppInfo.Version, out var current);
+
+            // 内测期：接受预发布（正式期应收紧为 false，见 docs 应用自更新设计 §6.2）
+            var pick = AppUpdateService.SelectUpdate(releases, current, acceptPrerelease: true);
+
+            if (pick == null)
+            {
+                AppUpdateState = AppUpdateUiState.UpToDate;
+                AppUpdateText = Loc.Format("settings.appUpdate.upToDate", AppInfo.Version);
+                AppUpdateVersionText = "";
+                AppUpdateNotesText = "";
+                return;
+            }
+
+            _appUpdateRelease = pick;
+            AppUpdateVersionText = Loc.Format("settings.appUpdate.versionSummary",
+                "v" + pick.Version, pick.AssetSize / 1024d / 1024d, pick.PublishedAt?.ToLocalTime().ToString("d") ?? "");
+            AppUpdateNotesText = PlainNotes(pick.Notes);
+
+            if (string.Equals(pick.Version, Config.SkippedAppVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                AppUpdateState = AppUpdateUiState.Skipped;
+                AppUpdateText = Loc.Format("settings.appUpdate.skipped", "v" + pick.Version);
+                return;
+            }
+
+            AppUpdateState = AppUpdateUiState.Available;
+            AppUpdateText = Loc["settings.appUpdate.available"];
+        }
+        catch (Exception ex)
+        {
+            AppUpdateState = AppUpdateUiState.Failed;
+            if (!silent) AppUpdateText = Loc.Format("settings.appUpdate.failed", ex.Message);
+        }
+    }
+
+    /// <summary>发布说明 → 纯文本要点（去掉 Markdown 记号、限长；不解析 HTML / 脚本）</summary>
+    private static string PlainNotes(string notes)
+    {
+        var text = (notes ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
+        var lines = text.Split('\n')
+            .Select(line => line.Trim().TrimStart('#', '-', '*', '>', ' ').Trim())
+            .Where(line => line.Length > 0)
+            .Take(12);
+
+        var joined = string.Join("\n", lines);
+        return joined.Length > 700 ? joined[..700] + "…" : joined;
+    }
+
+    /// <summary>
+    /// 下载并校验新版本安装包（§6.1 第 4–6 步）：成功后进入"待安装"，
+    /// 由用户点「立即重启并安装」→ 静默安装 → 重启到新版本。
+    /// </summary>
+    [RelayCommand]
+    private async Task RunAppUpdateAsync()
+    {
+        var release = _appUpdateRelease;
+        if (release == null || AppUpdateState != AppUpdateUiState.Available || IsMaintenance) return;
+        if (string.IsNullOrWhiteSpace(Config.ConfigDirectory))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        Interlocked.Exchange(ref _appUpdateBusy, 1);
+        OnPropertyChanged(nameof(IsMaintenance));
+        OnPropertyChanged(nameof(SettingsEnabled));
+
+        using var busy = BusyIndicator.Instance.Begin(Loc["settings.appUpdate.downloadingBusy"]);
+
+        AppUpdateState = AppUpdateUiState.Downloading;
+        AppUpdateText = Loc["settings.appUpdate.downloading"];
+        AppUpdateProgress = 0;
+        AppUpdateProgressText = "";
+
+        _appUpdateCts = new CancellationTokenSource();
+
+        try
+        {
+            var updatesDir = AppUpdateService.UpdatesDirectory(Config.ConfigDirectory);
+            var installerPath = Path.Combine(updatesDir, release.Version + ".exe");
+
+            var progress = new Progress<AppUpdateService.DownloadProgress>(report =>
+            {
+                AppUpdateProgress = report.Total > 0 ? (double)report.Received / report.Total : 0;
+                AppUpdateProgressText = Loc.Format("settings.appUpdate.progress",
+                    report.Received / 1024d / 1024d, report.Total / 1024d / 1024d, report.MegaBytesPerSecond);
+            });
+
+            var downloaded = await AppUpdateService.DownloadAsync(release.DownloadUrl, installerPath,
+                progress, _appUpdateCts.Token);
+
+            if (!downloaded)
+            {
+                AppUpdateState = AppUpdateUiState.Failed;
+                AppUpdateText = _appUpdateCts.IsCancellationRequested
+                    ? Loc["settings.appUpdate.canceled"]
+                    : Loc["settings.appUpdate.failDownload"];
+                return;
+            }
+
+            AppUpdateText = Loc["settings.appUpdate.verifying"];
+
+            if (!AppUpdateService.VerifyFile(installerPath, release.AssetSize, release.Sha256, out var actual))
+            {
+                try { File.Delete(installerPath); } catch { /* 删不掉也无所谓：下次下载覆盖 */ }
+
+                AppUpdateState = AppUpdateUiState.Failed;
+                AppUpdateText = Loc.Format("settings.appUpdate.failChecksum", actual);
+                return;
+            }
+
+            AppUpdateService.SaveState(Config.ConfigDirectory, new AppUpdateState
+            {
+                Phase = AppUpdatePhase.PendingInstall,
+                TargetVersion = release.Version,
+                InstallerPath = installerPath,
+                Sha256 = release.Sha256,
+                DownloadedAt = DateTime.Now.ToString("o"),
+                SkippedVersion = Config.SkippedAppVersion
+            });
+
+            AppUpdateState = AppUpdateUiState.Ready;
+            AppUpdateText = Loc.Format("settings.appUpdate.ready", "v" + release.Version);
+            AppUpdateProgressText = "";
+        }
+        catch (Exception ex)
+        {
+            AppUpdateState = AppUpdateUiState.Failed;
+            AppUpdateText = Loc.Format("settings.appUpdate.failed", ex.Message);
+        }
+        finally
+        {
+            _appUpdateCts?.Dispose();
+            _appUpdateCts = null;
+
+            Interlocked.Exchange(ref _appUpdateBusy, 0);
+            OnPropertyChanged(nameof(IsMaintenance));
+            OnPropertyChanged(nameof(SettingsEnabled));
+        }
+    }
+
+    /// <summary>取消下载（保留 `.part` 断点，下次续传）。</summary>
+    [RelayCommand]
+    private void CancelAppUpdate()
+    {
+        try { _appUpdateCts?.Cancel(); } catch { /* 已释放 */ }
+    }
+
+    /// <summary>「跳过此版本」（持久化；下次检查不再提示，可撤销）。</summary>
+    [RelayCommand]
+    private void SkipAppUpdateVersion()
+    {
+        if (_appUpdateRelease == null) return;
+
+        Config.SkippedAppVersion = _appUpdateRelease.Version;
+        AutoSave();
+
+        AppUpdateState = AppUpdateUiState.Skipped;
+        AppUpdateText = Loc.Format("settings.appUpdate.skipped", "v" + _appUpdateRelease.Version);
+    }
+
+    /// <summary>撤销「跳过此版本」。</summary>
+    [RelayCommand]
+    private void UnskipAppUpdateVersion()
+    {
+        Config.SkippedAppVersion = "";
+        AutoSave();
+
+        AppUpdateState = _appUpdateRelease == null ? AppUpdateUiState.Idle : AppUpdateUiState.Available;
+        AppUpdateText = Loc[_appUpdateRelease == null ? "settings.appUpdate.notChecked" : "settings.appUpdate.available"];
+    }
+
+    /// <summary>
+    /// 「立即重启并安装」（§6.1 第 7–8 步）：静默拉起安装器 → 自身退出；
+    /// 安装器凭**同一个互斥名**等我们退出后再替换文件（§5）。
+    /// </summary>
+    [RelayCommand]
+    private void InstallAppUpdate()
+    {
+        if (AppUpdateState != AppUpdateUiState.Ready) return;
+
+        var state = AppUpdateService.LoadState(Config.ConfigDirectory);
+        if (state.InstallerPath.Length == 0 || !File.Exists(state.InstallerPath))
+        {
+            AppUpdateState = AppUpdateUiState.Failed;
+            AppUpdateText = Loc["settings.appUpdate.failInstallerMissing"];
+            return;
+        }
+
+        try
+        {
+            var logPath = Path.Combine(AppUpdateService.UpdatesDirectory(Config.ConfigDirectory), "install.log");
+            var startInfo = new ProcessStartInfo(state.InstallerPath,
+                AppUpdateService.SilentInstallArguments(logPath))
+            {
+                UseShellExecute = true
+            };
+
+            Process.Start(startInfo);
+
+            // 收尾（取消后台任务、清暂存）后退出；`.wtsm` 之外都不动
+            Skins.CleanupOnExit();
+            Application.Current?.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            AppUpdateState = AppUpdateUiState.Failed;
+            AppUpdateText = Loc.Format("settings.appUpdate.failInstall", ex.Message);
+        }
+    }
+
+    /// <summary>打开 Release 页（「查看完整说明」/「旧版本下载页」/「手动下载」共用）。</summary>
+    [RelayCommand]
+    private void OpenAppUpdateLink(string? url)
+    {
+        var target = string.IsNullOrWhiteSpace(url) ? ReleasesUrl : url;
+        if (!AppUpdateService.IsTrustedDownloadUrl(target)
+            && !target.StartsWith(AppUpdateService.ReleasesPageUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            // 只允许 GitHub 站内地址（§11 不变量 3）；白名单不通过就退回 Releases 页
+            target = ReleasesUrl;
+        }
+
+        OpenLink(target);
     }
 
     // ---------- 资源库维护（§4：外部改动的手动全量同步）----------

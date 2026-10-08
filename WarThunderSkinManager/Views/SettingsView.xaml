@@ -236,8 +236,171 @@
                 </StackPanel>
             </Border>
 
-            <!-- 更新资源（§3.15）：数据表可从上游仓库（War-Thunder-Datamine）检查 / 下载新版本 -->
+            <!-- 更新应用（§3.16）：安装器渠道 + 应用内自更新；规格见 docs/应用自更新设计.md。
+                 放在「更新资源」上方：**程序版本**优先于数据表版本，两张卡措辞要能区分 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.appUpdate}" Style="{StaticResource SectionTitle}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.appUpdate.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                    <!-- 状态行 -->
+                    <TextBlock Text="{Binding AppUpdateText}" TextWrapping="Wrap"/>
+
+                    <!-- 新版本详情（版本 / 日期 / 体积 + 说明要点，纯文本） -->
+                    <StackPanel Margin="0,8,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding AppUpdateHasDetails}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <TextBlock Text="{Binding AppUpdateVersionText}" TextWrapping="Wrap"
+                                   Foreground="{StaticResource BrushTextSecondary}"/>
+                        <TextBlock Text="{Binding AppUpdateNotesText}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   FontSize="12" LineHeight="19"
+                                   Foreground="{StaticResource BrushTextMuted}"/>
+                    </StackPanel>
+
+                    <!-- 下载进度 -->
+                    <StackPanel Margin="0,10,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding AppUpdateIsDownloading}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <ProgressBar Height="4" Minimum="0" Maximum="1" Value="{Binding AppUpdateProgress}"/>
+                        <TextBlock Text="{Binding AppUpdateProgressText}" Margin="0,6,0,0" FontSize="12"
+                                   Foreground="{StaticResource BrushTextMuted}"/>
+                    </StackPanel>
+
+                    <!-- 操作区：主操作随状态切换（更新 / 取消 / 立即重启并安装 / 检查更新）。
+                         注意：给了 <Button.Style> 子元素就不能再写 Style= 属性（重复赋值会编译失败） -->
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="{loc:Loc settings.appUpdate.update}"
+                                Command="{Binding RunAppUpdateCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateCanUpdate}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Content="{loc:Loc settings.appUpdate.cancel}"
+                                Command="{Binding CancelAppUpdateCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateIsDownloading}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Content="{loc:Loc settings.appUpdate.installNow}"
+                                Command="{Binding InstallAppUpdateCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateCanInstall}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Content="{loc:Loc settings.appUpdate.check}"
+                                Command="{Binding CheckAppUpdateCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateCanCheck}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <!-- 次操作：跳过此版本 / 撤销跳过 / 查看完整说明 -->
+                        <Button Content="{loc:Loc settings.appUpdate.skip}" Margin="8,0,0,0"
+                                Command="{Binding SkipAppUpdateVersionCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateCanUpdate}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Content="{loc:Loc settings.appUpdate.unskip}" Margin="8,0,0,0"
+                                Command="{Binding UnskipAppUpdateVersionCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateCanUnskip}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Content="{loc:Loc settings.appUpdate.notes}" Margin="8,0,0,0"
+                                Command="{Binding OpenLinkCommand}"
+                                CommandParameter="{Binding AppUpdateReleaseUrl}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AppUpdateHasDetails}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <!-- 手动下载 / 旧版本：一律可达（网络不通、校验失败、便携运行时的兜底出口） -->
+                        <Button Content="{loc:Loc settings.appUpdate.manual}"
+                                Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                                Command="{Binding OpenLinkCommand}" CommandParameter="{Binding ReleasesUrl}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 更新资源（§3.15）：数据表可从上游仓库（War-Thunder-Datamine）检查 / 下载新版本。
+                 IsEnabled 跟随 SettingsEnabled：应用更新进行中禁用（§7.3 第 4 条的"维护中闸门"） -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0"
+                    IsEnabled="{Binding SettingsEnabled}">
                 <StackPanel IsEnabled="{Binding ResourceBlockEnabled}">
                     <TextBlock Text="{loc:Loc settings.resourceUpdate}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                     <TextBlock Text="{loc:Loc settings.resourceUpdate.hint}" Style="{StaticResource PageSubtitle}"
@@ -375,6 +538,12 @@
                             Margin="8,0,0,0" Command="{Binding OpenLinkCommand}"
                             CommandParameter="{Binding ReleasesUrl}"/>
                 </StackPanel>
+
+                <!-- 桌面快捷方式（§7.4）：两态按钮（与安装器共用同一个固定名字，幂等）。
+                     便携运行时也能用（指向当前 exe）——这是它存在的主要理由 -->
+                <Button Content="{Binding DesktopShortcutActionText}" Style="{StaticResource SecondaryButton}"
+                        HorizontalAlignment="Left" Margin="0,8,0,0"
+                        Command="{Binding ToggleDesktopShortcutCommand}"/>
             </StackPanel>
         </Border>
     </Grid>

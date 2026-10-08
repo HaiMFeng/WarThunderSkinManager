@@ -47,6 +47,18 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel) return;
 
+        // 应用更新进行中（下载/校验/待安装）→ 退出会打断更新（§7.3 第 2 条）
+        if (viewModel.IsMaintenance)
+        {
+            var proceed = MessageDialog.Confirm(
+                LocalizationManager.Instance["settings.appUpdate.exitConfirm"],
+                LocalizationManager.Instance["settings.appUpdate.exitConfirmTitle"],
+                LocalizationManager.Instance["common.continue"],
+                LocalizationManager.Instance["common.cancel"],
+                icon: DialogIcon.Warning, owner: this);
+            if (!proceed) { e.Cancel = true; return; }
+        }
+
         if (viewModel.Skins.HasActiveDownloads)
         {
             var proceed = MessageDialog.Confirm(
