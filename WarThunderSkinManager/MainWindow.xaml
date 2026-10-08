@@ -366,27 +366,20 @@
                     </Border.Effect>
 
                     <StackPanel Orientation="Horizontal">
-                        <!-- 加载圈：**渐淡圆环**（自绘，持续旋转直到遮罩消失）。
-                            不用图标字体——FA 的 circle-notch 画的是**一串短划**（"点串"观感），
-                             这里要的是"实心弧形渐隐成空"：
-                             ① Ellipse 描边 + StrokeDashArray 只留约 270°（单位 = 描边宽度的倍数：
-                                中心线周长 2π×8≈50.3，÷2（描边 2）≈25.1 → 18.8 实 + 6.3 空）；
-                             ② 用 OpacityMask 做**渐隐**（主题无关：遮罩只看 alpha，所以四套主题只需换 Stroke）；
-                             ③ 整体绕中心旋转。 -->
+                        <!-- 加载圈：**实心弧**（自绘，持续旋转直到遮罩消失）。
+                             不用图标字体——FA 的 circle-notch 画的是**一串短划**（"点串"观感）；
+                             也不做渐隐——**1× 真实尺寸下渐隐会让半圈看着像断掉**（渲染对比后选定，见
+                             `界面设计规范.md` §2.6）。这里只要"圆环少一段"：
+                             ① Ellipse 描边走主题主色；② StrokeDashArray 只留约 300°
+                             （**单位 = 描边宽度的倍数**：中心线周长 2π×8≈50.27，÷描边 2 ≈ 25.13
+                             → 20.94 实 + 4.19 空）；③ 圆头、整体绕中心旋转。 -->
                         <Ellipse Width="18" Height="18" VerticalAlignment="Center"
                                  Stroke="{StaticResource BrushPrimary}" StrokeThickness="2"
-                                 StrokeDashArray="18.8 6.3" StrokeDashCap="Round"
+                                 StrokeDashArray="20.94 4.19" StrokeDashCap="Round"
                                  RenderTransformOrigin="0.5,0.5">
                             <Ellipse.RenderTransform>
                                 <RotateTransform/>
                             </Ellipse.RenderTransform>
-                            <Ellipse.OpacityMask>
-                                <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
-                                    <GradientStop Color="#FF000000" Offset="0"/>
-                                    <GradientStop Color="#99000000" Offset="0.45"/>
-                                    <GradientStop Color="#00000000" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Ellipse.OpacityMask>
                             <Ellipse.Triggers>
                                 <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                                     <BeginStoryboard>
