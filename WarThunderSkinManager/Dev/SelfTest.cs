@@ -1441,6 +1441,25 @@ internal static class SelfTest
                          + $"间隔 = {WTLiveService.RetryDelay.TotalSeconds} 秒（应 1，固定不退避），"
                          + $"停滞超时 = {WTLiveService.StallTimeout.TotalSeconds} 秒（应 30）");
 
+            // ---- 下载列表右侧两个按钮的语义（§3.15）----
+            // 重试：下载中 / 失败 / 已取消 可见；取消/移除：进行中 = 取消（条目留列表）、其余 = 从列表移除
+            static WtLiveDownloadItem MakeDownloadItem() => new(1,
+                "https://live.warthunder.com/post/1/en/", "a.zip", "author", "name",
+                "https://live.warthunder.com/dl/x/", 0, null);
+
+            var downloading = MakeDownloadItem();
+            var canceled = MakeDownloadItem();
+            canceled.State = WtLiveDownloadState.Canceled;
+            var completed = MakeDownloadItem();
+            completed.State = WtLiveDownloadState.Completed;
+            var failed = MakeDownloadItem();
+            failed.State = WtLiveDownloadState.Failed;
+
+            log.AppendLine($"下载项按钮 : 下载中 → 取消 = {downloading.IsCancelable}、重试 = {downloading.CanRetry}（应 True/True），"
+                         + $"已取消 → 取消 = {canceled.IsCancelable}、重试 = {canceled.CanRetry}（应 False/True：按钮变「移除」），"
+                         + $"已完成 → 移除 = {!completed.IsCancelable}、重试 = {completed.CanRetry}（应 True/False），"
+                         + $"失败 → 重试 = {failed.CanRetry}、取消 = {failed.IsCancelable}（应 True/False）");
+
             // ---- blk 解析 / 输出健壮性（§3.5 / §3.6）----
             // 覆盖：replace_tex 的 param 保留、同一 to 被多个 from 复用、单行块 / 块内多 from、缺字段块告警
             log.AppendLine();

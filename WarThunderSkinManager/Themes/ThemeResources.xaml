@@ -671,6 +671,15 @@
     <Style TargetType="ToolTip">
         <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
         <Setter Property="FontSize" Value="12"/>
+        <!-- 长提示**必须换行**：ToolTip 的内容是字符串时默认单行不换行，
+             `MaxWidth` 只约束气泡本身、文字会横向溢出气泡外（实测「重试」提示就是这个问题） -->
+        <Setter Property="ContentTemplate">
+            <Setter.Value>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
+                </DataTemplate>
+            </Setter.Value>
+        </Setter>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">

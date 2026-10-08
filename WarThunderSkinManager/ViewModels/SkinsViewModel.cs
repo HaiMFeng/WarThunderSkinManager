@@ -192,6 +192,41 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 列表右侧的「**取消 / 移除**」按钮（§3.15）——同一位置、随状态改变语义：
+    /// <list type="bullet">
+    /// <item><b>下载中 / 导入中</b> → **取消**：掐断本轮，条目**留在列表**（状态「已取消」、进度清零），
+    /// 之后可用「重试」重新下载；</item>
+    /// <item><b>已取消 / 失败 / 已完成</b> → **从列表移除**（已取消状态下再按一次即此语义）。</item>
+    /// </list>
+    /// </summary>
+    [RelayCommand]
+    private async Task CancelOrRemoveWtLiveDownload(WtLiveDownloadItem? item)
+    {
+        if (item == null) return;
+
+        if (item.IsCancelable)
+        {
+            item.Cts?.Cancel(); // 取消 → 本轮 catch 里落成「已取消」并把进度清零
+
+            // 稍等本轮收尾（暂存清理在 finally 里做）；不阻塞界面
+            return;
+        }
+
+        // 从列表移除：先掐断任何残余（已取消的条目其实已停），等收尾再移除，避免留着孤儿暂存
+        item.Cts?.Cancel();
+
+        if (item.Running != null)
+        {
+            try { await item.Running; }
+            catch { /* 本轮自己的异常已在内部处理 */ }
+        }
+
+        WtLiveDownloads.Remove(item);
+        item.Cts?.Dispose();
+        item.Cts = null;
+    }
+
     /// <summary>启动一轮下载 / 导入（每轮独立取消源，与程序退出联动）。</summary>
     private void RunWtLiveDownload(WtLiveDownloadItem item)
     {
@@ -250,6 +285,9 @@ public partial class SkinsViewModel : ObservableObject
 
         void ReportProgress()
         {
+            // 已取消 / 已结束 → 不再回写：取消时进度要清零，若还接收在途回调会被跳回半截
+            if (item.State != WtLiveDownloadState.Downloading) return;
+
             item.Progress = WTLiveService.CombinedProgress(zipFraction, previewFraction, hasPreview);
             var percent = $"{item.Progress:P0}";
 
@@ -261,7 +299,7 @@ public partial class SkinsViewModel : ObservableObject
         // 自动重试不静默：第 N 次尝试写进状态文字（列表右侧也有常驻「重试」可随时掐断）
         void ReportAttempt(int attempt)
         {
-            if (attempt > 1)
+            if (attempt > 1 && item.State == WtLiveDownloadState.Downloading)
                 item.StateText = Loc.Format("wtlive.state.retrying", attempt, WTLiveService.DownloadAttempts);
         }
 
@@ -333,14 +371,12 @@ public partial class SkinsViewModel : ObservableObject
         catch (OperationCanceledException) when (_downloadsCts.IsCancellationRequested)
         {
             // 程序退出主动取消
-            item.State = WtLiveDownloadState.Failed;
-            item.StateText = Loc["wtlive.state.canceled"];
+            MarkCanceled(item);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // 用户点了「重试」掐断本轮（重试逻辑随后会重跑，这里只做即时反馈）
-            item.State = WtLiveDownloadState.Failed;
-            item.StateText = Loc["wtlive.state.canceled"];
+            // 用户取消（「取消」按钮 / 「重试」掐断本轮）：条目留列表、进度清零，可再次重试
+            MarkCanceled(item);
         }
         catch (OperationCanceledException)
         {
@@ -382,6 +418,17 @@ public partial class SkinsViewModel : ObservableObject
             foreach (var path in new[] { zipPath, extracted, previewImagePath })
                 TryDeletePath(path);
         }
+    }
+
+    /// <summary>
+    /// 落成「**已取消**」：状态 = <see cref="WtLiveDownloadState.Canceled"/>、文案「已取消」、
+    /// **进度条清零**（用户要求：取消后不该停在半截的百分比上）；条目**保留在列表**，可用「重试」重启。
+    /// </summary>
+    private static void MarkCanceled(WtLiveDownloadItem item)
+    {
+        item.State = WtLiveDownloadState.Canceled;
+        item.StateText = Loc["wtlive.state.canceled"];
+        item.Progress = 0;
     }
 
     private static void TryDeletePath(string? path)

@@ -499,6 +499,8 @@
   "wtlive.startHint": "Once confirmed, click 'Start Download' to fetch {0} ({1}); the import flow starts automatically afterwards",
   "wtlive.list.empty": "No WT Live downloads",
   "wtlive.list.retryHint": "Abort the current download and start over (both the archive and the preview image are re-downloaded). Up to 5 automatic retries, 1 s apart; a single attempt is aborted after 30 s without data — click here if it looks stuck.",
+  "wtlive.list.cancel": "Cancel the download (the entry stays; restart it with Retry)",
+  "wtlive.list.remove": "Remove from the download list",
   "wtlive.state.downloading0": "Downloading 0%",
   "wtlive.state.downloading": "Downloading {0}",
   "wtlive.state.downloadingPreview": "Downloading preview image {0}",

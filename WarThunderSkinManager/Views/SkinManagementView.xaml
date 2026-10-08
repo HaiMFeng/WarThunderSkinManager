@@ -111,6 +111,7 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
                                                            ToolTip="{Binding FileName}"/>
@@ -131,6 +132,25 @@
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding CanRetry}" Value="True">
                                                                     <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+
+                                                <!-- 取消 / 移除（图标 &#xF00D;，**常驻**，在重试右侧）：
+                                                     下载中 / 导入中 = **取消**（条目留列表、提示「已取消」、进度清零，可再重试）；
+                                                     已取消 / 失败 / 已完成 = **从列表移除**（已取消状态再按一次即此语义） -->
+                                                <Button Grid.Column="3" Margin="2,0,0,0" VerticalAlignment="Center"
+                                                        Content="&#xF00D;"
+                                                        Command="{Binding DataContext.Skins.CancelOrRemoveWtLiveDownloadCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                                            <Setter Property="ToolTip" Value="{loc:Loc wtlive.list.remove}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCancelable}" Value="True">
+                                                                    <Setter Property="ToolTip" Value="{loc:Loc wtlive.list.cancel}"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>

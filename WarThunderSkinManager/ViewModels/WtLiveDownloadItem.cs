@@ -11,7 +11,13 @@ public enum WtLiveDownloadState
     Downloading,
     Importing,
     Completed,
-    Failed
+    Failed,
+
+    /// <summary>
+    /// **用户取消**（列表右侧「取消」按钮）：条目**留在列表里**、进度清零，
+    /// 可用「重试」按钮重新下载；在已取消状态再按一次该按钮 = 从列表移除（§3.15）。
+    /// </summary>
+    Canceled
 }
 
 /// <summary>
@@ -63,12 +69,25 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
     internal SemaphoreSlim Gate { get; } = new(1, 1);
 
     /// <summary>
-    /// 是否显示「重试」按钮：**下载中与失败时都常驻**（下载中 = 可掐断重来；
-    /// 导入中 / 已完成则没有可重试的下载）。
+    /// 是否显示「重试」按钮：**下载中 / 失败 / 已取消**时都常驻
+    /// （下载中 = 可掐断重来；失败与已取消 = 重新下载）。导入中 / 已完成没有可重试的下载。
     /// </summary>
-    public bool CanRetry => State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Failed;
+    public bool CanRetry => State is WtLiveDownloadState.Downloading
+        or WtLiveDownloadState.Failed
+        or WtLiveDownloadState.Canceled;
 
-    partial void OnStateChanged(WtLiveDownloadState value) => OnPropertyChanged(nameof(CanRetry));
+    /// <summary>
+    /// 右侧「取消 / 移除」按钮当前的语义：
+    /// <c>true</c> = 有进行中的下载 / 导入 → **取消**（条目保留、进度清零、可重试）；
+    /// <c>false</c> = 已取消 / 失败 / 已完成 → **从列表移除**。
+    /// </summary>
+    public bool IsCancelable => State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Importing;
+
+    partial void OnStateChanged(WtLiveDownloadState value)
+    {
+        OnPropertyChanged(nameof(CanRetry));
+        OnPropertyChanged(nameof(IsCancelable));
+    }
 
     public WtLiveDownloadItem(long postId, string url, string fileName, string author,
         string displayName, string fileLink, long fileSize, string? previewUrl)
