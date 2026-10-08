@@ -415,6 +415,7 @@
   "settings.appUpdate": "Application update",
   "settings.appUpdate.hint": "Check for and install a new version (installer channel). Installed copies update automatically; portable copies need to download the installer manually.",
   "settings.appUpdate.notChecked": "Not checked yet",
+  "settings.appUpdate.autoPending": "Will check automatically after startup (or click \"Check for updates\" now)",
   "settings.appUpdate.lastChecked": "Last checked: {0}",
   "settings.appUpdate.check": "Check for updates",
   "settings.appUpdate.checking": "Checking for updates…",

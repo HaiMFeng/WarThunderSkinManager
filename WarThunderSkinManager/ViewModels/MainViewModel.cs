@@ -1500,7 +1500,20 @@ public partial class MainViewModel : ObservableObject
         RefreshDesktopShortcutState();
         HandleUpdateNotice();
 
-        if (!Config.AutoCheckAppUpdate) return;
+        // **当场给出结论**：便携运行（不是规范安装版）立即说清，不要等检查、更不能空着（§4.3）
+        if (!AppUpdateService.IsInstalled())
+        {
+            AppUpdateState = AppUpdateUiState.NotInstalled;
+            AppUpdateText = Loc["settings.appUpdate.notInstalled"];
+            return;
+        }
+
+        if (!Config.AutoCheckAppUpdate)
+        {
+            AppUpdateState = AppUpdateUiState.Idle;
+            AppUpdateText = Loc["settings.appUpdate.notChecked"];
+            return;
+        }
 
         // 24 小时节流（失败静默；手动检查不受限）
         if (DateTime.TryParse(Config.LastAppUpdateCheckUtc, out var last)
@@ -1511,12 +1524,16 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        // 启动后延迟检查：避开启动期扫描 / 同步的争抢（§6.1 第 1 步）
+        // 启动后延迟检查（避开启动期扫描 / 同步的争抢，§6.1 第 1 步）
+        // —— 但**先把提示写上**：卡片不能空白等 45 秒
+        AppUpdateState = AppUpdateUiState.Idle;
+        AppUpdateText = Loc["settings.appUpdate.autoPending"];
+
         _appUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
         _appUpdateTimer.Tick += (_, _) =>
         {
             _appUpdateTimer?.Stop();
-            _ = CheckAppUpdateAsync(silent: true);
+            _ = CheckAppUpdateCoreAsync(silent: true);
         };
         _appUpdateTimer.Start();
     }
@@ -1580,9 +1597,19 @@ public partial class MainViewModel : ObservableObject
         RefreshDesktopShortcutState();
     }
 
-    /// <summary>检查应用更新（<paramref name="silent"/> = 启动期自动检查：失败不打扰）。</summary>
+    /// <summary>
+    /// 「检查更新」按钮（**无参命令**）。启动期的自动检查走 <see cref="CheckAppUpdateCoreAsync"/>。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 别把这条命令写成带参数的形式：`[RelayCommand]` 对"有参数的方法"生成的是
+    /// <c>IAsyncRelayCommand&lt;T&gt;</c>，XAML 不带 <c>CommandParameter</c> 绑定时
+    /// <c>CanExecute(null)</c> 恒为假 → **按钮永久禁用**（实测踩过）。
+    /// </remarks>
     [RelayCommand]
-    private async Task CheckAppUpdateAsync(bool silent = false)
+    private async Task CheckAppUpdateAsync() => await CheckAppUpdateCoreAsync(silent: false);
+
+    /// <summary>检查应用更新（<paramref name="silent"/> = 启动期自动检查：失败不弹窗，但**仍写状态行**）。</summary>
+    private async Task CheckAppUpdateCoreAsync(bool silent)
     {
         if (IsMaintenance) return;
 
@@ -1597,6 +1624,7 @@ public partial class MainViewModel : ObservableObject
         }
 
         AppUpdateState = AppUpdateUiState.Checking;
+        AppUpdateText = Loc["settings.appUpdate.checking"]; // 自动检查也要有提示——不能留空白
 
         try
         {
@@ -1604,9 +1632,9 @@ public partial class MainViewModel : ObservableObject
 
             if (releases.Count == 0)
             {
-                // 网络不可达 / 限流（国内常见）→ 静默或给可重试的结论
+                // 网络不可达 / 限流（国内常见）→ 卡片给出可重试的结论（不弹窗，不算"打扰"）
                 AppUpdateState = AppUpdateUiState.Failed;
-                if (!silent) AppUpdateText = Loc["settings.appUpdate.failNetwork"];
+                AppUpdateText = Loc["settings.appUpdate.failNetwork"];
                 return;
             }
 
@@ -1645,7 +1673,9 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             AppUpdateState = AppUpdateUiState.Failed;
-            if (!silent) AppUpdateText = Loc.Format("settings.appUpdate.failed", ex.Message);
+            AppUpdateText = silent
+                ? Loc["settings.appUpdate.failNetwork"]
+                : Loc.Format("settings.appUpdate.failed", ex.Message);
         }
     }
 
@@ -1823,21 +1853,6 @@ public partial class MainViewModel : ObservableObject
             AppUpdateState = AppUpdateUiState.Failed;
             AppUpdateText = Loc.Format("settings.appUpdate.failInstall", ex.Message);
         }
-    }
-
-    /// <summary>打开 Release 页（「查看完整说明」/「旧版本下载页」/「手动下载」共用）。</summary>
-    [RelayCommand]
-    private void OpenAppUpdateLink(string? url)
-    {
-        var target = string.IsNullOrWhiteSpace(url) ? ReleasesUrl : url;
-        if (!AppUpdateService.IsTrustedDownloadUrl(target)
-            && !target.StartsWith(AppUpdateService.ReleasesPageUrl, StringComparison.OrdinalIgnoreCase))
-        {
-            // 只允许 GitHub 站内地址（§11 不变量 3）；白名单不通过就退回 Releases 页
-            target = ReleasesUrl;
-        }
-
-        OpenLink(target);
     }
 
     // ---------- 资源库维护（§4：外部改动的手动全量同步）----------

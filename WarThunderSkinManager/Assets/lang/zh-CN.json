@@ -416,6 +416,7 @@
   "settings.appUpdate": "更新应用",
   "settings.appUpdate.hint": "检查并安装新版本（安装器渠道）。安装版可自动更新；便携运行需要手动下载安装器。",
   "settings.appUpdate.notChecked": "尚未检查更新",
+  "settings.appUpdate.autoPending": "将在启动后自动检查（也可以现在点「检查更新」）",
   "settings.appUpdate.lastChecked": "上次检查：{0}",
   "settings.appUpdate.check": "检查更新",
   "settings.appUpdate.checking": "正在检查更新…",
