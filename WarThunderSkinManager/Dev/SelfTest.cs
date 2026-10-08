@@ -589,24 +589,36 @@ internal static class SelfTest
             log.AppendLine();
             log.AppendLine("---- 手动删除载具部件 ----");
             var exclusionDir = Path.Combine(workDir, "exclude-cfg");
-            PartExclusionService.Add(exclusionDir, firstVehicleId, sharedFrom);
+
+            // 注意：上面的「多源复用写回」改过库 → 必须**重新取当前部件键**
+            //（早先记下的 sharedFrom 可能已不在该载具上）
+            var exclusionFrom = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId)
+                ?.Parts.FirstOrDefault(p => !p.IsExcluded)?.From ?? "";
+
+            PartExclusionService.Add(exclusionDir, firstVehicleId, exclusionFrom);
             var excludedVehicle = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId);
-            var partGone = excludedVehicle?.Parts.Any(
-                p => string.Equals(p.From, sharedFrom, StringComparison.OrdinalIgnoreCase)) != true;
+            var excludedPart = excludedVehicle?.Parts.FirstOrDefault(
+                p => string.Equals(p.From, exclusionFrom, StringComparison.OrdinalIgnoreCase));
+
+            // 排除行**留在列表里**（灰色 + 「已排除」+ 红字「恢复」），只是候选清空、映射剔除
+            var partStayFlagged = excludedPart is { IsExcluded: true } && excludedPart.Candidates.Count == 0;
             var mappingGone = excludedVehicle?.SkinPackages.All(p => p.Mappings.All(
-                m => !string.Equals(VehicleAggregator.NormalizeFrom(m.FromModule), sharedFrom,
+                m => !string.Equals(VehicleAggregator.NormalizeFrom(m.FromModule), exclusionFrom,
                     StringComparison.OrdinalIgnoreCase))) == true;
             PartCatalog.Invalidate();
-            var catalogLeft = PartCatalog.ForFrom(resourceDir, sharedFrom).Count(
+            var catalogLeft = PartCatalog.ForFrom(resourceDir, exclusionFrom).Count(
                 e => string.Equals(e.VehicleId, firstVehicleId, StringComparison.OrdinalIgnoreCase));
-            log.AppendLine($"排除    : 部件从列表消失 = {partGone}，包映射剔除 = {mappingGone}，"
+            log.AppendLine($"排除「{exclusionFrom}」: 部件留在列表且标记已排除 = {partStayFlagged}"
+                         + $"（候选数 = {excludedPart?.Candidates.Count}，部件行数 = {excludedVehicle?.Parts.Count}），"
+                         + $"包映射剔除 = {mappingGone}，"
                          + $"部件表中该载具条目 = {catalogLeft}（应为 0）");
 
-            PartExclusionService.Remove(exclusionDir, firstVehicleId, sharedFrom);
+            PartExclusionService.Remove(exclusionDir, firstVehicleId, exclusionFrom);
             var restoredVehicle = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId);
-            var partBack = restoredVehicle?.Parts.Any(
-                p => string.Equals(p.From, sharedFrom, StringComparison.OrdinalIgnoreCase)) == true;
-            log.AppendLine($"恢复    : 取消排除后部件回到列表 = {partBack}（应为 True）");
+            var restoredPart = restoredVehicle?.Parts.FirstOrDefault(
+                p => string.Equals(p.From, exclusionFrom, StringComparison.OrdinalIgnoreCase));
+            var partBack = restoredPart is { IsExcluded: false } && restoredPart.Candidates.Count > 0;
+            log.AppendLine($"恢复    : 取消排除后部件回到正常态（含候选）= {partBack}（应为 True）");
 
             // ---- 新建空白涂装包（§3.4）：无 source.blk、无贴图引用，部件在属性页从库内选择 ----
             log.AppendLine();

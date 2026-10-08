@@ -147,8 +147,6 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
-                                <!-- 已删除的部件（§3.10，可恢复）：仅在有内容时显示 -->
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
@@ -215,9 +213,20 @@
                                                     </Grid.ColumnDefinitions>
                                                     <StackPanel Grid.Column="0">
                                                         <StackPanel Orientation="Horizontal">
-                                                            <!-- 部件名只显示末段（去掉可能写死的作者机器路径）；悬停看原文 -->
+                                                            <!-- 部件名只显示末段（去掉可能写死的作者机器路径）；悬停看原文。
+                                                                 已排除的部件（§3.10）**留在列表里**、字体转灰 -->
                                                             <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
-                                                                       VerticalAlignment="Center" ToolTip="{Binding From}"/>
+                                                                       VerticalAlignment="Center" ToolTip="{Binding From}">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                                                                                <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
                                                             <!-- 部件标签胶囊：应用级共享模板 PartTagTemplate（§3.6） -->
                                                             <ItemsControl ItemsSource="{Binding Tags}"
                                                                           ItemTemplate="{StaticResource PartTagTemplate}"
@@ -231,25 +240,48 @@
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <!-- 只统计有可用贴图的候选；为 0 时显示「无」（贴图缺失，见 §3.2） -->
+                                                        <!-- 正常行：只统计有可用贴图的候选，为 0 显示「无」（贴图缺失，见 §3.2）；
+                                                             已排除行：显示「已排除」（§3.10） -->
                                                         <TextBlock VerticalAlignment="Center"
                                                                    Foreground="{StaticResource BrushTextMuted}">
                                                             <TextBlock.Style>
                                                                 <Style TargetType="TextBlock">
                                                                     <Setter Property="Text" Value="{Binding TextureCandidateCount}"/>
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding TextureCandidateCount}" Value="0">
-                                                                            <Setter Property="Text" Value="{loc:Loc vehicles.none}"/>
+                                                                        <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                                                                            <Setter Property="Text" Value="{loc:Loc vehicles.part.excluded}"/>
+                                                                            <Setter Property="FontWeight" Value="SemiBold"/>
                                                                         </DataTrigger>
+                                                                        <MultiDataTrigger>
+                                                                            <MultiDataTrigger.Conditions>
+                                                                                <Condition Binding="{Binding IsExcluded}" Value="False"/>
+                                                                                <Condition Binding="{Binding TextureCandidateCount}" Value="0"/>
+                                                                            </MultiDataTrigger.Conditions>
+                                                                            <Setter Property="Text" Value="{loc:Loc vehicles.none}"/>
+                                                                        </MultiDataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
                                                             </TextBlock.Style>
                                                         </TextBlock>
-                                                        <!-- 手动删除部件（§3.10）：剔除写错的 from，对列表 / 候选 / 输出生效 -->
-                                                        <Button Content="{loc:Loc vehicles.part.delete}"
-                                                                Style="{StaticResource SecondaryButton}" Margin="12,0,0,0"
-                                                                Command="{Binding DataContext.Vehicles.DeletePartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                                CommandParameter="{Binding}"/>
+
+                                                        <!-- 删除 / 恢复（§3.10）：同一个按钮随行的排除态切换——
+                                                             正常行 = 「删除」（次要样式）；已排除行 = 「恢复」（红字 + 红描边） -->
+                                                        <Button Margin="12,0,0,0"
+                                                                Command="{Binding DataContext.Vehicles.DeleteOrRestorePartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                                                    <Setter Property="Content" Value="{loc:Loc vehicles.part.delete}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                                                                            <Setter Property="Content" Value="{loc:Loc vehicles.part.restore}"/>
+                                                                            <Setter Property="Foreground" Value="{StaticResource BrushDanger}"/>
+                                                                            <Setter Property="BorderBrush" Value="{StaticResource BrushDanger}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
@@ -257,55 +289,6 @@
                                         </ListBox.ItemTemplate>
                                         </ListBox>
 
-                            <!-- 已删除的部件（§3.10）：手动删除**可逆**——逐条「恢复」后部件重新回到
-                                 列表 / 候选 / 激活输出；包内原始数据（source.blk）从未被改动 -->
-                            <StackPanel Grid.Row="3" Margin="0,18,0,0">
-                                <StackPanel.Style>
-                                    <Style TargetType="StackPanel">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Vehicles.HasExcludedParts}" Value="False">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </StackPanel.Style>
-
-                                <TextBlock Text="{Binding Vehicles.ExcludedPartsTitle}"
-                                           Style="{StaticResource SectionTitle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="{loc:Loc vehicles.parts.excluded.hint}"
-                                           Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-
-                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl ItemsSource="{Binding Vehicles.ExcludedParts}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="{StaticResource BrushSurface}"
-                                                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                                                        CornerRadius="8" Padding="12,7" Margin="0,0,0,6">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-
-                                                        <!-- 显示名只取末段；悬停看原文（可能是作者机器的整条路径） -->
-                                                        <TextBlock Grid.Column="0" Text="{Binding Display}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   ToolTip="{Binding From}"/>
-
-                                                        <Button Grid.Column="1" Margin="10,0,0,0" Padding="10,4" FontSize="12"
-                                                                Content="{loc:Loc vehicles.part.restore}"
-                                                                Style="{StaticResource SecondaryButton}"
-                                                                Command="{Binding DataContext.Vehicles.RestorePartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                                CommandParameter="{Binding}"/>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
-                            </StackPanel>
                                         </Grid>
                                         </DockPanel>
                 </Grid>

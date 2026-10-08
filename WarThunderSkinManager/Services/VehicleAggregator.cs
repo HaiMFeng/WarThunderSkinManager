@@ -67,7 +67,7 @@ public static class VehicleAggregator
 
                 if (PartExclusionService.IsExcluded(vehicleId, key))
                 {
-                    package.Mappings.Remove(mapping);
+                    package.Mappings.Remove(mapping); // 兜底过滤（正常情况下映射在 BuildPackage 组装时就已经没有这块了）
                     continue;
                 }
 
@@ -84,6 +84,23 @@ public static class VehicleAggregator
 
                 part.Candidates.Add(mapping);
             }
+        }
+
+        // 排除行：**直接向排除清单要**（不能靠遍历映射反推——`BuildPackage` 走
+        // `BlkAssembler.Assemble` 组装时就已经按排除清单删掉那些块了，映射里根本没有它们）。
+        // 候选为空，但行**留在列表里**（灰色 + 「已排除」+ 红字「恢复」，§3.10）——
+        // 部件列表是虚拟列表，另起一块显示已删除部件会把列表挤没
+        foreach (var key in PartExclusionService.ExcludedFor(vehicleId))
+        {
+            if (parts.ContainsKey(key)) continue;
+
+            parts[key] = new VehiclePart
+            {
+                From = key,
+                DisplayName = DisplayFrom(key),
+                IsExcluded = true,
+                Tags = PartTagResolver.Resolve(key, vehicleId)
+            };
         }
 
         vehicle.Parts = parts.Values

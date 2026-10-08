@@ -15,23 +15,6 @@ using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.ViewModels;
 
-/// <summary>
-/// 「已删除的部件」列表项（§3.10）：<see cref="From"/> 是归一化位置键（**原文**，可能含
-/// 模组作者机器上的目录前缀），<see cref="Display"/> 只取末段供列表展示，原文放悬停提示。
-/// </summary>
-public sealed class ExcludedPartItem
-{
-    public string From { get; }
-
-    public string Display { get; }
-
-    public ExcludedPartItem(string from)
-    {
-        From = from;
-        Display = VehicleAggregator.DisplayFrom(from);
-    }
-}
-
 /// <summary>国家下拉项。</summary>
 public sealed class CountryOption
 {
@@ -96,19 +79,6 @@ public partial class VehiclesViewModel : ObservableObject
     [ObservableProperty] private string _editDisplayName = "";
     [ObservableProperty] private string _statusMessage = "";
 
-    /// <summary>本载具**已被手动删除**的部件（§3.10，可逐条恢复）。</summary>
-    [ObservableProperty] private ObservableCollection<ExcludedPartItem> _excludedParts = new();
-
-    partial void OnExcludedPartsChanged(ObservableCollection<ExcludedPartItem> value)
-    {
-        OnPropertyChanged(nameof(HasExcludedParts));
-        OnPropertyChanged(nameof(ExcludedPartsTitle));
-    }
-
-    public bool HasExcludedParts => ExcludedParts.Count > 0;
-
-    public string ExcludedPartsTitle => Loc.Format("vehicles.parts.excluded", ExcludedParts.Count);
-
     /// <summary>
     /// 部件排除清单发生变化（删 / 恢复部件）→ 由 <c>MainViewModel</c> 触发一次**库重建**。
     /// </summary>
@@ -147,7 +117,9 @@ public partial class VehiclesViewModel : ObservableObject
 
     public string PackageCountText => Loc.Format("vehicles.packageCount", SelectedVehicle?.SkinPackages.Count ?? 0);
 
-    public string PartCountText => Loc.Format("vehicles.partCount", SelectedVehicle?.Parts.Count ?? 0);
+    /// <summary>部件数：**不含已排除的**（排除行仍在列表里显示，但不计入有效部件）。</summary>
+    public string PartCountText => Loc.Format("vehicles.partCount",
+        SelectedVehicle?.Parts.Count(p => !p.IsExcluded) ?? 0);
 
     // ---------- 状态联动 ----------
 
@@ -160,24 +132,12 @@ public partial class VehiclesViewModel : ObservableObject
     partial void OnSelectedVehicleChanged(Vehicle? value)
     {
         SyncFromVehicle();
-        RefreshExcludedParts(); // 「已删除的部件」随载具切换（§3.10）
 
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasParts));
         OnPropertyChanged(nameof(VehicleIdText));
         OnPropertyChanged(nameof(PackageCountText));
         OnPropertyChanged(nameof(PartCountText));
-    }
-
-    /// <summary>重新读该载具的「已删除的部件」清单（配置目录里的排除记录）。</summary>
-    private void RefreshExcludedParts()
-    {
-        var vehicleId = SelectedVehicle?.Id ?? "";
-        var items = vehicleId.Length == 0
-            ? new List<ExcludedPartItem>()
-            : PartExclusionService.ExcludedFor(vehicleId).Select(f => new ExcludedPartItem(f)).ToList();
-
-        ExcludedParts = new ObservableCollection<ExcludedPartItem>(items);
     }
 
     /// <summary>显示名改动（TextBox 失焦触发）→ 更新映射文件。</summary>
@@ -507,17 +467,25 @@ public partial class VehiclesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 手动删除载具部件（§3.10）：剔除写错的 from 对列表 / 候选 / 激活输出生效，
-    /// 排除记录持久化到 <c>mappings/vehicle_excluded_parts.json</c>；source.blk 不动。
+    /// 部件行的**删除 / 恢复**按钮（§3.10，同一个按钮随行的排除态切换语义）：
+    /// 正常行 = **删除**（写排除清单 → 行变灰、提示「已排除」，按钮变红字「恢复」）；
+    /// 排除行 = **恢复**（移出排除清单 → 候选与输出随之回来）。
+    /// <c>source.blk</c> 与 <c>meta.parts</c> 都不动。
     /// </summary>
     [RelayCommand]
-    private void DeletePart(VehiclePart? part)
+    private void DeleteOrRestorePart(VehiclePart? part)
     {
         if (part == null || SelectedVehicle == null) return;
         if (!DirectoryGate.EnsureReady(_config)) return; // 目录未就绪 → 引导到设置页
         if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
         {
             ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        if (part.IsExcluded)
+        {
+            RestorePart(part);
             return;
         }
 
@@ -531,43 +499,37 @@ public partial class VehiclesViewModel : ObservableObject
         PartExclusionService.Add(_config.ConfigDirectory, SelectedVehicle.Id, part.From);
         PartCatalog.Invalidate(); // 部件表一并重建：属性页候选 / 多源复用搜索同步生效
 
-        // 本地剔除：部件列表 + 该载具各包的同 from 映射（与聚合规则一致，无需全量重扫）
-        SelectedVehicle.Parts = SelectedVehicle.Parts.Where(p => p != part).ToList();
+        // 就地转为**排除态**：行**留在列表里**（灰色 + 「已排除」+ 红字「恢复」），
+        // 不做整行消失——部件列表是虚拟列表，另起一块显示已删除部件会把列表挤没
+        part.IsExcluded = true;
+        part.Candidates.Clear();
+
         foreach (var package in SelectedVehicle.SkinPackages)
             package.Mappings.RemoveAll(
                 m => string.Equals(VehicleAggregator.NormalizeFrom(m.FromModule), part.From,
                     StringComparison.OrdinalIgnoreCase));
 
-        RefreshExcludedParts(); // 进入「已删除的部件」清单，可恢复
+        OnPropertyChanged(nameof(PartCountText));
         ShowStatus(Loc.Format("vehicles.part.deleted", part.From));
 
         // 通知主视图重建库：**输出用的 blk 文本要按新排除清单重新组装**
-        // （只改配置不重建的话，激活输出里仍会带着刚删掉的块）
+        //（只改配置不重建的话，激活输出里仍会带着刚删掉的块）
         PartExclusionsChanged?.Invoke();
     }
 
     /// <summary>
-    /// 恢复一个被手动删除的部件（§3.10）：从排除清单移除 → 部件重新出现在部件列表 / 候选 / 激活输出里。
-    /// 包内原始数据从未改动，所以恢复是零成本的。
+    /// 恢复被排除的部件：移出排除清单 → 行回到正常态，候选与输出随重建回来（原始数据从未改动，零成本）。
     /// </summary>
-    [RelayCommand]
-    private void RestorePart(ExcludedPartItem? item)
+    private void RestorePart(VehiclePart part)
     {
-        if (item == null || SelectedVehicle == null) return;
-
-        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
-        {
-            ShowStatus(Loc["settings.configDirRequired"]);
-            return;
-        }
-
-        PartExclusionService.Remove(_config.ConfigDirectory, SelectedVehicle.Id, item.From);
+        PartExclusionService.Remove(_config.ConfigDirectory, SelectedVehicle!.Id, part.From);
         PartCatalog.Invalidate(); // 部件表重建：候选 / 多源复用搜索同步生效
 
-        RefreshExcludedParts();
-        ShowStatus(Loc.Format("vehicles.part.restored", item.From));
+        part.IsExcluded = false; // 立刻恢复观感；候选 / 映射由随后的库重建补回
+        OnPropertyChanged(nameof(PartCountText));
+        ShowStatus(Loc.Format("vehicles.part.restored", part.From));
 
-        PartExclusionsChanged?.Invoke(); // 同上：输出用文本要重新组装
+        PartExclusionsChanged?.Invoke();
     }
 
     private void ShowStatus(string message)
