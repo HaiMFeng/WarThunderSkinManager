@@ -457,6 +457,7 @@
   "pkg.notFound": "Skin package not found: {0}",
   "parser.warn.caseMismatch": "Case mismatch (actual {0})",
   "parser.warn.noWildcard": "from is missing the wildcard *",
+  "parser.warn.localPathFrom": "The position hard-codes an absolute path (most likely from the mod author's machine, e.g. {0}) — it may fail on other machines and the texture will not be replaced; kept verbatim",
   "parser.warn.noExtension": "to is missing the .dds/.tga extension",
   "parser.warn.setTexParam": "set_tex has no param (preserved as-is: with param it acts as a fixed skin; without it the texture is still replaced but decals are not supported)",
   "pkg.editor.saveFailed": "Failed to save the package (changes were not applied): {0}",

@@ -18,6 +18,9 @@ public sealed class PartMemberVm
 {
     public string From { get; init; } = "";
 
+    /// <summary>界面显示名：只取末段（去掉写死在 blk 里的作者机器目录前缀）</summary>
+    public string FromDisplay => VehicleAggregator.DisplayFrom(From);
+
     public string VehiclesText { get; init; } = "";
 
     /// <summary>按命名推测的部件标签（与涂装包属性页同源，§3.6）。</summary>
@@ -28,6 +31,9 @@ public sealed class PartMemberVm
 public sealed class PartSearchResultVm
 {
     public string From { get; init; } = "";
+
+    /// <summary>界面显示名：只取末段（去掉写死在 blk 里的作者机器目录前缀）</summary>
+    public string FromDisplay => VehicleAggregator.DisplayFrom(From);
 
     public string VehiclesText { get; init; } = "";
 

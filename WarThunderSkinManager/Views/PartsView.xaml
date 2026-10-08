@@ -126,8 +126,9 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.Column="0">
                                                     <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"
-                                                                   VerticalAlignment="Center"/>
+                                                        <!-- 部件名只显示末段（去掉可能写死的作者机器路径）；悬停看原文 -->
+                                                        <TextBlock Text="{Binding FromDisplay}" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center" ToolTip="{Binding From}"/>
                                                         <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource PartTagTemplate}"
                                                                       Margin="6,0,0,0" VerticalAlignment="Center" IsTabStop="False">
                                                             <ItemsControl.ItemsPanel>
@@ -247,8 +248,9 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.Column="0">
                                                     <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Text="{Binding From}" TextTrimming="CharacterEllipsis"
-                                                                   VerticalAlignment="Center"/>
+                                                        <!-- 部件名只显示末段（去掉可能写死的作者机器路径）；悬停看原文 -->
+                                                        <TextBlock Text="{Binding FromDisplay}" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center" ToolTip="{Binding From}"/>
                                                         <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource PartTagTemplate}"
                                                                       Margin="6,0,0,0" VerticalAlignment="Center" IsTabStop="False">
                                                             <ItemsControl.ItemsPanel>

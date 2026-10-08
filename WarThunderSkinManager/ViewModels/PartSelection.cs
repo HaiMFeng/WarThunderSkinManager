@@ -85,6 +85,12 @@ public partial class PartRow : ObservableObject
     /// <summary>归一化部件位置（去 <c>*</c>）</summary>
     public string From { get; init; } = "";
 
+    /// <summary>
+    /// 界面显示的部件名：只取末段（去掉可能写死在 blk 里的作者机器目录前缀）；
+    /// 原始值见 <see cref="From"/>（列表行悬停提示）。
+    /// </summary>
+    public string FromDisplay => VehicleAggregator.DisplayFrom(From);
+
     public string CandidateCountText { get; init; } = "";
 
     /// <summary>

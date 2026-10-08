@@ -201,8 +201,9 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{Binding From}" VerticalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis"/>
+                                                <!-- 部件名只显示末段（社区 blk 里偶见写死作者机器路径的 from）；悬停看原文 -->
+                                                <TextBlock Grid.Column="0" Text="{Binding FromDisplay}" VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding From}"/>
                                                 <ItemsControl Grid.Column="1" ItemsSource="{Binding Tags}"
                                                               VerticalAlignment="Center" Margin="10,0,0,0">
                                                     <ItemsControl.ItemsPanel>

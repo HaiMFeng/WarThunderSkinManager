@@ -18,6 +18,28 @@ public static class VehicleAggregator
     public static string NormalizeFrom(string from)
         => (from ?? string.Empty).Replace("*", string.Empty).Trim();
 
+    /// <summary>
+    /// 部件位置的**界面显示名**：只取末段（文件名），去掉前面可能存在的目录（§3.6）。
+    /// </summary>
+    /// <remarks>
+    /// 社区 blk 里偶见**写死了模组作者机器路径**的 <c>from</c>，例如
+    /// <c>D:\Steam\steamapps\common\War Thunder/UserSkins/ANIME/金属色/mg_qjc88_c.dds@0x00000000A0008EA8</c>——
+    /// 界面直接显示原文，看起来就像"部件名里塞了两个文件路径"。
+    /// 这里只改**显示**：位置键仍用原文（<see cref="NormalizeFrom"/>），
+    /// 保证「块 ↔ 部件」的对应关系、候选匹配与输出完全不受影响。
+    /// </remarks>
+    public static string DisplayFrom(string? from)
+    {
+        var key = NormalizeFrom(from ?? "");
+        if (key.Length == 0) return "";
+
+        var separated = key.Replace('\\', '/').TrimEnd('/');
+        var slash = separated.LastIndexOf('/');
+        var last = (slash >= 0 ? separated[(slash + 1)..] : separated).Trim();
+
+        return last.Length > 0 ? last : key;
+    }
+
     /// <summary>由同一载具下的全部涂装包构建载具（含部件聚合）。</summary>
     /// <param name="countryOverrides">用户手动指定的 载具→国家（优先于前缀推断，见 §3.4 / §3.10）。</param>
     public static Vehicle Build(string vehicleId, IEnumerable<SkinPackage> packages,
@@ -54,7 +76,7 @@ public static class VehicleAggregator
                     part = new VehiclePart
                     {
                         From = key,
-                        DisplayName = key,
+                        DisplayName = DisplayFrom(key), // 只显示末段：作者机器路径不进界面（见 DisplayFrom）
                         Tags = PartTagResolver.Resolve(key, vehicleId) // 推测标签（§3.6），列表展示用
                     };
                     parts[key] = part;

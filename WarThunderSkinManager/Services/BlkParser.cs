@@ -143,12 +143,28 @@ public static class BlkParser
         return match;
     }
 
+    /// <summary>
+    /// <paramref name="from"/> 是否**看起来像本机绝对路径**（盘符开头，或含反斜杠）——
+    /// 正常部件位置是游戏资产名（如 <c>ztz_96b_body_c*</c>），不会长这样。
+    /// </summary>
+    private static bool LooksLikeLocalPath(string from)
+    {
+        if (string.IsNullOrWhiteSpace(from)) return false;
+        if (from.Contains('\\')) return true;
+
+        return from.Length > 1 && char.IsLetter(from[0]) && from[1] == ':';
+    }
+
     private static TexMapping Build(MappingMode mode, string from, string to, string? param, BlkFile blk)
     {
         var issues = new List<string>();
 
         if (!from.Contains('*'))
             issues.Add(Loc["parser.warn.noWildcard"]);
+        // 社区 blk 里偶见作者机器上的绝对路径（from 写死了 D:\…\UserSkins\某模组\a.dds@0x…）：
+        // 这类条目在别的机器上无效（贴图不会被替换）→ **只提示，绝不改写**（§7.3 第 5 条）
+        if (LooksLikeLocalPath(from))
+            issues.Add(Loc.Format("parser.warn.localPathFrom", from));
         if (!to.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) &&
             !to.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
             issues.Add(Loc["parser.warn.noExtension"]);

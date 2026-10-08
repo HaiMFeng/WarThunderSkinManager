@@ -1570,6 +1570,43 @@ internal static class SelfTest
                          + $"set/replace 配对都在 = {robustOutBlk.Contains("set_tex {") && robustOutBlk.Contains("replace_tex {")}（应 True），"
                          + $"本体资源条目保留 = {robustOutBlk.Contains("game_texture.tga")}（应 True）");
 
+            // ---- 「blk 里写死作者机器路径」的 from（数据污染体检，§3.2 / §7.3）----
+            // 实测案例（cn_ztz_96b 的某个社区包）：
+            //   from:t="D:\Steam\…\War Thunder/UserSkins/ANIME/金属色/mg_qjc88_c.dds@0x00000000A0008EA8"
+            //   to:t="mg_qjc88_c.dds@0x00000000A0008EA8.tga"
+            // 规则：**只提示、绝不改写**；界面上的部件名只取末段（否则看起来像"部件里塞了两条路径"）
+            const string pollutedFrom =
+                @"D:\Steam\steamapps\common\War Thunder/UserSkins/ANIME/金属色/mg_qjc88_c.dds@0x00000000A0008EA8";
+
+            var pollutedBlkPath = Path.Combine(robustSrc, "polluted.blk");
+            File.WriteAllText(pollutedBlkPath, string.Join("\r\n", new[]
+            {
+                "name:t=\"user\"",
+                "",
+                "set_tex{",
+                $"  from:t=\"{pollutedFrom}\"",
+                "  to:t=\"mg_qjc88_c.dds@0x00000000A0008EA8.tga\"",
+                "  param:t=\"camo_skin_tex\"",
+                "}"
+            }), new UTF8Encoding(false));
+
+            var polluted = BlkParser.Parse(pollutedBlkPath, File.ReadAllText(pollutedBlkPath, Encoding.UTF8));
+
+            // 注意告警位置：**贴图级**问题在 mapping.Issues（文件级在 blk.Issues，如"缺 to 的块"）
+            var pollutedWarned = polluted.Mappings.Count == 1
+                && polluted.Mappings[0].Issues.Contains(
+                    LocalizationManager.Instance.Format("parser.warn.localPathFrom", pollutedFrom));
+            var pollutedKept = polluted.Mappings.Count == 1
+                && string.Equals(polluted.Mappings[0].FromModule, pollutedFrom, StringComparison.Ordinal);
+
+            log.AppendLine($"路径污染体检: 提示本机绝对路径 = {pollutedWarned}（应 True），"
+                         + $"原文未改写 = {pollutedKept}（应 True）；"
+                         + $"部件显示名取末段 = {VehicleAggregator.DisplayFrom(pollutedFrom)}"
+                         + "（应 mg_qjc88_c.dds@0x00000000A0008EA8），"
+                         + $"普通位置不变 = {VehicleAggregator.DisplayFrom("cn_ztz_96b_body_c")}（应 cn_ztz_96b_body_c），"
+                         + $"含子目录取末段 = {VehicleAggregator.DisplayFrom("tracks/track_c")}（应 track_c），"
+                         + $"空值 = '{VehicleAggregator.DisplayFrom("")}'（应空）");
+
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))
