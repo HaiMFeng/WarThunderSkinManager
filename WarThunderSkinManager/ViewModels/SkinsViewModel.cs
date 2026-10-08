@@ -348,14 +348,8 @@ public partial class SkinsViewModel : ObservableObject
                     foreach (var package in result.Packages)
                         PreviewStore.SaveFromFile(_config.ConfigDirectory, package.Id, previewImagePath);
 
-                    // 当前列表里正好有这些包 → 立即刷新缩略图
-                    foreach (var package in Packages)
-                    {
-                        if (result.Packages.All(p => !string.Equals(p.Id, package.Id, StringComparison.Ordinal))) continue;
-
-                        package.PreviewPath = PreviewStore.FullPath(_config.ConfigDirectory, package.Id);
-                        package.PreviewImage = PreviewStore.LoadImage(package.PreviewPath, ThumbnailDecodeWidth);
-                    }
+                    // 预览文件已落盘 → 立即刷新缩略图（当前载具页面上无需切页即可看到）
+                    RefreshPreviews(result.Packages.Select(p => p.Id));
                 }
 
                 item.State = WtLiveDownloadState.Completed;
@@ -819,6 +813,10 @@ public partial class SkinsViewModel : ObservableObject
         var wasActive = Packages.FirstOrDefault(
             p => string.Equals(p.Id, meta.Id, StringComparison.Ordinal))?.IsActive == true;
         RefreshLibrary();
+
+        // 预览图可能刚在属性页里被**替换 / 清除** → 立即刷新缩略图
+        // （否则当前载具页面上看不到新图，要切走再切回）
+        RefreshPreviews(new[] { meta.Id });
 
         // 改的正是当前激活包 → **立即落盘**：属性页点「确定」就是一次"改变输出"，
         // 不该再让用户点一次同步（贴图内容一致会跳过复制，只重写 blk，开销很小）
@@ -1367,6 +1365,31 @@ public partial class SkinsViewModel : ObservableObject
                 _thumbCache.Remove(oldest);
             }
         }
+    }
+
+    /// <summary>
+    /// 指定包的预览图**刚被写入 / 替换**（WT Live 下载导入完成、属性页改预览）→ **立即刷新缩略图**。
+    /// </summary>
+    /// <remarks>
+    /// 必须走中心化的 <see cref="LoadPreviews"/>，不能直接给卡片赋图：
+    /// <list type="bullet">
+    /// <item>它会换一个新的**解码会话令牌**，从而作废**仍在途的旧解码回调**——那些回调是在
+    /// 「预览文件还没写盘」时起的（导入 / 保存末尾的 <see cref="RefreshLibrary"/> 会因
+    /// 载具实例被重建而触发一次解码），它们晚一步回到 UI 线程、会把刚设好的图重新清成 null。
+    /// 这正是「WT Live 下载导入后预览图要切页面才出现」的根因；</item>
+    /// <item>缩略图内存缓存按「预览文件最后写入时间」校验，新写入的自然失效，这里顺带即时清掉。</item>
+    /// </list>
+    /// 只刷新**当前载具**的卡片（其它载具的包在切过去时按正常路径加载）。
+    /// </remarks>
+    private void RefreshPreviews(IEnumerable<string> packageIds)
+    {
+        lock (_thumbCacheGate)
+        {
+            foreach (var id in packageIds)
+                if (_thumbCache.Remove(id)) _thumbCacheOrder.Remove(id);
+        }
+
+        LoadPreviews(SelectedVehicle);
     }
 
     /// <summary>
