@@ -52,6 +52,7 @@ WarThunderSkinManager/
 │   ├── 软件功能设计.md
 │   ├── 界面设计规范.md
 │   ├── 涂装文件结构与BLK格式参考.md
+│   ├── 应用自更新设计.md
 │   └── ref/
 └── .gitignore
 ```
@@ -108,6 +109,7 @@ dotnet run --project WarThunderSkinManager
 - [`docs/软件功能设计.md`](docs/软件功能设计.md) —— 功能模块、三个目录、数据组织（实体模型）、物理落盘与去重
 - [`docs/界面设计规范.md`](docs/界面设计规范.md) —— 设计令牌、组件规范、动效规范、国际化
 - [`docs/涂装文件结构与BLK格式参考.md`](docs/涂装文件结构与BLK格式参考.md) —— blk 语法与贴图规范
+- [`docs/应用自更新设计.md`](docs/应用自更新设计.md) —— 安装器渠道（Inno Setup）、应用内自更新流程、迁移与兜底（**设计稿，尚未实施**）
 
 ---
 
