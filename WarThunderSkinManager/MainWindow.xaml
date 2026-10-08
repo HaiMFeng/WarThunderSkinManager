@@ -366,14 +366,28 @@
                     </Border.Effect>
 
                     <StackPanel Orientation="Horizontal">
-                        <!-- 加载圈：缺口圆环（FA circle-notch）持续旋转，直到遮罩消失 -->
-                        <TextBlock Text="&#xF110;" FontFamily="{StaticResource IconFont}" FontSize="18"
-                                   Foreground="{StaticResource BrushPrimary}" VerticalAlignment="Center"
-                                   RenderTransformOrigin="0.5,0.5">
-                            <TextBlock.RenderTransform>
+                        <!-- 加载圈：**渐淡圆环**（自绘，持续旋转直到遮罩消失）。
+                            不用图标字体——FA 的 circle-notch 画的是**一串短划**（"点串"观感），
+                             这里要的是"实心弧形渐隐成空"：
+                             ① Ellipse 描边 + StrokeDashArray 只留约 270°（单位 = 描边宽度的倍数：
+                                中心线周长 2π×8≈50.3，÷2（描边 2）≈25.1 → 18.8 实 + 6.3 空）；
+                             ② 用 OpacityMask 做**渐隐**（主题无关：遮罩只看 alpha，所以四套主题只需换 Stroke）；
+                             ③ 整体绕中心旋转。 -->
+                        <Ellipse Width="18" Height="18" VerticalAlignment="Center"
+                                 Stroke="{StaticResource BrushPrimary}" StrokeThickness="2"
+                                 StrokeDashArray="18.8 6.3" StrokeDashCap="Round"
+                                 RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform>
                                 <RotateTransform/>
-                            </TextBlock.RenderTransform>
-                            <TextBlock.Triggers>
+                            </Ellipse.RenderTransform>
+                            <Ellipse.OpacityMask>
+                                <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                                    <GradientStop Color="#FF000000" Offset="0"/>
+                                    <GradientStop Color="#99000000" Offset="0.45"/>
+                                    <GradientStop Color="#00000000" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Ellipse.OpacityMask>
+                            <Ellipse.Triggers>
                                 <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                                     <BeginStoryboard>
                                         <Storyboard RepeatBehavior="Forever">
@@ -383,8 +397,8 @@
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </EventTrigger>
-                            </TextBlock.Triggers>
-                        </TextBlock>
+                            </Ellipse.Triggers>
+                        </Ellipse>
 
                         <TextBlock Text="{Binding Busy.Text}" Margin="12,0,0,0" FontSize="13"
                                    VerticalAlignment="Center"/>
