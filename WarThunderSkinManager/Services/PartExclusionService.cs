@@ -62,6 +62,20 @@ public static class PartExclusionService
         }
     }
 
+    /// <summary>
+    /// 某载具**已被手动删除**的部件位置（归一化 from，按名称排序）——载具管理页的
+    /// 「已删除的部件」据此列出并提供「恢复」（§3.10）。
+    /// </summary>
+    public static IReadOnlyList<string> ExcludedFor(string vehicleId)
+    {
+        lock (Gate)
+        {
+            return _excluded.TryGetValue(vehicleId ?? "", out var set)
+                ? set.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
+                : Array.Empty<string>();
+        }
+    }
+
     /// <summary>排除部件（按配置目录持久化；重复添加无副作用）。</summary>
     public static void Add(string configDir, string vehicleId, string from)
     {
@@ -79,7 +93,7 @@ public static class PartExclusionService
         }
     }
 
-    /// <summary>取消排除（恢复部件；当前未提供恢复入口，供数据修正 / 自检使用）。</summary>
+    /// <summary>取消排除 = **恢复部件**（载具管理页「已删除的部件」里的「恢复」按钮）。</summary>
     public static void Remove(string configDir, string vehicleId, string from)
     {
         lock (Gate)

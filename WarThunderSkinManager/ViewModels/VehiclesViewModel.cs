@@ -15,6 +15,23 @@ using WarThunderSkinManager.Views;
 
 namespace WarThunderSkinManager.ViewModels;
 
+/// <summary>
+/// 「已删除的部件」列表项（§3.10）：<see cref="From"/> 是归一化位置键（**原文**，可能含
+/// 模组作者机器上的目录前缀），<see cref="Display"/> 只取末段供列表展示，原文放悬停提示。
+/// </summary>
+public sealed class ExcludedPartItem
+{
+    public string From { get; }
+
+    public string Display { get; }
+
+    public ExcludedPartItem(string from)
+    {
+        From = from;
+        Display = VehicleAggregator.DisplayFrom(from);
+    }
+}
+
 /// <summary>国家下拉项。</summary>
 public sealed class CountryOption
 {
@@ -79,6 +96,28 @@ public partial class VehiclesViewModel : ObservableObject
     [ObservableProperty] private string _editDisplayName = "";
     [ObservableProperty] private string _statusMessage = "";
 
+    /// <summary>本载具**已被手动删除**的部件（§3.10，可逐条恢复）。</summary>
+    [ObservableProperty] private ObservableCollection<ExcludedPartItem> _excludedParts = new();
+
+    partial void OnExcludedPartsChanged(ObservableCollection<ExcludedPartItem> value)
+    {
+        OnPropertyChanged(nameof(HasExcludedParts));
+        OnPropertyChanged(nameof(ExcludedPartsTitle));
+    }
+
+    public bool HasExcludedParts => ExcludedParts.Count > 0;
+
+    public string ExcludedPartsTitle => Loc.Format("vehicles.parts.excluded", ExcludedParts.Count);
+
+    /// <summary>
+    /// 部件排除清单发生变化（删 / 恢复部件）→ 由 <c>MainViewModel</c> 触发一次**库重建**。
+    /// </summary>
+    /// <remarks>
+    /// 必须重建：激活输出写的是 <see cref="SkinPackage.BlkText"/>，它由 <c>BlkAssembler</c> 在
+    /// **全量重建**时组装（按 <c>from</c> 应用排除）；只改排除清单不重建，输出里仍会带着已被删掉的块。
+    /// </remarks>
+    public event Action? PartExclusionsChanged;
+
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     public VehiclesViewModel(AppConfig config)
@@ -121,12 +160,24 @@ public partial class VehiclesViewModel : ObservableObject
     partial void OnSelectedVehicleChanged(Vehicle? value)
     {
         SyncFromVehicle();
+        RefreshExcludedParts(); // 「已删除的部件」随载具切换（§3.10）
 
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasParts));
         OnPropertyChanged(nameof(VehicleIdText));
         OnPropertyChanged(nameof(PackageCountText));
         OnPropertyChanged(nameof(PartCountText));
+    }
+
+    /// <summary>重新读该载具的「已删除的部件」清单（配置目录里的排除记录）。</summary>
+    private void RefreshExcludedParts()
+    {
+        var vehicleId = SelectedVehicle?.Id ?? "";
+        var items = vehicleId.Length == 0
+            ? new List<ExcludedPartItem>()
+            : PartExclusionService.ExcludedFor(vehicleId).Select(f => new ExcludedPartItem(f)).ToList();
+
+        ExcludedParts = new ObservableCollection<ExcludedPartItem>(items);
     }
 
     /// <summary>显示名改动（TextBox 失焦触发）→ 更新映射文件。</summary>
@@ -487,7 +538,36 @@ public partial class VehiclesViewModel : ObservableObject
                 m => string.Equals(VehicleAggregator.NormalizeFrom(m.FromModule), part.From,
                     StringComparison.OrdinalIgnoreCase));
 
+        RefreshExcludedParts(); // 进入「已删除的部件」清单，可恢复
         ShowStatus(Loc.Format("vehicles.part.deleted", part.From));
+
+        // 通知主视图重建库：**输出用的 blk 文本要按新排除清单重新组装**
+        // （只改配置不重建的话，激活输出里仍会带着刚删掉的块）
+        PartExclusionsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 恢复一个被手动删除的部件（§3.10）：从排除清单移除 → 部件重新出现在部件列表 / 候选 / 激活输出里。
+    /// 包内原始数据从未改动，所以恢复是零成本的。
+    /// </summary>
+    [RelayCommand]
+    private void RestorePart(ExcludedPartItem? item)
+    {
+        if (item == null || SelectedVehicle == null) return;
+
+        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        PartExclusionService.Remove(_config.ConfigDirectory, SelectedVehicle.Id, item.From);
+        PartCatalog.Invalidate(); // 部件表重建：候选 / 多源复用搜索同步生效
+
+        RefreshExcludedParts();
+        ShowStatus(Loc.Format("vehicles.part.restored", item.From));
+
+        PartExclusionsChanged?.Invoke(); // 同上：输出用文本要重新组装
     }
 
     private void ShowStatus(string message)

@@ -1607,6 +1607,46 @@ internal static class SelfTest
                          + $"含子目录取末段 = {VehicleAggregator.DisplayFrom("tracks/track_c")}（应 track_c），"
                          + $"空值 = '{VehicleAggregator.DisplayFrom("")}'（应空）");
 
+            // ---- 「删除部件」对**输出**的作用（§3.10 / §7）：显式删块，原文不动 ----
+            // 用真实污染串验证：删掉该部件后，组装出的有效 blk 里不再有这条块，
+            // 而包内 source.blk 原文一个字节都没变（所以随时可恢复）
+            var excludeLib = Path.Combine(workDir, "exclude-lib");
+            var excludeMeta = PackageStore.CreateBlank(excludeLib, "cn_ztz_96b", "路径污染");
+            var excludeSrcBlk = Path.Combine(workDir, "exclude-src.blk");
+
+            File.WriteAllText(excludeSrcBlk, string.Join("\r\n", new[]
+            {
+                "name:t=\"user\"",
+                "",
+                "replace_tex{",
+                "  from:t=\"cn_ztz_96b_body_c*\"",
+                "  to:t=\"body.dds\"",
+                "}",
+                "replace_tex{",
+                $"  from:t=\"{pollutedFrom}\"",
+                "  to:t=\"mg_qjc88_c.dds@0x00000000A0008EA8.tga\"",
+                "}"
+            }), new UTF8Encoding(false));
+
+            PackageStore.Save(excludeLib, excludeMeta, excludeSrcBlk); // 等价于导入出的资源包（source.blk 原文）
+
+            var beforeExclusion = BlkAssembler.Assemble(excludeLib, excludeMeta).Text;
+            PartExclusionService.Add(exclusionDir, "cn_ztz_96b", pollutedFrom);
+            var afterExclusion = BlkAssembler.Assemble(excludeLib, excludeMeta).Text;
+            var excludedCount = PartExclusionService.ExcludedFor("cn_ztz_96b").Count;
+            PartExclusionService.Remove(exclusionDir, "cn_ztz_96b", pollutedFrom);
+
+            var sourceUnchanged = string.Equals(
+                File.ReadAllText(PackageStore.SourceBlkPath(excludeLib, excludeMeta.Id), Encoding.UTF8),
+                File.ReadAllText(excludeSrcBlk, Encoding.UTF8), StringComparison.Ordinal);
+
+            log.AppendLine($"删除部件对输出: 排除前含该块 = {beforeExclusion.Contains("mg_qjc88_c.dds@0x")}（应 True），"
+                         + $"排除后不再输出 = {!afterExclusion.Contains("mg_qjc88_c.dds@0x")}（应 True），"
+                         + $"其它块保留 = {afterExclusion.Contains("cn_ztz_96b_body_c")}（应 True），"
+                         + $"source.blk 原文未改动 = {sourceUnchanged}（应 True）；"
+                         + $"「已删除的部件」清单 = {excludedCount} 项（应 1），恢复后 = "
+                         + $"{PartExclusionService.ExcludedFor("cn_ztz_96b").Count} 项（应 0）");
+
             log.AppendLine();
             log.AppendLine("---- 前 20 条警告 ----");
             foreach (var w in result.Warnings.Take(20))

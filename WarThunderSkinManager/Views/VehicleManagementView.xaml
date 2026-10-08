@@ -147,6 +147,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
+                                <!-- 已删除的部件（§3.10，可恢复）：仅在有内容时显示 -->
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
@@ -254,6 +256,56 @@
                                         </DataTemplate>
                                         </ListBox.ItemTemplate>
                                         </ListBox>
+
+                            <!-- 已删除的部件（§3.10）：手动删除**可逆**——逐条「恢复」后部件重新回到
+                                 列表 / 候选 / 激活输出；包内原始数据（source.blk）从未被改动 -->
+                            <StackPanel Grid.Row="3" Margin="0,18,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Vehicles.HasExcludedParts}" Value="False">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+
+                                <TextBlock Text="{Binding Vehicles.ExcludedPartsTitle}"
+                                           Style="{StaticResource SectionTitle}" Margin="0,0,0,4"/>
+                                <TextBlock Text="{loc:Loc vehicles.parts.excluded.hint}"
+                                           Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding Vehicles.ExcludedParts}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BrushSurface}"
+                                                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                                                        CornerRadius="8" Padding="12,7" Margin="0,0,0,6">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <!-- 显示名只取末段；悬停看原文（可能是作者机器的整条路径） -->
+                                                        <TextBlock Grid.Column="0" Text="{Binding Display}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding From}"/>
+
+                                                        <Button Grid.Column="1" Margin="10,0,0,0" Padding="10,4" FontSize="12"
+                                                                Content="{loc:Loc vehicles.part.restore}"
+                                                                Style="{StaticResource SecondaryButton}"
+                                                                Command="{Binding DataContext.Vehicles.RestorePartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
                                         </Grid>
                                         </DockPanel>
                 </Grid>

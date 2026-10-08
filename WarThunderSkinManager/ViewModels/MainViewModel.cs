@@ -280,6 +280,11 @@ public partial class MainViewModel : ObservableObject
         // 激活状态变化 → 游戏内同步（§3.14；IO 在后台，await 后回 UI 线程更新状态文字）
         Skins.GameSkinSelectionChanged += () => _ = RunGameSyncAsync(overwriteForeign: false, silent: false);
 
+        // 载具页删 / 恢复部件（§3.10）→ **全量重建**：输出写的 BlkText 是重建时按排除清单组装的，
+        // 不重建的话"删了部件却仍输出该块"，直到下一次重建才生效。
+        // 复用设置页的「全量重建」路径（后台线程 + 进行中合并 + 状态提示）
+        Vehicles.PartExclusionsChanged += RebuildLibrary;
+
         // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
         if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
     }
