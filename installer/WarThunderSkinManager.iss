@@ -46,7 +46,8 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 DisableDirPage=no
 DisableWelcomePage=yes
-DisableProgramGroupPage=yes   ; 不建开始菜单文件夹，快捷方式直接放在"程序"根下（单应用工具的惯例）
+; 不建开始菜单文件夹：不设 DefaultGroupName → 快捷方式直接放在"程序"根下（单应用工具的惯例）
+DisableProgramGroupPage=yes
 WizardStyle=modern
 
 ; ---- 与程序的单实例互斥同名：安装器据此等程序退出后再替换文件（静默更新可靠的关键）----
@@ -69,7 +70,17 @@ ArchitecturesInstallIn64BitMode=x64
 MinVersion=10.0
 
 [Languages]
+; 中文界面是**非官方翻译**（Inno Setup 不自带，实测 6.x 的 Languages\ 里没有 ChineseSimplified.isl）。
+; 想要中文安装界面：把 ChineseSimplified.isl 放到
+;   ① Inno 安装目录的 Languages\ 下（如 C:\Program Files (x86)\Inno Setup 6\Languages\），或
+;   ② 与本脚本同目录（installer\）
+; —— 下面会自动检测：**有就把它置为默认语言**（列在最前），都没有则只出英文界面（不影响功能）。
+#if FileExists(AddBackslash(CompilerPath) + "Languages\ChineseSimplified.isl")
 Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+#elif FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
+Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
+#endif
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 ; **默认勾选**（决策 6）：checkedonce = 仅首次安装默认勾，升级时沿用用户上次的选择
@@ -112,6 +123,10 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
+    // ⚠️ MsgBox 在 /VERYSILENT 下**仍然会弹**（静默只抑制向导页）→ 会让静默卸载卡住。
+    // 静默卸载一律按"保留用户数据"处理（最安全：宁可少删，不可误删）。
+    if UninstallSilent then exit;
+
     if MsgBox('是否同时删除程序配置与预览缓存？' + #13#10 + #13#10 +
               '将删除：' + ConfigDirectory() + #13#10 +
               '（config.json、语言文件、显示名映射、部件排除、索引快照、预览图缓存）' + #13#10 + #13#10 +
