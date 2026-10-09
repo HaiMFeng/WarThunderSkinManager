@@ -101,6 +101,27 @@ public partial class MainWindow : Window
             return;
         }
 
+        // WT Live 详情浮窗开着时（§5.7.1）：Esc 关窗、← → 切图；其余按键放行，
+        // 否则浮窗里的可复制正文、Tab 都跟着失灵
+        if ((DataContext as MainViewModel)?.WtLive.Detail is { IsOpen: true } detail)
+        {
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    detail.CloseCommand.Execute(null);
+                    e.Handled = true;
+                    return;
+                case Key.Left:
+                    detail.PreviousCommand.Execute(null);
+                    e.Handled = true;
+                    return;
+                case Key.Right:
+                    detail.NextCommand.Execute(null);
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         base.OnPreviewKeyDown(e);
     }
 

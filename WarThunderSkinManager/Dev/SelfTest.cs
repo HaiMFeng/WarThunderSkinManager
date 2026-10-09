@@ -1566,6 +1566,13 @@ internal static class SelfTest
                          + $"无附件 → 隐藏按钮 = {!cardNoFile.HasFile}（应 True），"
                          + $"无预览图 → 占位图标 = {cardNoFile.ThumbnailState == WtLiveThumbnailState.Missing}（应 True）");
 
+            // ---- 详情浮窗轮播下标（WtLiveDetailViewModel.Step）：环绕算错是轮播最典型的 bug ----
+            log.AppendLine($"详情轮播下标: 往后 = {WtLiveDetailViewModel.Step(0, 4, 1)}（应 1），"
+                         + $"末张往后环绕 = {WtLiveDetailViewModel.Step(3, 4, 1)}（应 0），"
+                         + $"首张往前环绕 = {WtLiveDetailViewModel.Step(0, 4, -1)}（应 3），"
+                         + $"单张不动 = {WtLiveDetailViewModel.Step(0, 1, 1)}（应 0），"
+                         + $"没有图 = {WtLiveDetailViewModel.Step(0, 0, 1)}（应 0）");
+
             // ---- 下载阶段进度与重试节奏（§3.15：预览图是下载的一部分，独占 20%）----
             var progressCases = new (double Zip, double Preview, bool HasPreview, double Expect)[]
             {

@@ -382,6 +382,12 @@
                 </Border>
             </Grid>
 
+            <!-- WT Live 涂装详情浮窗（点浏览页卡片打开，§5.7.1）：图片轮播 + 完整信息 + 下载。
+                 只盖内容区（Row=1）——标题栏的窗口按钮保持可用；层级在 BusyOverlay(50) 之下，
+                 于是"在详情里点下载 → 确认窗 + 全局处理中遮罩"仍压在最上面。
+                 Esc / ← → 由 MainWindow 的键盘闸门转成 VM 命令。 -->
+            <views:WtLiveDetailOverlay Grid.Row="1" Panel.ZIndex="40"/>
+
             <!-- 拖入导入提示（把涂装文件夹 / 压缩包拖到窗口任意位置，§3.1） -->
             <Border x:Name="DropHint" Grid.Row="0" Grid.RowSpan="2" Margin="10"
                     Background="{StaticResource BrushBackground}" Opacity="0.94"

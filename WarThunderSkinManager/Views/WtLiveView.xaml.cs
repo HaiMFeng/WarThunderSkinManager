@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WarThunderSkinManager.Controls;
@@ -69,6 +70,16 @@ public partial class WtLiveView : UserControl
 
         var dpi = VisualTreeHelper.GetDpi(_panel);
         ViewModel?.SetDisplayWidth(_panel.ColumnWidth, dpi.DpiScaleX);
+    }
+
+    /// <summary>
+    /// 点卡片 = 打开详情浮窗（预览图轮播 + 完整信息 + 下载）。
+    /// 卡片右下角的「下载」按钮自己处理点击（按钮已把鼠标事件标记为 handled），不会冒泡到这里。
+    /// </summary>
+    private void Card_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: WtLiveCardItem card })
+            ViewModel?.Detail.OpenCommand.Execute(card);
     }
 
     /// <summary>深度优先找瀑布流面板（面板本身没有 x:Name，只能在可视化树里找）。</summary>

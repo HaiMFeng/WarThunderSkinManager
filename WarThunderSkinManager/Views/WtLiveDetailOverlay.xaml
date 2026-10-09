@@ -1,0 +1,226 @@
+<UserControl x:Class="WarThunderSkinManager.Views.WtLiveDetailOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+             Focusable="True" FocusVisualStyle="{x:Null}">
+    <!-- WT Live 涂装详情浮窗（点浏览页卡片打开）：所有预览图轮播 + 完整信息 + 下载。
+         可见性由 WtLive.Detail.IsOpen 驱动；遮罩盖住内容区，点空白处 / Esc 关闭 -->
+    <UserControl.Style>
+        <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding WtLive.Detail.IsOpen}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Style>
+
+    <UserControl.Resources>
+        <!-- 信息行：为空的那行自动收起（作者 / 文件 可能缺项，不留空行） -->
+        <Style x:Key="InfoLine" TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 滚轮切图：事件必须在浮窗里吃掉，否则会穿透去滚底下的瀑布流 -->
+    <Grid PreviewMouseWheel="Root_PreviewMouseWheel">
+        <!-- 压暗底：沿用主题背景色（与全局「处理中」遮罩同一套观感，四套主题自动一致），
+             同时挡住底下页面的交互；点空白处 = 关窗 -->
+        <Border Background="{StaticResource BrushBackground}" Opacity="0.72"
+                MouseLeftButtonDown="Backdrop_MouseLeftButtonDown"/>
+
+        <Border HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                MaxWidth="820" Margin="48,40"
+                Background="{StaticResource BrushSurface}"
+                BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                CornerRadius="12" Padding="18">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="22" ShadowDepth="2" Opacity="0.26" Color="#000000"/>
+            </Border.Effect>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 轮播：占剩余高度；图片 Uniform 且只缩不放（低清垫底图不会被拉糊） -->
+                <Grid Grid.Row="0" MinHeight="180">
+                    <Image Source="{Binding WtLive.Detail.Current.Image}"
+                           Stretch="Uniform" StretchDirection="DownOnly"/>
+
+                    <!-- 这一张正在下载 / 解码 -->
+                    <Viewbox Width="28" Height="28" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Viewbox.Style>
+                            <Style TargetType="Viewbox">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WtLive.Detail.Current.IsLoading}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Viewbox.Style>
+                        <ContentControl Style="{StaticResource BusySpinner}"/>
+                    </Viewbox>
+
+                    <!-- 没有图 / 这一张取不到：占位图标（不转圈，否则永远在"加载"） -->
+                    <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
+                               FontSize="30" Foreground="{StaticResource BrushTextMuted}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding WtLive.Detail.IsLoading}" Value="False"/>
+                                            <Condition Binding="{Binding WtLive.Detail.Current}" Value="{x:Null}"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding WtLive.Detail.Current.IsFailed}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- 上一张 / 下一张（单张时不显示；鼠标滚轮同样可切） -->
+                    <Button Content="&#xF053;" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            ToolTip="{loc:Loc wtlive.detail.prev}"
+                            Command="{Binding WtLive.Detail.PreviousCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                <Setter Property="Width" Value="32"/>
+                                <Setter Property="Height" Value="32"/>
+                                <Setter Property="FontSize" Value="16"/>
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WtLive.Detail.HasMultipleImages}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="&#xF054;" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            ToolTip="{loc:Loc wtlive.detail.next}"
+                            Command="{Binding WtLive.Detail.NextCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                <Setter Property="Width" Value="32"/>
+                                <Setter Property="Height" Value="32"/>
+                                <Setter Property="FontSize" Value="16"/>
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WtLive.Detail.HasMultipleImages}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <!-- 计数 + 滚轮提示：多张时才有意义 -->
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,6,6"
+                            Background="{StaticResource BrushSurface}" Opacity="0.92"
+                            CornerRadius="8" Padding="8,2">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WtLive.Detail.HasMultipleImages}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{loc:Loc wtlive.detail.wheelHint}" FontSize="12"
+                                       Foreground="{StaticResource BrushTextMuted}" Margin="0,0,10,0"/>
+                            <TextBlock Text="{Binding WtLive.Detail.IndexText}" FontSize="12"
+                                       FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 信息：标题 + 作者 / 文件 / 互动统计（缺项自动收起） -->
+                <StackPanel Grid.Row="1" Margin="0,14,0,0">
+                    <TextBlock Text="{Binding WtLive.Detail.Title}" FontSize="15" FontWeight="SemiBold"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding WtLive.Detail.Author}" Style="{StaticResource InfoLine}"/>
+                    <TextBlock Text="{Binding WtLive.Detail.FileText}" Style="{StaticResource InfoLine}"/>
+                    <TextBlock Text="{Binding WtLive.Detail.StatsText}" Style="{StaticResource InfoLine}"/>
+
+                    <!-- 读取失败：给出原因与重试（卡片那层信息仍在上面，不至于空窗） -->
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WtLive.Detail.HasError}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{Binding WtLive.Detail.ErrorMessage}" FontSize="12"
+                                   Foreground="{StaticResource BrushDanger}" TextWrapping="Wrap"
+                                   MaxWidth="520" VerticalAlignment="Center"/>
+                        <Button Content="{loc:Loc wtlive.list.retry}" Style="{StaticResource SecondaryButton}"
+                                Margin="10,0,0,0" MinWidth="72"
+                                Command="{Binding WtLive.Detail.RetryCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 正文：可选中复制（与「从 WT Live 下载」确认窗同一处理），限高滚动；空正文折叠该行 -->
+                <TextBox Grid.Row="2" Margin="0,10,0,0" MaxHeight="110"
+                         Height="Auto" MinHeight="34" Padding="6,5"
+                         VerticalContentAlignment="Top" TextWrapping="Wrap" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" IsReadOnly="True"
+                         Text="{Binding WtLive.Detail.Description, Mode=OneWay}">
+                    <TextBox.Style>
+                        <Style TargetType="TextBox" BasedOn="{StaticResource BaseTextBox}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBox.Style>
+                </TextBox>
+
+                <!-- 底部动作：在浏览器打开（左） / 下载 + 关闭（右） -->
+                <Grid Grid.Row="3" Margin="0,14,0,0">
+                    <Button HorizontalAlignment="Left" Content="{loc:Loc wtlive.detail.openInBrowser}"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding OpenLinkCommand}"
+                            CommandParameter="{Binding WtLive.Detail.PostUrl}"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <!-- 下载 = 既有的「从 WT Live 下载」确认窗（链接已预填并自动读取）；
+                             没有站内附件的帖子置灰（信息区已写明原因） -->
+                        <Button Content="{loc:Loc wtlive.detail.download}" Style="{StaticResource PrimaryButton}"
+                                IsEnabled="{Binding WtLive.Detail.HasFile}"
+                                Command="{Binding Skins.OpenWtLiveImportCommand}"
+                                CommandParameter="{Binding WtLive.Detail.PostUrl}"/>
+                        <Button Content="{loc:Loc common.close}" Style="{StaticResource SecondaryButton}"
+                                Margin="10,0,0,0" MinWidth="72"
+                                Command="{Binding WtLive.Detail.CloseCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

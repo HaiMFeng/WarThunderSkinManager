@@ -40,6 +40,9 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>已拉到的涂装卡片（瀑布流数据源）。</summary>
     public ObservableCollection<WtLiveCardItem> Items { get; } = new();
 
+    /// <summary>卡片详情浮窗（点卡片打开：预览图轮播 + 完整信息 + 下载入口）。</summary>
+    public WtLiveDetailViewModel Detail { get; } = new();
+
     /// <summary>正在拉取中（页脚显示加载圈，同时挡住重复触发）。</summary>
     [ObservableProperty] private bool _isLoading;
 
