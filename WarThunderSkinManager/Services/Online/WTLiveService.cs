@@ -260,6 +260,24 @@ public static class WTLiveService
     }
 
     /// <summary>
+    /// 取图片字节（缩略图 / 详情图主力入口）：**先查 <see cref="WtLivePreviewCache"/>**，
+    /// 命中直接返回（零网络），未命中才下载并把结果写回缓存。
+    /// 同一张图会被浏览页缩略图、详情浮窗、切换清晰度档、下载涂装等多个入口要，
+    /// 缓存挡掉重复下载（站点带宽有限且有限流，见 §5.7.1）。
+    /// </summary>
+    public static async Task<byte[]> FetchImageCachedAsync(string url, CancellationToken ct)
+    {
+        var cached = await Task.Run(() => WtLivePreviewCache.TryRead(url), ct);
+        if (cached != null) return cached;
+
+        var bytes = await FetchImageAsync(url, ct);
+
+        // 写回缓存不参与取消：图都下到手了，让它落盘（下次就省一趟）
+        await Task.Run(() => WtLivePreviewCache.Store(url, bytes), CancellationToken.None);
+        return bytes;
+    }
+
+    /// <summary>
     /// 取图片字节（缩略图用）。走与接口同一客户端与请求头约定（浏览器 UA / 1.1 / Referer）——
     /// 图片在 CDN 上，用 <see cref="System.Windows.Media.Imaging.BitmapImage"/> 直接给 URL 会绕开这些约定，
     /// 也拿不到解码尺寸控制。

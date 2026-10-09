@@ -275,6 +275,10 @@ public partial class SkinsViewModel : ObservableObject
             previewImagePath = Path.Combine(wtliveDir,
                 $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
 
+        // 预览图**优先吃缓存**：命中就本地复制一份（几毫秒、零流量），这一路直接算完成。
+        // 注意是**复制**不是把缓存文件交出去：暂存区随后会被清理，否则会把缓存一起删掉
+        var previewFromCache = hasPreview && WtLivePreviewCache.CopyTo(item.PreviewUrl, previewImagePath!);
+
         // 两路进度合成总进度（**预览图独占 20%**）：任一进展都刷新同一根进度条
         var zipFraction = 0d;
         var previewFraction = 0d;
@@ -317,16 +321,27 @@ public partial class SkinsViewModel : ObservableObject
             item.Progress = 0;
             item.StateText = Loc["wtlive.state.downloading0"];
 
+            if (previewFromCache)
+            {
+                previewFraction = 1; // 已从缓存复制到位：不再下载，进度条把预览图那 20% 直接算满
+                ReportProgress();
+            }
+
             zipTask = Task.Run(() => WTLiveService.DownloadFileAsync(
                 item.FileLink, zipPath, item.FileSize, zipProgress, runToken, ReportAttempt), runToken);
 
-            previewTask = hasPreview
-                ? Task.Run(() => WTLiveService.DownloadFileAsync(
-                    item.PreviewUrl!, previewImagePath!, null, previewProgress, runToken, ReportAttempt), runToken)
-                : Task.CompletedTask;
+            previewTask = previewFromCache || !hasPreview
+                ? Task.CompletedTask
+                : Task.Run(() => WTLiveService.DownloadFileAsync(
+                    item.PreviewUrl!, previewImagePath!, null, previewProgress, runToken, ReportAttempt), runToken);
 
             // **预览图与压缩包都下载完成**才进入安装（预览图是下载的一部分，失败即本项失败 → 可重试）
             await Task.WhenAll(zipTask, previewTask);
+
+            // 下好的预览图顺手收进缓存（本地复制，几毫秒）：下次浏览 / 打开详情就能命中。
+            // 必须在 finally 清理暂存**之前**做完——那个 preview 文件随后就没了
+            if (!previewFromCache && hasPreview && previewImagePath != null && File.Exists(previewImagePath))
+                await Task.Run(() => WtLivePreviewCache.StoreFromFile(item.PreviewUrl, previewImagePath));
 
             // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
             item.State = WtLiveDownloadState.Importing;

@@ -53,16 +53,16 @@ public sealed class ThemeItem
     public override string ToString() => DisplayName;
 }
 
-/// <summary>WT Live 卡片图片清晰度下拉项（名称走语言文件 wtlive.quality.* 键）。</summary>
-public sealed class WtLiveQualityItem
+/// <summary>WT Live 设置的下拉项（清晰度档位 / 预览图缓存上限共用；显示名由各自的目录算好传进来）。</summary>
+public sealed class WtLiveOptionItem
 {
     public string Id { get; }
     public string DisplayName { get; }
 
-    public WtLiveQualityItem(string id)
+    public WtLiveOptionItem(string id, string displayName)
     {
         Id = id;
-        DisplayName = WtLiveQualityCatalog.DisplayName(id);
+        DisplayName = displayName;
     }
 
     public override string ToString() => DisplayName;
@@ -324,16 +324,28 @@ public partial class MainViewModel : ObservableObject
         WtLive = new WtLiveViewModel(); // 无本地状态：数据全部来自站点，进页面才拉（首屏懒加载）
         WtLive.SetQuality(config.WtLiveImageQuality); // 卡片缩略图清晰度档位（设置页可改）
 
+        // 预览图磁盘缓存：目录跟随配置目录，上限来自设置（启动时按上限回收一次，
+        // 上次调小过上限、或手工往目录里塞过文件，这里就归位）
+        WtLivePreviewCache.Configure(config.ConfigDirectory);
+        ApplyPreviewCacheLimit();
+
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
         Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();
         _selectedTheme = Themes.FirstOrDefault(
             t => string.Equals(t.Id, config.Theme, StringComparison.OrdinalIgnoreCase)) ?? Themes[0];
 
-        // 清晰度档位下拉：同上，当前档位直接写字段（未知值回落默认档）
-        WtLiveQualities = WtLiveQualityCatalog.QualityIds.Select(id => new WtLiveQualityItem(id)).ToList();
+        // 清晰度 / 缓存上限下拉：同上，当前档位直接写字段（未知值回落默认档）
+        WtLiveQualities = WtLiveQualityCatalog.QualityIds
+            .Select(id => new WtLiveOptionItem(id, WtLiveQualityCatalog.DisplayName(id))).ToList();
         _selectedWtLiveQuality = WtLiveQualities.FirstOrDefault(
             q => string.Equals(q.Id, config.WtLiveImageQuality, StringComparison.OrdinalIgnoreCase))
             ?? WtLiveQualities[0];
+
+        WtLiveCacheSizes = WtLiveCacheSizeCatalog.SizeIds
+            .Select(id => new WtLiveOptionItem(id, WtLiveCacheSizeCatalog.DisplayName(id))).ToList();
+        _selectedWtLiveCacheSize = WtLiveCacheSizes.FirstOrDefault(
+            s => string.Equals(s.Id, config.WtLivePreviewCacheMb, StringComparison.Ordinal))
+            ?? WtLiveCacheSizes.First(s => s.Id == WtLiveCacheSizeCatalog.DefaultId);
 
         // 子页状态变化 → 刷新标题右侧的统一提示位点
         Skins.PropertyChanged += OnChildChanged;
@@ -969,6 +981,7 @@ public partial class MainViewModel : ObservableObject
             case nameof(AppConfig.ConfigDirectory):
                 PartExclusionService.Configure(Config.ConfigDirectory);
                 DataTables.Configure(Config.ConfigDirectory); // 译名 / 武器表跟随配置目录（§3.6 / §3.7）
+                WtLivePreviewCache.Configure(Config.ConfigDirectory); // 预览图缓存也跟着走（§5.7.1）
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 OnPropertyChanged(nameof(ResourceBlockEnabled)); // 「更新资源」卡随目录就绪启停（§3.15）
                 break;
@@ -1075,15 +1088,48 @@ public partial class MainViewModel : ObservableObject
     // ---------- WT Live 卡片图片清晰度 ----------
 
     /// <summary>清晰度档位下拉项（低清 / 中清 / 高清，见 Services.WtLiveQualityCatalog）。</summary>
-    public IReadOnlyList<WtLiveQualityItem> WtLiveQualities { get; }
+    public IReadOnlyList<WtLiveOptionItem> WtLiveQualities { get; }
 
-    [ObservableProperty] private WtLiveQualityItem? _selectedWtLiveQuality;
+    [ObservableProperty] private WtLiveOptionItem? _selectedWtLiveQuality;
+
+    /// <summary>预览图缓存上限下拉项（50 MB ~ 1 GB，见 Services.WtLiveCacheSizeCatalog）。</summary>
+    public IReadOnlyList<WtLiveOptionItem> WtLiveCacheSizes { get; }
+
+    [ObservableProperty] private WtLiveOptionItem? _selectedWtLiveCacheSize;
+
+    /// <summary>
+    /// 改上限即落盘、交给缓存服务并**立刻回收一次**——用户刚把 500 MB 调成 50 MB，
+    /// 就该看到配置目录当场瘦下来，而不是等下次写缓存才生效。
+    /// </summary>
+    partial void OnSelectedWtLiveCacheSizeChanged(WtLiveOptionItem? value)
+    {
+        if (value == null) return;
+        if (string.Equals(value.Id, Config.WtLivePreviewCacheMb, StringComparison.Ordinal)) return;
+
+        Config.WtLivePreviewCacheMb = value.Id;
+        SafePersist();
+        ApplyPreviewCacheLimit();
+        ShowStatus(Loc.Format("settings.wtliveCacheSize.changed", value.DisplayName));
+    }
+
+    /// <summary>
+    /// 把设置里的上限交给 <see cref="WtLivePreviewCache"/>，并后台回收一次
+    /// （几百个文件也不卡界面；缓存服务自己吞掉所有异常）。
+    /// </summary>
+    private void ApplyPreviewCacheLimit()
+    {
+        WtLivePreviewCache.LimitBytes = WtLiveCacheSizeCatalog.Bytes(Config.WtLivePreviewCacheMb);
+
+        if (Config.ConfigDirectory.Length == 0) return;
+
+        _ = Task.Run(WtLivePreviewCache.Trim);
+    }
 
     /// <summary>
     /// 改档即落盘并转给 <see cref="WtLive"/>（缩略图按档位选源图与解码宽度）；
     /// 只影响**之后**加载的缩略图——已加载的卡片不重下（一页 25 张，重下既费流量也压站点）。
     /// </summary>
-    partial void OnSelectedWtLiveQualityChanged(WtLiveQualityItem? value)
+    partial void OnSelectedWtLiveQualityChanged(WtLiveOptionItem? value)
     {
         if (value == null) return;
         if (string.Equals(value.Id, Config.WtLiveImageQuality, StringComparison.OrdinalIgnoreCase)) return;

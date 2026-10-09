@@ -296,7 +296,8 @@ public partial class WtLiveViewModel : ObservableObject
 
     private static async Task<ImageSource> FetchAndDecodeAsync(string url, int decodeWidth, CancellationToken token)
     {
-        var bytes = await WTLiveService.FetchImageAsync(url, token);
+        // 取字节走缓存版（命中零网络）：浏览页翻回去、重开详情都不该重新下载同一张图
+        var bytes = await WTLiveService.FetchImageCachedAsync(url, token);
         return await Task.Run(() => DecodeThumbnail(bytes, decodeWidth), token);
     }
 

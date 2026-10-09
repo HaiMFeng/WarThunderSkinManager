@@ -42,7 +42,8 @@ public partial class ResetDataViewModel : ObservableObject
         Plan.PackageCount, Plan.VehicleCount, Plan.BlobCount, DataResetService.FormatSize(Plan.BlobBytes));
 
     public string ConfigStatText => Loc.Format("settings.reset.stat.config",
-        Plan.MappingCount, Plan.CountryOverrideCount, Plan.LoadoutCount, Plan.PreviewCount);
+        Plan.MappingCount, Plan.CountryOverrideCount, Plan.LoadoutCount, Plan.PreviewCount,
+        DataResetService.FormatSize(Plan.PreviewCacheBytes));
 
     public string OutputStatText => Loc[Plan.HasWtsmOutput
         ? "settings.reset.stat.output.exists"

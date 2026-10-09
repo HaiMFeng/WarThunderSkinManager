@@ -235,7 +235,8 @@ public partial class WtLiveDetailViewModel : ObservableObject
 
         try
         {
-            var bytes = await WTLiveService.FetchImageAsync(slot.Url, token);
+            // 取字节走缓存版（命中零网络）：同一张图在浏览页与详情浮窗之间复用
+            var bytes = await WTLiveService.FetchImageCachedAsync(slot.Url, token);
             slot.Image = await Task.Run(() => Decode(bytes, ImageDecodeWidth), token);
             slot.IsPlaceholder = false;
         }

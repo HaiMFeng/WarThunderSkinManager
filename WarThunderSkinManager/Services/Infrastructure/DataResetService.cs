@@ -37,6 +37,10 @@ public sealed class ResetPlan
     public int CountryOverrideCount { get; init; }
     public int LoadoutCount { get; init; }
     public int PreviewCount { get; init; }
+
+    /// <summary>WT Live 预览图磁盘缓存占用（<c>wtlive-cache/</c>，按上限 LRU 回收，见 <see cref="WtLivePreviewCache"/>）。</summary>
+    public long PreviewCacheBytes { get; init; }
+
     public bool HasWtsmOutput { get; init; }
 }
 
@@ -92,6 +96,7 @@ public static class DataResetService
             CountryOverrideCount = countries,
             LoadoutCount = CountFiles(Path.Combine(configDir, "loadouts"), "*.json"),
             PreviewCount = CountFiles(Path.Combine(configDir, "previews"), "*.png"),
+            PreviewCacheBytes = DirectoryBytes(Path.Combine(configDir, "wtlive-cache")),
             HasWtsmOutput = wtsm.Length > 0 && Directory.Exists(wtsm)
         };
     }
@@ -116,6 +121,7 @@ public static class DataResetService
                 DeleteDirectory(Path.Combine(configDir, "mappings"), errors);
                 DeleteDirectory(Path.Combine(configDir, "loadouts"), errors);
                 DeleteDirectory(Path.Combine(configDir, "previews"), errors);
+                DeleteDirectory(Path.Combine(configDir, "wtlive-cache"), errors); // 预览图缓存（§5.7.1）
             }
 
             if (options.ClearSettings)
@@ -147,6 +153,28 @@ public static class DataResetService
             return Directory.Exists(directory)
                 ? Directory.EnumerateFiles(directory, pattern, SearchOption.TopDirectoryOnly).Count()
                 : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>递归统计目录下所有文件的字节数（用于展示缓存/资源占用）。</summary>
+    private static long DirectoryBytes(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory)) return 0;
+
+            long bytes = 0;
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                try { bytes += new FileInfo(file).Length; }
+                catch { /* 忽略单个文件读取失败 */ }
+            }
+
+            return bytes;
         }
         catch
         {

@@ -47,6 +47,13 @@ public partial class AppConfig : ObservableObject
     [ObservableProperty] private string _wtLiveImageQuality = "low";
 
     /// <summary>
+    /// WT Live 预览图磁盘缓存的上限，单位 MB 的字符串档位（50 / 100 / 200 / 500 / 1024，
+    /// 见 Services.WtLiveCacheSizeCatalog；**默认 200 MB**）。
+    /// 缓存目录 = &lt;配置目录&gt;/wtlive-cache，超上限按 LRU 回收。
+    /// </summary>
+    [ObservableProperty] private string _wtLivePreviewCacheMb = "200";
+
+    /// <summary>
     /// 是否启用「多源复用」（§3.13，默认关闭）：用户把 UV 一致、贴图可互换的部件位置（from）
     /// 分为一组后，涂装包属性页选贴图时同组其他 from 的贴图也进入候选（红色「多源」标注）。
     /// 关闭只停用（导航页隐藏、候选恢复常规），组数据保留。

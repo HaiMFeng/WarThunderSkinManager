@@ -142,13 +142,16 @@
                 </StackPanel>
             </Border>
 
-            <!-- WT Live 卡片图片清晰度：站点为同一张预览图提供多级变体
-                 （低清 _lq / 中清 _mq / 原图，见 Services.WtLiveQualityCatalog） -->
+            <!-- WT Live 卡片：图片清晰度（站点多级变体，见 Services.WtLiveQualityCatalog）
+                 + 预览图磁盘缓存上限（LRU 回收，见 Services.WtLivePreviewCache） -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.wtliveQuality}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                     <TextBlock Text="{loc:Loc settings.wtliveQuality.hint}" Style="{StaticResource PageSubtitle}"
                                TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                    <TextBlock Text="{loc:Loc settings.wtliveQuality.label}" Style="{StaticResource FieldLabel}"
+                               Margin="0,0,0,6"/>
                     <ComboBox Style="{StaticResource BaseComboBox}" Width="260" HorizontalAlignment="Left"
                               ItemsSource="{Binding WtLiveQualities}"
                               SelectedItem="{Binding SelectedWtLiveQuality, Mode=TwoWay}">
@@ -158,6 +161,20 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
+
+                    <TextBlock Text="{loc:Loc settings.wtliveCacheSize}" Style="{StaticResource FieldLabel}"
+                               Margin="0,18,0,6"/>
+                    <ComboBox Style="{StaticResource BaseComboBox}" Width="260" HorizontalAlignment="Left"
+                              ItemsSource="{Binding WtLiveCacheSizes}"
+                              SelectedItem="{Binding SelectedWtLiveCacheSize, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{loc:Loc settings.wtliveCacheSize.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,8,0,0"/>
                 </StackPanel>
             </Border>
 
