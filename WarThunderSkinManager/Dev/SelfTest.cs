@@ -504,7 +504,8 @@ internal static class SelfTest
 
                 log.AppendLine($"输入框内边距: Padding 6 → 文字起点 {origins[0]:0.##}，28 → {origins[1]:0.##}，"
                              + $"右移 {origins[1] - origins[0]:0.##}（应 22 = 28 - 6；44 即被应用了两次）"
-                             + $"，占位文案起点（边框 1 + Padding）= 7 / 29");
+                             + $"，占位文案若要**左对齐**则起点须为 边框 1 + Padding（= 7 / 29），"
+                             + $"若要居中则左右内缩对称即可");
                 log.AppendLine($"输入框纵向内边距: 多行框 Padding.Top=5 → 文字 Y = {multiTextY:0.##}"
                              + $"（内容宿主体 Y = {multiHostY:0.##}，应再 +5 ≈ {multiHostY + 5:0.##}）");
             }

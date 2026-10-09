@@ -45,10 +45,12 @@
                                    Margin="9,0,0,0" VerticalAlignment="Center"
                                    Foreground="{StaticResource BrushTextMuted}" IsHitTestVisible="False"/>
 
-                        <!-- 占位文案（空时显示，与载具管理页同一做法）。
-                             Margin 必须等于「边框 1 + Padding 28」= 输入光标的起点，否则两者会错位；
-                             右侧 30 让长占位文案在「×」之前截断 -->
-                        <TextBlock Text="{loc:Loc wtlive.search.placeholder}" Margin="29,0,30,0"
+                        <!-- 占位文案（空时显示）：**水平居中**。
+                             它与输入文字是两个各自独立的元素，因此提示居中、输入仍左对齐互不影响；
+                             左右各 30 是**对称**内缩（避开左侧放大镜与右侧「×」），
+                             这样居中点正好落在输入框中心，而不是被单侧留白推偏 -->
+                        <TextBlock Text="{loc:Loc wtlive.search.placeholder}" Margin="30,0,30,0"
+                                   HorizontalAlignment="Center"
                                    VerticalAlignment="Center" Foreground="{StaticResource BrushTextMuted}"
                                    IsHitTestVisible="False" TextTrimming="CharacterEllipsis">
                             <TextBlock.Style>
