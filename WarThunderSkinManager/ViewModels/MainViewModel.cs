@@ -442,7 +442,7 @@ public partial class MainViewModel : ObservableObject
         MigrationResult migrated;
 
         // 统一遮罩 + 全局独占（禁用式）：迁移期间主界面与此刻已存在的其它顶层窗整体锁住，
-        // 取消入口就在遮罩上——封锁范围与旧模态进度窗等价（见 docs/处理中反馈统一设计.md §4.2）
+        // 取消入口就在遮罩上——封锁范围与旧模态进度窗等价（见 docs/界面设计规范.md §2.6）
         using (var scope = BusyIndicator.Instance.Begin(Loc["migrate.running"], cts.Cancel))
         {
             var reporter = new Progress<MigrationProgress>(p => ApplyMigrationProgress(scope, p));

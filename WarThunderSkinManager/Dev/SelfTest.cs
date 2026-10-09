@@ -1590,7 +1590,7 @@ internal static class SelfTest
                          + $"内层释放后仍忙 = {stillBusy}、文案不变 = {textStillOuter}（应 True/True），"
                          + $"全部释放 = {clearedAfterAll}（应 True）");
 
-            // ---- 统一容器：进度与取消（docs/处理中反馈统一设计.md 阶段 1）----
+            // ---- 统一容器：进度与取消（见 docs/界面设计规范.md §2.6）----
             // 进度 / 取消由最外层作用域决定、越界夹紧、无总量退化为不定态、计数归零后连同取消一起重置
             var cancelRequested = 0;
             var progressScope = busyIndicator.Begin("带进度", () => cancelRequested++);

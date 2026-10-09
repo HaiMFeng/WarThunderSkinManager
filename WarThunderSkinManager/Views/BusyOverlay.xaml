@@ -84,7 +84,7 @@
 
                 <!-- 取消入口：只有传了取消回调才出现（CanCancel）。
                      长任务必须在**遮罩上**就能取消 —— 否则遮罩会挡住别处的取消按钮（实测踩过，
-                     见 docs/处理中反馈统一设计.md §3.6）。
+                     见 docs/界面设计规范.md §2.6）。
                      请求已投递（CancelRequested）→ 换成「正在取消…」并置灰，等流程自己收尾 -->
                 <Button HorizontalAlignment="Right" Margin="0,12,0,0" Click="Cancel_Click">
                     <Button.Style>

@@ -77,7 +77,7 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     /// <param name="onCancel">
     /// 非空 → 遮罩上出现「取消」按钮，点击时执行它。**取消入口必须始终可点**：
     /// 全屏遮罩只应在"取消入口就在遮罩上"时才用于长任务（实测教训见
-    /// <c>docs\处理中反馈统一设计.md</c> §3.6 与 <c>MainViewModel</c> 的应用更新下载注释）。
+    /// <c>docs\界面设计规范.md</c> §2.6 与 <c>MainViewModel</c> 的应用更新下载注释）。
     /// 回调应只做"置位取消令牌"这类轻量动作 —— 它在 UI 线程上执行。
     /// </param>
     public Scope Begin(string text, Action? onCancel)
