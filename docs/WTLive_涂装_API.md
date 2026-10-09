@@ -119,7 +119,7 @@ Feed.type    = 'regular';
 ### 3.4 鉴权
 
 - **无需登录**：匿名请求返回数据与登录态完全一致（已验证）。
-- 仅当访问**你自己的私人内容**（`get_subscribes_users` / `get_hidden`，见 §11/§12.9）或**实际下载文件**时才涉及会话（下载直链本身匿名可见，取文件鉴权见第 6 节待验证项）。
+- 仅当访问**你自己的私人内容**（`get_subscribes_users` / `get_hidden`，见 §11/§12.9）或**实际下载文件**时才涉及会话（下载直链本身匿名可见，下载 zip 附件亦匿名可用，见 §13）。
 
 ### 3.5 变体：按作者浏览（`get_user`，**匿名可用**）
 
@@ -193,7 +193,7 @@ https://live.warthunder.com/dl/d6eee2eadd3b943b7f4de841ceda651f79010b31/
 字段：`file = {id, name:"...zip", link:"...", type:"application/zip", size:111263}`。
 
 - **预览图**：`images.src`（`https://cdn-live.warthunder.com/uploads/...`）。
-- **待验证**：下载直链 URL 匿名可见，但**实际下载 zip 文件是否仍需登录会话 Cookie**，本次未实测（建议补测；若限登录，下载模块需注入 Cookie）。
+- **已确认（见 §13.2）**：下载直链 URL 匿名可见，且**实际下载 zip 附件同样无需登录会话 Cookie**（来源 `docs/WTLive下载集成.md`）。
 
 ---
 
@@ -220,7 +220,7 @@ https://live.warthunder.com/dl/d6eee2eadd3b943b7f4de841ceda651f79010b31/
 6. **去重/缓存**：以 `lang_group` 为主键，跨 `sort`/翻页去重；可做本地缓存减少请求。
 7. **限流**：实测翻页间加 ~1s 间隔、断连重试即可稳定；建议客户端做简单节流，避免触发风控。
 
-### C# 调用示例（HttpClient）
+### 8.1 C# 调用示例（HttpClient）
 
 ```csharp
 using var client = new HttpClient();
@@ -259,13 +259,11 @@ var json = await resp.Content.ReadAsStringAsync();
 
 | 事项 | 状态 |
 |---|---|
-| 下载直链匿名能否实际取文件（zip） | 待验证（链接本身匿名可见） |
+| 下载直链匿名能否实际取文件（zip） | **已确认：匿名可用**（见 §13.2） |
 | `get_user` 是否需登录 | **已验证：匿名可用**（给定有效 `user=<作者id>` 即返回 200；见 §3.5） |
 | `period` 完整取值枚举 | 待验证（已知 0/1/7/30/365 等） |
 | 站点限流/风控阈值 | 待观察（实测每页间隔 1s 稳定） |
 | 多语言 `language` 对 `vehicle` 筛选的影响 | 列表返回多语言混合，`lang_group` 唯一；按 `lang_group` 去重即可 |
-
----
 
 ---
 
@@ -312,8 +310,6 @@ var json = await resp.Content.ReadAsStringAsync();
 - 但**"按指定作者 id 浏览其公开作品"（`get_user`）是匿名的**，可作为公开的"按作者筛选"能力纳入（§3.5），与放弃登录的范围决策不冲突。
 - **最终决策（见 §14）：放弃登录与"我的订阅/隐藏"展示功能**——产品范围保留公开能力（列表浏览、按载具筛选、按作者浏览、预览、下载）。订阅/隐藏等私有 feed **不纳入实现**。
 - 本节与第 12 节仅作技术调研存档；若未来需扩展"我的订阅"，再按 §12.4 + §12.9 的 WebView2 方案立项。
-
----
 
 ---
 
@@ -372,49 +368,6 @@ var json = await resp.Content.ReadAsStringAsync();
 - **密码前端 base64 编码**：提交时密码并非明文，前端先 base64 后再以 `password_hidden` 字段 POST。纯脚本复刻需先对密码做 base64 编码。
 - **两步验证（2FA）**：开启 2FA 的账号，首次提交账密后进入第二步——`/en/sso/login/procedure/` 返回「Enter the verification code from the app」页，需继续提交 `code`（TOTP，来自 Gaijin Pass / Google Authenticator / War Thunder Assistant）+ `request_id`（关联本次会话）。无验证码则无法完成登录。
 - **结论强化**：账密 + 可能的 TOTP 使纯 HTTP 脚本登录极难稳定实现；**嵌入式浏览器（WebView）方案成为唯一务实路径**——真实用户在熟悉的 Gaijin 登录页完成密码与验证码输入，应用仅负责收割回跳后的 `live.warthunder.com` 会话 Cookie。
-
----
-
----
-
-## 13. 下载端点（基于 `docs/WTLive下载集成.md`，已确认匿名可用）
-
-> 来源：`WarThunderSkinManager/docs/WTLive下载集成.md`（前期分析）。以下端点**匿名可用**，无需登录。
-
-### 13.1 帖子详情（获取下载直链）
-
-```
-POST https://live.warthunder.com/api/posts/get/
-Content-Type: application/x-www-form-urlencoded; charset=UTF-8
-X-Requested-With: XMLHttpRequest
-User-Agent: <浏览器 UA，必须>
-Referer: https://live.warthunder.com/post/<lang_group>/en/
-
-lang_group=<帖子id>&language=en
-```
-
-- `lang_group` = 帖子定位 id（即 `get_regular` 列表里的 `lang_group`）；`language` = `en`/`zh`…
-- **必须**带 `User-Agent` 与 `X-Requested-With`，否则响应 `{"status":"ERR"}`。
-- **匿名可正常返回**；HTTP 恒为 200，成败以响应体 `status=="ERR"` 判定（参数错误也返回 200）。
-- 关键返回字段：`status`(OK/ERR)、`type`(camouflage)、`file.name`、`file.link`(`/dl/<hash>/`)、`file.size`、`images[].orig.src`（预览原图）。
-- `file == null` 的帖子（作者用外部网盘）无法程序内下载，只能引导浏览器手动下。
-
-### 13.2 附件下载（直链）
-
-```
-GET https://live.warthunder.com/dl/<hash>/
-Referer: https://live.warthunder.com/
-User-Agent: <浏览器 UA>
-```
-
-- `<hash>` 与帖子 id 无关，是附件自身哈希（`file.link` 中那段）。
-- 返回 `application/octet-stream`，**无需登录**；附件是 zip（涂装模板包），可直接解压。
-- 下载同样建议做 zip 条目路径校验（来源安全检查）。
-
-### 13.3 与第 6 节的关系
-
-- 列表 `get_regular` 已内嵌 `file.link`，与上述直链一致；无需额外请求即可拿到下载地址。
-- `main.js` 中还存在 `get_post`（返回 HTML lightbox 片段），与本文档的 `get`（返回 JSON）并存；**下载流程建议用 JSON 版 `get`**，字段稳定、便于解析。
 
 ---
 
@@ -501,6 +454,47 @@ POST https://login.gaijin.net/en/sso/login/procedure/  # code=<TOTP>, request_id
 
 ---
 
+## 13. 下载端点（基于 `docs/WTLive下载集成.md`，已确认匿名可用）
+
+> 来源：`WarThunderSkinManager/docs/WTLive下载集成.md`（前期分析）。以下端点**匿名可用**，无需登录。
+
+### 13.1 帖子详情（获取下载直链）
+
+```
+POST https://live.warthunder.com/api/posts/get/
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+User-Agent: <浏览器 UA，必须>
+Referer: https://live.warthunder.com/post/<lang_group>/en/
+
+lang_group=<帖子id>&language=en
+```
+
+- `lang_group` = 帖子定位 id（即 `get_regular` 列表里的 `lang_group`）；`language` = `en`/`zh`…
+- **必须**带 `User-Agent` 与 `X-Requested-With`，否则响应 `{"status":"ERR"}`。
+- **匿名可正常返回**；HTTP 恒为 200，成败以响应体 `status=="ERR"` 判定（参数错误也返回 200）。
+- 关键返回字段：`status`(OK/ERR)、`type`(camouflage)、`file.name`、`file.link`(`/dl/<hash>/`)、`file.size`、`images[].orig.src`（预览原图）。
+- `file == null` 的帖子（作者用外部网盘）无法程序内下载，只能引导浏览器手动下。
+
+### 13.2 附件下载（直链）
+
+```
+GET https://live.warthunder.com/dl/<hash>/
+Referer: https://live.warthunder.com/
+User-Agent: <浏览器 UA>
+```
+
+- `<hash>` 与帖子 id 无关，是附件自身哈希（`file.link` 中那段）。
+- 返回 `application/octet-stream`，**无需登录**；附件是 zip（涂装模板包），可直接解压。
+- 下载同样建议做 zip 条目路径校验（来源安全检查）。
+
+### 13.3 与第 6 节的关系
+
+- 列表 `get_regular` 已内嵌 `file.link`，与上述直链一致；无需额外请求即可拿到下载地址。
+- `main.js` 中还存在 `get_post`（返回 HTML lightbox 片段），与本文档的 `get`（返回 JSON）并存；**下载流程建议用 JSON 版 `get`**，字段稳定、便于解析。
+
+---
+
 ## 14. 范围决策（2026-10-09）：**放弃用户登录与订阅展示功能**
 
 > **明确结论**：`WarThunderSkinManager` 的"应用内涂装浏览器"**不实现用户登录模块**，也**不展示"订阅作者的作品 / 个人内容流 / 隐藏内容"**。本决策为产品范围的最终裁定，后续开发以本节为准。
@@ -518,7 +512,7 @@ POST https://login.gaijin.net/en/sso/login/procedure/  # code=<TOTP>, request_id
 | 涂装列表浏览（`get_regular`） | ✅ 纳入 | 匿名 `HttpClient`，无需登录 |
 | 按载具筛选（`vehicle=<裸 id>`） | ✅ 纳入 | 同列表，匿名 |
 | 预览图 / 详情 | ✅ 纳入 | `images.src` / 帖子详情，匿名 |
-| 下载直链（`file.link`） | ✅ 纳入 | 列表内嵌，匿名可取（待 §6.2 闭环） |
+| 下载直链（`file.link`） | ✅ 纳入 | 列表内嵌，匿名可取（见 §13.2） |
 | **用户登录** | ❌ **放弃** | 不提供登录入口、不维护会话 |
 | **按作者浏览**（`get_user`，指定作者公开主页） | ✅ 纳入 | 匿名可用，URL `/user/<id>/` 取 id，见 §3.5 |
 | **订阅作者作品流**（`get_subscribes_users`，你关注的） | ❌ **放弃** | 私有 feed，需 SSO，不在范围 |
