@@ -98,6 +98,127 @@ public static class VehicleNameTable
         return Lookup(vehicleId) ?? vehicleId;
     }
 
+    // ---------- WT Live 载具搜索（§4.1 / §4.2）----------
+
+    /// <summary>载具下拉项：WT Live 裸 id + 当前界面语言的显示名。</summary>
+    public sealed record VehicleOption(string Id, string DisplayName);
+
+    /// <summary>
+    /// units.csv 里**不是可玩载具**的类别前缀（行 id 第一段）：场景道具与礼包，
+    /// 不进入 WT Live 载具搜索（否则会出现 "Chimney" / "Building" 这类条目）。
+    /// </summary>
+    private static readonly HashSet<string> NonVehiclePrefixes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "structures", "radars", "shop"
+    };
+
+    /// <summary>
+    /// units.csv 的行后缀（§4.1）：<c>_0</c> 全名 / <c>_1</c> 短名 / <c>_2</c> 类型 / <c>_shop</c> 商店名 / <c>_group</c> 礼包组。
+    /// **只有这些才算行后缀**——按"末尾下划线 + 任意数字"泛化会截断 id 本身（如 <c>germ_pzV_a_panter_3</c>）。
+    /// 长后缀排前面，避免 <c>_1</c> 先匹配上 <c>..._shop</c> 之类的误判（虽然当前无交集，防御性写法）。
+    /// </summary>
+    private static readonly string[] RowSuffixes = { "_shop", "_group", "_0", "_1", "_2" };
+
+    /// <summary>
+    /// **全部可玩载具**（读 units.csv，§4.1）：WT Live 裸 id + 当前界面语言显示名，按显示名排序。
+    /// <para>
+    /// 只取 <c>_1</c>（短名，本程序采用的形态）与 <c>_0</c>（全名，缺短名时兜底）两类行；
+    /// 裸 id = 行 id 去类别前缀与行后缀（<see cref="ToVehicleId"/>）。
+    /// </para>
+    /// <para>
+    /// units.csv 有 6 MB、首次调用要解析（秒级）→ **调用方放后台线程**（见
+    /// <c>WtLiveViewModel.EnsureLoaded</c>）。
+    /// </para>
+    /// </summary>
+    public static List<VehicleOption> AllVehicles(string? culture = null)
+    {
+        var table = TableFor(culture ?? LocalizationManager.Instance.Culture);
+        var result = new List<VehicleOption>();
+        if (table == null) return result;
+
+        // 同一载具可能有多行（_1 短名 / _0 全名）：**短名优先**，缺失时用全名
+        var rankById = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var nameById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pair in table)
+        {
+            if (!TryToVehicleRow(pair.Key, out var vehicleId, out var rank)) continue;
+            if (rankById.TryGetValue(vehicleId, out var existing) && existing <= rank) continue;
+
+            rankById[vehicleId] = rank;
+            nameById[vehicleId] = pair.Value;
+        }
+
+        foreach (var vehicleId in rankById.Keys)
+            result.Add(new VehicleOption(vehicleId, nameById[vehicleId]));
+
+        result.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName,
+            StringComparison.CurrentCultureIgnoreCase));
+        return result;
+    }
+
+    /// <summary>
+    /// units.csv 行 id → WT Live 裸 id（§4.2）：去 <c>类别/</c> 前缀、去 <c>_0</c>/<c>_1</c>/<c>_2</c>/<c>_shop</c>/<c>_group</c> 行后缀。
+    /// <para>
+    /// **只识别这些已知行后缀**，绝不按"末尾 <c>_</c> + 数字"泛化——如
+    /// <c>tracked_vehicles/germ_pzV_a_panter_3</c> 的 <c>_3</c> 是 id 本身（泛化会把它截成错的 id）。
+    /// 非载具行（<see cref="NonVehiclePrefixes"/> 前缀 / 前缀不是行后缀）原样返回去前缀的结果。
+    /// </para>
+    /// </summary>
+    public static string ToVehicleId(string rowId)
+    {
+        if (string.IsNullOrWhiteSpace(rowId)) return "";
+
+        var bare = StripPrefix(rowId);
+        foreach (var suffix in RowSuffixes)
+        {
+            if (bare.Length > suffix.Length && bare.EndsWith(suffix, StringComparison.Ordinal))
+                return bare[..^suffix.Length];
+        }
+
+        return bare; // 没有已知行后缀（如 germ_pzV_a_panter_3 的 _3 是 id 本身）→ 原样
+    }
+
+    /// <summary>行 id 去 <c>类别/</c> 前缀（<c>ships/uss_cv_immortal_0</c> → <c>uss_cv_immortal_0</c>）。</summary>
+    private static string StripPrefix(string rowId)
+    {
+        var slash = rowId.LastIndexOf('/');
+        return slash >= 0 ? rowId[(slash + 1)..] : rowId;
+    }
+
+    /// <summary>行 id → 裸 id + 行后缀优先级（<c>_1</c> = 0 最优，<c>_0</c> = 1）；非载具行返回 <c>false</c>。</summary>
+    private static bool TryToVehicleRow(string rowId, out string vehicleId, out int rank)
+    {
+        vehicleId = "";
+        rank = int.MaxValue;
+
+        // 类别前缀取**第一段**（如 shop/group/x → shop）：
+        // 礼包（shop）、场景道具（structures / radars）不是可玩载具，直接排除
+        var firstSlash = rowId.IndexOf('/');
+        if (firstSlash > 0 && NonVehiclePrefixes.Contains(rowId[..firstSlash])) return false;
+
+        // 这里只认 _1 / _0 两种"载具名"行，因此单独判后缀、不用 ToVehicleId
+        // （_2 / _shop / _group 等行不能进下拉，否则会多出"类型名""商店名"条目）
+        var bare = StripPrefix(rowId);
+
+        if (bare.Length > 2 && bare.EndsWith("_1", StringComparison.Ordinal))
+        {
+            rank = 0;                       // 短名（本程序采用的形态，§4.1）
+            vehicleId = bare[..^2];
+        }
+        else if (bare.Length > 2 && bare.EndsWith("_0", StringComparison.Ordinal))
+        {
+            rank = 1;                       // 全名（缺短名时兜底）
+            vehicleId = bare[..^2];
+        }
+        else
+        {
+            return false;                   // _2 类型 / _shop / _group / 无后缀 → 不是"载具名"行
+        }
+
+        return vehicleId.Length > 0;
+    }
+
     // ---------- 内部 ----------
 
     private static Dictionary<string, string>? TableFor(string? culture)

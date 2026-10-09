@@ -30,9 +30,14 @@ public partial class WtLiveView : UserControl
         // 切页只是 Visibility 变化，所以用 IsVisibleChanged 而不是 Loaded（后者一辈子只触发一次）
         IsVisibleChanged += (_, e) =>
         {
-            if (!(bool)e.NewValue) return;
+            if (!(bool)e.NewValue)
+            {
+                ViewModel?.CloseSuggestions(); // 切走时收起搜索下拉（Popup 不随页面隐藏而消失）
+                return;
+            }
 
             ViewModel?.EnsureLoaded();
+            ViewModel?.EnsureVehicleOptions(); // 换过 units.csv 时让搜索下拉的名字立刻跟上
             HookColumnWidth(); // 首次可见时布局才跑过，此时才能找到面板
         };
     }
@@ -81,6 +86,57 @@ public partial class WtLiveView : UserControl
         if (sender is FrameworkElement { DataContext: WtLiveCardItem card })
             ViewModel?.Detail.OpenCommand.Execute(card);
     }
+
+    // ---------- 搜索框（下拉导航与开合在视图层，数据与筛选语义在 WtLiveViewModel）----------
+
+    /// <summary>点/焦点回到搜索框：重开下拉（文本非空时）。</summary>
+    private void SearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => ViewModel?.FocusSearch();
+
+    /// <summary>
+    /// 失焦收起下拉。下拉项是**不可聚焦**的按钮 → 点它们不会走到这里（否则会在点击生效前先把下拉关掉）；
+    /// 真正离开搜索框时才收起。
+    /// </summary>
+    private void SearchBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!SearchPopup.IsKeyboardFocusWithin) ViewModel?.CloseSuggestions();
+    }
+
+    /// <summary>搜索框键盘：上下移动高亮、Enter 应用（无高亮则把当前文本当关键词搜）、Escape 收起。</summary>
+    private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var viewModel = ViewModel;
+        if (viewModel == null) return;
+
+        switch (e.Key)
+        {
+            case Key.Escape:
+                viewModel.CloseSuggestions();
+                e.Handled = true;
+                break;
+
+            case Key.Down:
+                if (viewModel.IsSuggestionsOpen) viewModel.MoveHighlight(1);
+                else viewModel.FocusSearch(); // 下拉没开就先打开（默认高亮首项）
+                e.Handled = true;
+                break;
+
+            case Key.Up:
+                if (viewModel.IsSuggestionsOpen) viewModel.MoveHighlight(-1);
+                else viewModel.FocusSearch();
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
+                viewModel.SubmitSearchCommand.Execute(null);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    /// <summary>点列表区域即收起搜索下拉（点击不可聚焦的卡片不会让搜索框失焦）。</summary>
+    private void ListScroll_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        => ViewModel?.CloseSuggestions();
 
     /// <summary>深度优先找瀑布流面板（面板本身没有 x:Name，只能在可视化树里找）。</summary>
     private static MasonryPanel? FindPanel(DependencyObject? root)

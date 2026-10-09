@@ -17,20 +17,168 @@
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
-            <StackPanel>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
                 <TextBlock Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
                 <TextBlock Text="{loc:Loc wtlive.page.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
 
-            <Button Content="{loc:Loc wtlive.refresh}" Style="{StaticResource SecondaryButton}"
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom" MinWidth="76"
-                    Command="{Binding WtLive.RefreshCommand}"/>
+            <!-- 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
+                 搜索框**不只用来选载具**：输入即给下拉——载具、关键词搜索、清除三条通道，
+                 选中载具 → 按载具筛选；选中关键词 → searchString 搜索（见 WtLiveViewModel）。 -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Grid Width="300">
+                        <TextBox x:Name="SearchBox" Style="{StaticResource BaseTextBox}"
+                                 Padding="28,0,28,0"
+                                 Text="{Binding WtLive.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 PreviewKeyDown="SearchBox_PreviewKeyDown"
+                                 GotKeyboardFocus="SearchBox_GotKeyboardFocus"
+                                 LostKeyboardFocus="SearchBox_LostKeyboardFocus"/>
+
+                        <!-- 前置放大镜（纯装饰，不挡点击） -->
+                        <TextBlock Text="&#xF002;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   Margin="9,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{StaticResource BrushTextMuted}" IsHitTestVisible="False"/>
+
+                        <!-- 占位文案（空时显示，与载具管理页同一做法） -->
+                        <TextBlock Text="{loc:Loc wtlive.search.placeholder}" Margin="28,0,0,0"
+                                   VerticalAlignment="Center" Foreground="{StaticResource BrushTextMuted}"
+                                   IsHitTestVisible="False" TextTrimming="CharacterEllipsis">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WtLive.SearchText}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- 清空（有内容才出现） -->
+                        <Button Content="&#xF00D;" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Margin="0,0,4,0" ToolTip="{loc:Loc wtlive.search.clear}"
+                                Command="{Binding WtLive.ClearSearchCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WtLive.HasSearchText}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <!-- 搜索下拉。StaysOpen=True + 手动开合：项是**不可聚焦**的按钮，
+                             点它不会让输入框失焦，因此不会出现"点不下去"（见 code-behind 的失焦处理） -->
+                        <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}"
+                               Placement="Bottom" VerticalOffset="4"
+                               StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade"
+                               IsOpen="{Binding WtLive.IsSuggestionsOpen}">
+                            <!-- 与主题 ComboBox 下拉同一套外观（底 + 描边 + 圆角 8 + 投影） -->
+                            <Border Background="{StaticResource BrushBackground}"
+                                    BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                                    CornerRadius="8" Padding="4" MinWidth="300" MaxWidth="460"
+                                    SnapsToDevicePixels="True">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270"
+                                                      Opacity="0.14" Color="{StaticResource ColorShadow}"/>
+                                </Border.Effect>
+
+                                <ItemsControl ItemsSource="{Binding WtLive.Suggestions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Focusable="False" HorizontalContentAlignment="Stretch"
+                                                    CommandParameter="{Binding}"
+                                                    Command="{Binding DataContext.WtLive.ApplySuggestionCommand,
+                                                              RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Setter Property="BorderThickness" Value="0"/>
+                                                        <Setter Property="Padding" Value="8,6"/>
+                                                        <Setter Property="Cursor" Value="Hand"/>
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border x:Name="bd" CornerRadius="6"
+                                                                            Background="{TemplateBinding Background}"
+                                                                            Padding="{TemplateBinding Padding}">
+                                                                        <ContentPresenter/>
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <!-- 鼠标悬停与键盘高亮用同一个底色 -->
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter TargetName="bd" Property="Background"
+                                                                                    Value="{StaticResource BrushSurface}"/>
+                                                                        </Trigger>
+                                                                        <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                                                            <Setter TargetName="bd" Property="Background"
+                                                                                    Value="{StaticResource BrushSurface}"/>
+                                                                        </DataTrigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </Button.Style>
+
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource IconFont}"
+                                                               FontSize="13" Width="20" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource BrushTextSecondary}"/>
+                                                    <TextBlock Text="{Binding Display}" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Detail}" Margin="10,0,0,0"
+                                                               VerticalAlignment="Center" FontSize="12"
+                                                               Foreground="{StaticResource BrushTextMuted}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </Popup>
+                    </Grid>
+
+                    <Button Content="&#xF021;" Style="{StaticResource IconButton}" Width="34" Height="34"
+                            FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.refresh}"
+                            Command="{Binding WtLive.RefreshCommand}"/>
+                </StackPanel>
+
+                <!-- 当前查询摘要：载具 / 关键词在搜索框里都只是文字，这里点明走的是哪条通道 -->
+                <TextBlock Text="{Binding WtLive.ActiveFilterText}" HorizontalAlignment="Right"
+                           Margin="0,6,0,0" FontSize="12" MaxWidth="420"
+                           Foreground="{StaticResource BrushPrimary}"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,16,0,0">
             <ScrollViewer x:Name="ListScroll" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
-                          ScrollChanged="ListScroll_ScrollChanged">
+                          ScrollChanged="ListScroll_ScrollChanged"
+                          PreviewMouseDown="ListScroll_PreviewMouseDown">
                 <StackPanel>
                     <ItemsControl x:Name="CardList" ItemsSource="{Binding WtLive.Items}">
                         <ItemsControl.ItemsPanel>

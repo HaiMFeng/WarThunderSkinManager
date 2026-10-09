@@ -192,11 +192,14 @@ public static class WTLiveService
     /// 载具裸 id（<c>units.csv</c> 首列去前缀去 <c>_N</c> 后缀，如 <c>cn_m1a2t</c>，§4.2）；
     /// 空 = 不按载具筛选。
     /// </param>
+    /// <param name="searchString">
+    /// 关键词（匹配标题 / 标签，§3.1）；空 = 不按关键词筛选。
+    /// </param>
     /// <param name="sort">
     /// <c>created</c>（最近发布，时间倒序）/ <c>rating</c>（热门）/ <c>comments</c> / <c>downloads</c>（§5）。
     /// </param>
     public static async Task<WTLiveFeedPage> FetchFeedPageAsync(
-        int page, string? vehicle, string sort, CancellationToken ct)
+        int page, string? vehicle, string? searchString, string sort, CancellationToken ct)
     {
         var form = new List<KeyValuePair<string, string>>
         {
@@ -205,7 +208,7 @@ public static class WTLiveService
             new("page", page.ToString(CultureInfo.InvariantCulture)),
             new("period", "0"),   // 0 = 不限时间范围
             new("subtype", "all"),
-            new("searchString", ""),
+            new("searchString", searchString ?? ""),
             new("user", "0"),     // 0 = 不限作者
         };
 

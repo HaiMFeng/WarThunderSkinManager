@@ -52,8 +52,42 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>已到底（本页不足 25 条），不再请求下一页。</summary>
     [ObservableProperty] private bool _isExhausted;
 
-    /// <summary>载具筛选（<c>units.csv</c> 裸 id；null/空 = 全部涂装）。接入筛选 UI 时赋值后调用 <see cref="RefreshCommand"/>。</summary>
+    /// <summary>载具筛选（<c>units.csv</c> 裸 id；null/空 = 全部涂装）。由搜索框选中载具后赋值。</summary>
     [ObservableProperty] private string? _vehicleFilter;
+
+    /// <summary>
+    /// 关键词筛选（接口 <c>searchString=</c>，匹配标题 / 标签；空 = 不限）。
+    /// 与 <see cref="VehicleFilter"/> **互斥**：搜索框一次只表达一个查询维度。
+    /// </summary>
+    [ObservableProperty] private string? _keywordFilter;
+
+    /// <summary>搜索框文本（用户输入；选中载具后回填其显示名）。</summary>
+    [ObservableProperty] private string _searchText = "";
+
+    /// <summary>搜索下拉项（载具 / 关键词 / 清除，见 <see cref="WtLiveSearchSuggestion"/>）。</summary>
+    public ObservableCollection<WtLiveSearchSuggestion> Suggestions { get; } = new();
+
+    /// <summary>下拉是否展开。</summary>
+    [ObservableProperty] private bool _isSuggestionsOpen;
+
+    /// <summary>键盘高亮项（上下键移动，Enter 应用）。</summary>
+    [ObservableProperty] private WtLiveSearchSuggestion? _highlightedSuggestion;
+
+    /// <summary>搜索框里有没有内容（决定「×」清空按钮是否出现）。</summary>
+    public bool HasSearchText => SearchText.Trim().Length > 0;
+
+    /// <summary>是否已有筛选 / 关键词（决定「显示全部涂装」项与筛选摘要是否出现）。</summary>
+    public bool HasFilter => !string.IsNullOrWhiteSpace(VehicleFilter) || !string.IsNullOrWhiteSpace(KeywordFilter);
+
+    /// <summary>
+    /// 当前查询的摘要（空 = 全部涂装）：载具与关键词在搜索框里都只是"一串文字"，
+    /// 这行提示点明当前走的是哪条通道（按载具 / 按关键词）。
+    /// </summary>
+    public string ActiveFilterText => !string.IsNullOrWhiteSpace(VehicleFilter)
+        ? Loc.Format("wtlive.search.byVehicle", SearchText.Trim())
+        : !string.IsNullOrWhiteSpace(KeywordFilter)
+            ? Loc.Format("wtlive.search.byKeyword", KeywordFilter)
+            : "";
 
     /// <summary>列表里有没有内容（空状态与页脚据此显示）。</summary>
     public bool HasItems => Items.Count > 0;
@@ -63,6 +97,18 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>还能不能继续加载（页面首次可见 / 滚动到底时据此请求）。</summary>
     public bool CanLoadMore => !IsLoading && !IsExhausted && !HasError;
+
+    /// <summary>下拉里最多列出的载具条数（其余靠继续输入收敛；键盘上下也够用）。</summary>
+    private const int MaxVehicleSuggestions = 6;
+
+    /// <summary><c>units.csv</c> 的全部可玩载具（后台加载，供搜索下拉用）。</summary>
+    private List<VehicleNameTable.VehicleOption> _vehicleOptions = new();
+
+    /// <summary>载具表是否正在加载（防重入；页面每次显示都会调 <see cref="EnsureVehicleOptions"/>）。</summary>
+    private bool _loadingVehicleOptions;
+
+    /// <summary>加载中收到的「换条件重来」请求：等当前这页回来再执行（见 <see cref="Refresh"/>）。</summary>
+    private bool _refreshQueued;
 
     private int _nextPage;
     private bool _started;
@@ -115,6 +161,7 @@ public partial class WtLiveViewModel : ObservableObject
         if (_started) return;
 
         _started = true;
+        EnsureVehicleOptions();
         RequestMore();
     }
 
@@ -129,12 +176,22 @@ public partial class WtLiveViewModel : ObservableObject
         _ = LoadNextPageAsync();
     }
 
-    /// <summary>清空重来（换筛选条件 / 手动刷新）。</summary>
+    /// <summary>
+    /// 清空重来（换筛选条件 / 手动刷新）。
+    /// 加载中**排队**而不是丢弃：搜索（选中载具 / 关键词）是用户的显式动作，
+    /// 静默不响应会让人以为点坏了；排队的那次在当前这页回来后立刻补上。
+    /// </summary>
     [RelayCommand]
     private void Refresh()
     {
-        if (IsLoading) return;
+        if (IsLoading)
+        {
+            _refreshQueued = true;
+            return;
+        }
 
+        _refreshQueued = false;
+        IsSuggestionsOpen = false;
         Items.Clear();
         _nextPage = 0;
         IsExhausted = false;
@@ -153,6 +210,215 @@ public partial class WtLiveViewModel : ObservableObject
         RequestMore();
     }
 
+    // ---------- 搜索（§4 载具 + §3.1 searchString：搜索框**不只用于选载具**）----------
+    // 下拉项按 WtLiveSearchKind 分流：载具 / 关键词 / 清除，三者共用同一套下拉、键盘与视图结构；
+    // 要再加搜索维度（如按作者）时加一个 Kind + UpdateSuggestions / ApplySuggestion 各一支即可。
+
+    /// <summary>搜索框获得焦点时重开下拉（文本非空时）。</summary>
+    public void FocusSearch() => UpdateSuggestions();
+
+    /// <summary>关闭下拉（Escape / 失焦 / 切页）。</summary>
+    public void CloseSuggestions() => IsSuggestionsOpen = false;
+
+    /// <summary>上下键移动高亮（环绕；当前无高亮时向下到首项、向上到末项）。</summary>
+    public void MoveHighlight(int delta)
+    {
+        if (Suggestions.Count == 0) return;
+
+        var index = HighlightedSuggestion == null ? -1 : Suggestions.IndexOf(HighlightedSuggestion);
+        var next = index < 0
+            ? (delta > 0 ? 0 : Suggestions.Count - 1)
+            : (((index + delta) % Suggestions.Count) + Suggestions.Count) % Suggestions.Count;
+
+        for (var i = 0; i < Suggestions.Count; i++)
+            Suggestions[i].IsHighlighted = i == next;
+
+        HighlightedSuggestion = Suggestions[next];
+    }
+
+    /// <summary>
+    /// Enter：有高亮项就应用它；没有（下拉已关）则把**当前文本当关键词**搜——
+    /// "直接搜我打的字"是最不意外的默认。
+    /// </summary>
+    [RelayCommand]
+    private void SubmitSearch()
+    {
+        if (IsSuggestionsOpen && HighlightedSuggestion != null)
+        {
+            ApplySuggestion(HighlightedSuggestion);
+            return;
+        }
+
+        var text = SearchText.Trim();
+        if (text.Length == 0) return;
+
+        ApplySuggestion(new WtLiveSearchSuggestion
+        {
+            Kind = WtLiveSearchKind.Keyword,
+            Display = text,
+            Keyword = text
+        });
+    }
+
+    /// <summary>
+    /// 应用一条搜索建议（点击 / Enter）：载具 → 载具筛选；关键词 → 关键词搜索；清除 → 回到全部涂装。
+    /// </summary>
+    [RelayCommand]
+    private void ApplySuggestion(WtLiveSearchSuggestion? suggestion)
+    {
+        if (suggestion == null) return;
+
+        switch (suggestion.Kind)
+        {
+            case WtLiveSearchKind.Vehicle:
+                VehicleFilter = suggestion.VehicleId;
+                KeywordFilter = null;
+                SearchText = suggestion.Display;
+                break;
+
+            case WtLiveSearchKind.Keyword:
+                VehicleFilter = null;
+                KeywordFilter = suggestion.Keyword;
+                SearchText = suggestion.Keyword;
+                break;
+
+            case WtLiveSearchKind.Clear:
+                VehicleFilter = null;
+                KeywordFilter = null;
+                SearchText = "";
+                break;
+        }
+
+        // 必须在改完 SearchText **之后**关闭：OnSearchTextChanged 会重算下拉并把它重新展开
+        IsSuggestionsOpen = false;
+        Refresh();
+    }
+
+    /// <summary>清空搜索框与筛选（搜索框右侧「×」）。已筛选时重拉列表；只是打了字则仅清空。</summary>
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        var hadFilter = HasFilter;
+
+        VehicleFilter = null;
+        KeywordFilter = null;
+        SearchText = "";
+        IsSuggestionsOpen = false;
+
+        if (hadFilter) Refresh();
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasSearchText));
+        OnPropertyChanged(nameof(ActiveFilterText));
+        UpdateSuggestions();
+    }
+
+    partial void OnVehicleFilterChanged(string? value)
+    {
+        OnPropertyChanged(nameof(HasFilter));
+        OnPropertyChanged(nameof(ActiveFilterText));
+    }
+
+    partial void OnKeywordFilterChanged(string? value)
+    {
+        OnPropertyChanged(nameof(HasFilter));
+        OnPropertyChanged(nameof(ActiveFilterText));
+    }
+
+    /// <summary>
+    /// 重算下拉项：**关键词项在最前**（默认高亮它 → 直接按 Enter 就是"搜索我打的字"），
+    /// 随后是匹配的载具，最后（有筛选时）一个「显示全部涂装」。
+    /// </summary>
+    private void UpdateSuggestions()
+    {
+        Suggestions.Clear();
+        HighlightedSuggestion = null;
+
+        var text = SearchText.Trim();
+
+        if (text.Length > 0)
+        {
+            Suggestions.Add(new WtLiveSearchSuggestion
+            {
+                Kind = WtLiveSearchKind.Keyword,
+                Display = Loc.Format("wtlive.search.keyword", text),
+                Keyword = text,
+                Icon = "\uF002" // 放大镜
+            });
+
+            foreach (var vehicle in MatchVehicles(text).Take(MaxVehicleSuggestions))
+            {
+                Suggestions.Add(new WtLiveSearchSuggestion
+                {
+                    Kind = WtLiveSearchKind.Vehicle,
+                    Display = vehicle.DisplayName,
+                    Detail = vehicle.Id,
+                    VehicleId = vehicle.Id,
+                    Icon = "\uF072" // 载具（与导航「载具管理」同一字形）
+                });
+            }
+        }
+
+        if (HasFilter)
+        {
+            Suggestions.Add(new WtLiveSearchSuggestion
+            {
+                Kind = WtLiveSearchKind.Clear,
+                Display = Loc["wtlive.search.clear"],
+                Icon = "\uF00D" // 叉
+            });
+        }
+
+        HighlightedSuggestion = Suggestions.FirstOrDefault();
+        if (HighlightedSuggestion != null) HighlightedSuggestion.IsHighlighted = true;
+
+        IsSuggestionsOpen = Suggestions.Count > 0;
+    }
+
+    /// <summary>按**显示名或裸 id**匹配载具（不区分大小写；前缀命中排前面）。</summary>
+    private IEnumerable<VehicleNameTable.VehicleOption> MatchVehicles(string text)
+        => _vehicleOptions
+            .Where(v => v.DisplayName.Contains(text, StringComparison.CurrentCultureIgnoreCase)
+                        || v.Id.Contains(text, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(v => v.DisplayName.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) ? 0 : 1)
+            .ThenBy(v => v.DisplayName, StringComparer.CurrentCultureIgnoreCase);
+
+    /// <summary>
+    /// 页面每次显示都调：**后台**重载搜索用的载具表。
+    /// <para>
+    /// <c>units.csv</c> 首次解析是秒级（6 MB）→ 不能放 UI 线程；但 <c>TableFor</c> 有缓存，
+    /// 之后的调用只是遍历约 3900 条，代价可忽略。每次显示都刷一遍，是为了让"更新资源"换表后
+    /// 的载具名立刻生效（否则本页会一直用换表前的旧名字）。
+    /// </para>
+    /// </summary>
+    public void EnsureVehicleOptions()
+    {
+        if (_loadingVehicleOptions) return;
+
+        _loadingVehicleOptions = true;
+        _ = LoadVehicleOptionsAsync();
+    }
+
+    /// <summary>后台预载载具表；完成后若已在输入则刷新下拉。</summary>
+    private async Task LoadVehicleOptionsAsync()
+    {
+        try
+        {
+            _vehicleOptions = await Task.Run(() => VehicleNameTable.AllVehicles());
+            if (HasSearchText) UpdateSuggestions(); // await 续体回到 UI 线程
+        }
+        catch
+        {
+            _vehicleOptions = new List<VehicleNameTable.VehicleOption>(); // 表不可用：只剩关键词通道
+        }
+        finally
+        {
+            _loadingVehicleOptions = false;
+        }
+    }
+
     private async Task LoadNextPageAsync()
     {
         IsLoading = true;
@@ -162,7 +428,7 @@ public partial class WtLiveViewModel : ObservableObject
         {
             // 浏览请求都是短请求：不设取消（退出即进程结束；可取消的长任务在下载列表那边）
             var page = await WTLiveService.FetchFeedPageAsync(
-                _nextPage, VehicleFilter, SortCreated, CancellationToken.None);
+                _nextPage, VehicleFilter, KeywordFilter, SortCreated, CancellationToken.None);
 
             foreach (var item in page.Items)
             {
@@ -184,6 +450,8 @@ public partial class WtLiveViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+
+            if (_refreshQueued) Refresh(); // 加载期间收到的「换条件重来」，现在补上
         }
     }
 

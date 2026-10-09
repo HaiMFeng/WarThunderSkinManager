@@ -248,6 +248,21 @@ internal static class SelfTest
             log.AppendLine($"带国旗·英文         : {VehicleNameTable.Lookup("germ_t_34_747", "en-US") ?? "(未命中)"}");
             log.AppendLine($"带国旗·简体         : {VehicleNameTable.Lookup("jp_halftrack_m16", "zh-CN") ?? "(未命中)"}");
 
+            // ---- WT Live 搜索的载具表（§4.1 / §4.2）----
+            // 必须**在这一段**（内置表仍是默认来源时）查：后面的"数据表"一节会把 units.csv 换成
+            // 2 行样例表，到那时全表只剩 1 条，抽样断言会全部落空。
+            log.AppendLine("裸 id 提取（供 WT Live 下拉的 vehicle= 用）:");
+            var vehicleOptions = VehicleNameTable.AllVehicles("zh-CN");
+            var vehicleIds = new HashSet<string>(vehicleOptions.Select(v => v.Id), StringComparer.OrdinalIgnoreCase);
+            log.AppendLine($"  条目 = {vehicleOptions.Count}（应 3000+）"
+                         + $"，ships/xxx_0 = {VehicleNameTable.ToVehicleId("ships/uss_cv_immortal_0")}（应 uss_cv_immortal）"
+                         + $"，tracked 长名 = {VehicleNameTable.ToVehicleId("tracked_vehicles/ussr_t34_85_increased_pitch_1")}（应 ussr_t34_85_increased_pitch）");
+            log.AppendLine($"  结尾数字不当后缀 = {VehicleNameTable.ToVehicleId("tracked_vehicles/germ_pzV_a_panter_3")}（应 germ_pzV_a_panter_3）"
+                         + $"，含 cn_m1a2t = {vehicleIds.Contains("cn_m1a2t")}（应 True）"
+                         + $"，条目无 / 前缀 = {vehicleOptions.All(v => !v.Id.Contains('/'))}（应 True）"
+                         + $"，排除场景道具 = {!vehicleIds.Contains("dummy_airfield")}（应 True）"
+                         + $"，按显示名排序 = {vehicleOptions.Select(v => v.DisplayName).SequenceEqual(vehicleOptions.Select(v => v.DisplayName).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase))}（应 True）");
+
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
             // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;
@@ -1602,6 +1617,18 @@ internal static class SelfTest
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.SourceUrl)),
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.HasSourceUrl)),
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.OpenLinkCommand)),
+                // WT Live 顶部搜索框（载具下拉 + 关键词 + 清除）
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SearchText)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.HasSearchText)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.HasFilter)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ActiveFilterText)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Suggestions)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.IsSuggestionsOpen)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.RefreshCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ClearSearchCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ApplySuggestionCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SubmitSearchCommand)),
+                (typeof(WtLiveSearchSuggestion), nameof(WtLiveSearchSuggestion.IsHighlighted)),
             };
             var missingBindings = string.Join(", ", bindingPaths
                 .Where(p => p.Owner.GetProperty(p.Name) is null)
