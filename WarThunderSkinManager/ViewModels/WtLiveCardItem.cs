@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WarThunderSkinManager.Services;
@@ -120,10 +121,22 @@ public partial class WtLiveCardItem : ObservableObject
     /// <summary>是否该显示占位图标（该帖没有预览图，或下载 / 解码失败）。</summary>
     public bool IsThumbnailMissing => ThumbnailState == WtLiveThumbnailState.Missing;
 
+    /// <summary>
+    /// 这一趟加载已经超过 <see cref="SlowLoadWatcher.Threshold"/> → 加载圈下方浮现「重新加载」。
+    /// 由 <see cref="WtLiveViewModel"/> 的观察者置位，加载一结束就自动收起（见下方状态回调）。
+    /// </summary>
+    [ObservableProperty] private bool _canReloadThumbnail;
+
+    /// <summary>这一趟缩略图下载的取消源（重载 / 换帖时取消上一趟）；不参与绑定。</summary>
+    internal CancellationTokenSource? ThumbnailCancellation;
+
     partial void OnThumbnailStateChanged(WtLiveThumbnailState value)
     {
         OnPropertyChanged(nameof(IsThumbnailLoading));
         OnPropertyChanged(nameof(IsThumbnailMissing));
+
+        // 图出来了 / 失败了 → 收起重载按钮（这一趟已经结束，按钮再留着就是骗人）
+        if (value != WtLiveThumbnailState.Loading) CanReloadThumbnail = false;
     }
 
     private string BuildMeta()

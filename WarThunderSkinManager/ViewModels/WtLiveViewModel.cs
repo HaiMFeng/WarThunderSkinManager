@@ -194,6 +194,10 @@ public partial class WtLiveViewModel : ObservableObject
     /// 下载的是**当前档位对应的变体**（<see cref="WtLiveQualityCatalog.ResolveUrl"/>）；
     /// 中 / 高清变体拿不到（站点没生成该尺寸、改版）时**回退到接口给的低清图**——卡片不该因此空着。
     /// </para>
+    /// <para>
+    /// **换一趟就取消上一趟**（重载按钮 / 刷新列表）：否则旧的那趟回来会把新结果盖掉，
+    /// 连点几次还会让同一张图同时下好几遍。
+    /// </para>
     /// </summary>
     private async Task LoadThumbnailAsync(WtLiveCardItem card)
     {
@@ -203,28 +207,81 @@ public partial class WtLiveViewModel : ObservableObject
             return;
         }
 
+        card.ThumbnailCancellation?.Cancel();
+        card.ThumbnailCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        card.ThumbnailCancellation = cancellation;
+        var token = cancellation.Token;
+
         // 档位与解码宽度各取一次快照：等下载完再取，期间的改档 / 窗口缩放会让同一批图尺寸不一致
         var quality = _quality;
         var decodeWidth = WtLiveQualityCatalog.DecodeWidth(quality, _neededDeviceWidth, card.PreviewWidth);
         var url = WtLiveQualityCatalog.ResolveUrl(card.PreviewUrl, quality);
 
         card.ThumbnailState = WtLiveThumbnailState.Loading; // 重试时也从加载态重新开始
-        await _thumbnailGate.WaitAsync();
+        card.CanReloadThumbnail = false;
+
+        // 「转太久」观察者：5s 还没好就把「重新加载」亮出来（这一趟继续跑，不打断它；
+        // 加载一结束就取消观察者，按钮由 OnThumbnailStateChanged 收起）
+        var slowWatcher = new CancellationTokenSource();
+        _ = SlowLoadWatcher.WatchAsync(() => card.CanReloadThumbnail = true, slowWatcher.Token);
+
         try
         {
+            await DownloadThumbnailAsync(card, url, decodeWidth, token);
+        }
+        finally
+        {
+            slowWatcher.Cancel();
+            slowWatcher.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 重新加载某张卡片的缩略图（卡片加载超过 5s 后浮现的「重新加载」按钮）。
+    /// 不等待结果：与首屏加载同一套流程，取消 / 排队 / 回填都由它处理。
+    /// </summary>
+    [RelayCommand]
+    private void ReloadThumbnail(WtLiveCardItem? card)
+    {
+        if (card == null) return;
+
+        _ = LoadThumbnailAsync(card);
+    }
+
+    /// <summary>真正下载 + 解码 + 回填；被取消（重载 / 换帖）时静默返回，状态交给新的一趟。</summary>
+    private async Task DownloadThumbnailAsync(WtLiveCardItem card, string url, int decodeWidth, CancellationToken token)
+    {
+        try
+        {
+            await _thumbnailGate.WaitAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // 还在排队就被重载了
+        }
+
+        try
+        {
+            ImageSource image;
             try
             {
-                card.PreviewImage = await FetchAndDecodeAsync(url, decodeWidth);
+                image = await FetchAndDecodeAsync(url, decodeWidth, token);
             }
-            catch when (url != card.PreviewUrl)
+            catch (Exception ex) when (ex is not OperationCanceledException && url != card.PreviewUrl)
             {
                 // 高档位变体失败 → 用接口原样给的低清图兜底（解码宽度也按低清重算，别把小图放大）
                 var fallback = WtLiveQualityCatalog.DecodeWidth(
                     WtLiveQualityCatalog.Low, _neededDeviceWidth, card.PreviewWidth);
-                card.PreviewImage = await FetchAndDecodeAsync(card.PreviewUrl!, fallback);
+                image = await FetchAndDecodeAsync(card.PreviewUrl!, fallback, token);
             }
 
+            card.PreviewImage = image;
             card.ThumbnailState = WtLiveThumbnailState.Ready;
+        }
+        catch (OperationCanceledException)
+        {
+            // 被重载 / 关页取消：什么都别写，新的一趟负责状态
         }
         catch (Exception ex)
         {
@@ -237,10 +294,10 @@ public partial class WtLiveViewModel : ObservableObject
         }
     }
 
-    private static async Task<ImageSource> FetchAndDecodeAsync(string url, int decodeWidth)
+    private static async Task<ImageSource> FetchAndDecodeAsync(string url, int decodeWidth, CancellationToken token)
     {
-        var bytes = await WTLiveService.FetchImageAsync(url, CancellationToken.None);
-        return await Task.Run(() => DecodeThumbnail(bytes, decodeWidth));
+        var bytes = await WTLiveService.FetchImageAsync(url, token);
+        return await Task.Run(() => DecodeThumbnail(bytes, decodeWidth), token);
     }
 
     /// <summary>

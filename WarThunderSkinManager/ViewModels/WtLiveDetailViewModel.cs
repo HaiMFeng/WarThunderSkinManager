@@ -27,6 +27,15 @@ public partial class WtLiveDetailImage : ObservableObject
 
     /// <summary>这一张取不到（网络失败 / 图已删）→ 浮窗里显示占位图标，不转圈。</summary>
     [ObservableProperty] private bool _isFailed;
+
+    /// <summary>这一张已经转了超过 <see cref="SlowLoadWatcher.Threshold"/> → 加载圈下方浮现「重新加载」。</summary>
+    [ObservableProperty] private bool _canReload;
+
+    /// <summary>当前 <see cref="Image"/> 只是**列表卡片的缩略图垫底**（原图还在路上）。</summary>
+    internal bool IsPlaceholder;
+
+    /// <summary>这一张的下载取消源（重载时取消上一趟）；不参与绑定。</summary>
+    internal CancellationTokenSource? Cancellation;
 }
 
 /// <summary>
@@ -112,6 +121,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         if (card == null) return;
 
         _card = card;
+        CancelPendingImages();
         Images.Clear();
         ErrorMessage = "";
         CurrentIndex = 0;
@@ -134,6 +144,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
     {
         IsOpen = false;
         _card = null;
+        CancelPendingImages();
         Images.Clear();
         ErrorMessage = "";
         IsLoading = false;
@@ -165,11 +176,23 @@ public partial class WtLiveDetailViewModel : ObservableObject
         if (Images.Count == 0) return;
 
         CurrentIndex = Step(CurrentIndex, Images.Count, step);
-        _ = EnsureLoadedAsync(CurrentIndex);
+        if (Current is { } current) _ = EnsureLoadedAsync(current);
 
         // 预取下一张：等真翻过去再下，用户会看到明显的空档
         var next = Step(CurrentIndex, Images.Count, 1);
-        if (next != CurrentIndex) _ = EnsureLoadedAsync(next);
+        if (next != CurrentIndex) _ = EnsureLoadedAsync(Images[next]);
+    }
+
+    /// <summary>
+    /// 重新加载当前这一张（转了超过 5s 后浮现的「重新加载」按钮）：
+    /// 取消上一趟并重新开始，不等待结果（与首屏加载同一套流程）。
+    /// </summary>
+    [RelayCommand]
+    private void ReloadImage(WtLiveDetailImage? slot)
+    {
+        if (slot == null) return;
+
+        _ = EnsureLoadedAsync(slot, force: true);
     }
 
     /// <summary>
@@ -184,21 +207,41 @@ public partial class WtLiveDetailViewModel : ObservableObject
         return next < 0 ? next + count : next;
     }
 
-    /// <summary>确保第 <paramref name="index"/> 张已经在下 / 已下好（重复调用无副作用）。</summary>
-    private async Task EnsureLoadedAsync(int index)
+    /// <summary>
+    /// 确保这一张已经在下 / 已下好（重复调用无副作用）；<paramref name="force"/> = 用户点了「重新加载」，
+    /// 取消上一趟重来。
+    /// </summary>
+    /// <remarks>
+    /// 已经下好的判断要排除**垫底缩略图**（<see cref="WtLiveDetailImage.IsPlaceholder"/>）：
+    /// 那只是列表卡片已经解好的低清图，原图还没到，不能算"已下好"。
+    /// </remarks>
+    private async Task EnsureLoadedAsync(WtLiveDetailImage slot, bool force = false)
     {
-        if (index < 0 || index >= Images.Count) return;
+        if (!force && (slot.IsLoading || (slot.Image != null && !slot.IsPlaceholder))) return;
 
-        var slot = Images[index];
-        if (slot.Image != null || slot.IsLoading) return;
+        slot.Cancellation?.Cancel();
+        slot.Cancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        slot.Cancellation = cancellation;
+        var token = cancellation.Token;
 
         slot.IsLoading = true;
         slot.IsFailed = false;
+        slot.CanReload = false;
+
+        // 「转太久」观察者：5s 还没好就把「重新加载」亮出来（这一趟继续跑）
+        var slowWatcher = new CancellationTokenSource();
+        _ = SlowLoadWatcher.WatchAsync(() => slot.CanReload = true, slowWatcher.Token);
 
         try
         {
-            var bytes = await WTLiveService.FetchImageAsync(slot.Url, CancellationToken.None);
-            slot.Image = await Task.Run(() => Decode(bytes, ImageDecodeWidth));
+            var bytes = await WTLiveService.FetchImageAsync(slot.Url, token);
+            slot.Image = await Task.Run(() => Decode(bytes, ImageDecodeWidth), token);
+            slot.IsPlaceholder = false;
+        }
+        catch (OperationCanceledException)
+        {
+            // 被重载 / 关窗取消：什么都别写，新的一趟负责状态
         }
         catch (Exception ex)
         {
@@ -207,7 +250,11 @@ public partial class WtLiveDetailViewModel : ObservableObject
         }
         finally
         {
-            slot.IsLoading = false;
+            slowWatcher.Cancel();
+            slowWatcher.Dispose();
+
+            // 只有"当前这一趟"才能收尾：被取消的旧趟不许把新趟的加载态关掉
+            if (ReferenceEquals(slot.Cancellation, cancellation)) slot.IsLoading = false;
         }
     }
 
@@ -246,7 +293,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         IsLoading = false;
 
         ShowImages(post, card);
-        await EnsureLoadedAsync(CurrentIndex);
+        if (Current is { } first) await EnsureLoadedAsync(first);
     }
 
     /// <summary>
@@ -265,7 +312,22 @@ public partial class WtLiveDetailViewModel : ObservableObject
             Images.Add(new WtLiveDetailImage(card.PreviewUrl!));
 
         CurrentIndex = 0;
-        if (Images.Count > 0) Images[0].Image = card.PreviewImage;
+        if (Images.Count == 0 || card.PreviewImage == null) return;
+
+        // 垫底：标记成 Placeholder，否则"已经有图了"会把原图那趟挡掉（图会一直停在低清）
+        Images[0].Image = card.PreviewImage;
+        Images[0].IsPlaceholder = true;
+    }
+
+    /// <summary>取消所有在途的图片下载（关窗 / 换帖）：图已经不要了，让它白下完只是浪费带宽。</summary>
+    private void CancelPendingImages()
+    {
+        foreach (var slot in Images)
+        {
+            slot.Cancellation?.Cancel();
+            slot.Cancellation?.Dispose();
+            slot.Cancellation = null;
+        }
     }
 
     private static string BuildStats(long downloads, long likes, long views)

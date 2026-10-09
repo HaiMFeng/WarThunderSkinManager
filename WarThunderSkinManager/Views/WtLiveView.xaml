@@ -54,22 +54,47 @@
                                         <Border x:Name="Thumb" Background="{StaticResource BrushSurface}" CornerRadius="10"
                                                 ClipToBounds="True" SizeChanged="Thumbnail_SizeChanged">
                                             <Grid>
-                                                <!-- 加载中：转圈。**未加载的卡片不给占位图标**——进页面就有几十张图在
-                                                     排队取图（并发 4），静态图标会让人以为这些帖子本来就没图 -->
-                                                <Viewbox Width="24" Height="24"
-                                                         HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Viewbox.Style>
-                                                        <Style TargetType="Viewbox">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsThumbnailLoading}" Value="True">
-                                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Viewbox.Style>
-                                                    <ContentControl Style="{StaticResource BusySpinner}"/>
-                                                </Viewbox>
+                                                <!-- 加载中：转圈 +（**转够 5s** 才浮现的）「重新加载」。
+                                                     **未加载的卡片不给占位图标**——进页面就有几十张图在排队取图（并发 4），
+                                                     静态图标会让人以为这些帖子本来就没图 -->
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Viewbox Width="24" Height="24" HorizontalAlignment="Center">
+                                                        <Viewbox.Style>
+                                                            <Style TargetType="Viewbox">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsThumbnailLoading}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Viewbox.Style>
+                                                        <ContentControl Style="{StaticResource BusySpinner}"/>
+                                                    </Viewbox>
+
+                                                    <!-- 5s 还没好（SlowLoadWatcher）→ 给个出口，别让人对着圈干等 -->
+                                                    <Button Content="{loc:Loc wtlive.reload}"
+                                                            Margin="0,8,0,0" HorizontalAlignment="Center"
+                                                            MinWidth="72" Height="26" Padding="10,0" FontSize="12"
+                                                            CommandParameter="{Binding}"
+                                                            Command="{Binding DataContext.ReloadThumbnailCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                                                        <Button.Style>
+                                                            <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <MultiDataTrigger>
+                                                                        <MultiDataTrigger.Conditions>
+                                                                            <Condition Binding="{Binding IsThumbnailLoading}" Value="True"/>
+                                                                            <Condition Binding="{Binding CanReloadThumbnail}" Value="True"/>
+                                                                        </MultiDataTrigger.Conditions>
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </MultiDataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Button.Style>
+                                                    </Button>
+                                                </StackPanel>
 
                                                 <!-- 无预览图 / 加载失败：占位图标（失败不转圈，否则永远在"加载"） -->
                                                 <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"

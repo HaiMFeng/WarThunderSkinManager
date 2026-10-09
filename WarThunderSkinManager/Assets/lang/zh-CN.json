@@ -551,6 +551,7 @@
   "wtlive.card.likes": "赞 {0}",
   "wtlive.card.views": "浏览 {0}",
   "wtlive.card.download": "下载这个涂装（进入下载确认）",
+  "wtlive.reload": "重新加载",
   "wtlive.detail.prev": "上一张（滚轮向上 / ←）",
   "wtlive.detail.next": "下一张（滚轮向下 / →）",
   "wtlive.detail.wheelHint": "滚轮切换",

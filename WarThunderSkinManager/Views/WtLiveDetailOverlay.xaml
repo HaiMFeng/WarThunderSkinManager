@@ -75,20 +75,43 @@
                                 Command="{Binding WtLive.Detail.CloseCommand}"/>
                     </Border>
 
-                    <!-- 这一张正在下载 / 解码 -->
-                    <Viewbox Width="28" Height="28" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Viewbox.Style>
-                            <Style TargetType="Viewbox">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding WtLive.Detail.Current.IsLoading}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Viewbox.Style>
-                        <ContentControl Style="{StaticResource BusySpinner}"/>
-                    </Viewbox>
+                    <!-- 这一张正在下载 / 解码：转圈 +（**转够 5s** 才浮现的）「重新加载」 -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Viewbox Width="28" Height="28" HorizontalAlignment="Center">
+                            <Viewbox.Style>
+                                <Style TargetType="Viewbox">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WtLive.Detail.Current.IsLoading}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Viewbox.Style>
+                            <ContentControl Style="{StaticResource BusySpinner}"/>
+                        </Viewbox>
+
+                        <Button Content="{loc:Loc wtlive.reload}"
+                                Margin="0,10,0,0" HorizontalAlignment="Center"
+                                MinWidth="84" Height="28" Padding="12,0" FontSize="12"
+                                CommandParameter="{Binding WtLive.Detail.Current}"
+                                Command="{Binding WtLive.Detail.ReloadImageCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding WtLive.Detail.Current.IsLoading}" Value="True"/>
+                                                <Condition Binding="{Binding WtLive.Detail.Current.CanReload}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
 
                     <!-- 没有图 / 这一张取不到：占位图标（不转圈，否则永远在"加载"） -->
                     <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"

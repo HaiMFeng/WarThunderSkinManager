@@ -551,6 +551,7 @@
   "wtlive.card.likes": "Likes {0}",
   "wtlive.card.views": "Views {0}",
   "wtlive.card.download": "Download this skin (opens the download confirmation)",
+  "wtlive.reload": "Reload",
   "wtlive.detail.prev": "Previous (wheel up / ←)",
   "wtlive.detail.next": "Next (wheel down / →)",
   "wtlive.detail.wheelHint": "Wheel to switch",
