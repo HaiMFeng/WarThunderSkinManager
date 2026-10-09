@@ -140,6 +140,83 @@ internal static class MasonrySelfTest
         }
     }
 
+    /// <summary>
+    /// 规模探针：量瀑布流在"滚了很多页"之后的**一次完整布局**成本。
+    /// <para>
+    /// 用接近真实卡片的结构（描边+内边距+圆角缩略图框+标题+副标题，共约 8 个元素；真实卡片还带
+    /// 一个已解码的 Image）而不是空方块，否则量出来的数会乐观一个数量级。
+    /// </para>
+    /// 这不是基准测试：只用来回答"卡片上千之后每次布局要多久"，并挡住灾难性退化（如 O(N²) 的列分配）。
+    /// </summary>
+    public static void MeasureThroughput(StringBuilder log)
+    {
+        try
+        {
+            BuildCards(200).Measure(new Size(1100, double.PositiveInfinity)); // 预热：避开首次 JIT / 字体缓存
+
+            foreach (var count in new[] { 500, 1500, 3000 })
+            {
+                var panel = BuildCards(count);
+
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                panel.Measure(new Size(1100, double.PositiveInfinity));
+                panel.Arrange(new Rect(0, 0, 1100, panel.DesiredSize.Height));
+                stopwatch.Stop();
+
+                var ms = stopwatch.Elapsed.TotalMilliseconds;
+                log.AppendLine($"瀑布流规模: {count} 张卡片 → 测量+排列 = {ms:0.#} ms，"
+                             + $"内容高 {panel.DesiredSize.Height:0} px，元素 ≈ {count * 8}");
+
+                if (count == 3000 && ms > 3000)
+                    log.AppendLine($"自检异常：3000 张卡片的布局耗时 {ms:0} ms（>3000ms），疑似退化到 O(N²)");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine($"自检异常：瀑布流规模探针抛错 → {ex}");
+        }
+    }
+
+    /// <summary>造 <paramref name="count"/> 张"像真卡片"的子项（高度按实测比例分布，宽高比 0.9~2.2）。</summary>
+    private static MasonryPanel BuildCards(int count)
+    {
+        var panel = new MasonryPanel { TargetItemWidth = 240, ItemGap = 16 };
+        var random = new Random(20261009); // 固定种子：报告数字可复现
+
+        for (var i = 0; i < count; i++)
+        {
+            var ratio = 0.9 + random.NextDouble() * 1.3;              // 0.9 ~ 2.2
+            var imageHeight = (240 - 26) / ratio;                     // 与真实卡片同一算法
+            panel.Children.Add(BuildCardLike(imageHeight + 52));       // + 标题/副标题/内边距
+        }
+
+        return panel;
+    }
+
+    private static FrameworkElement BuildCardLike(double height)
+    {
+        var stack = new StackPanel();
+
+        var thumb = new Border
+        {
+            Height = height - 52,
+            CornerRadius = new CornerRadius(10),
+            Background = System.Windows.Media.Brushes.LightGray,
+            Child = new Image(), // 无 Source：与"缩略图还没下载好"的卡片一致
+        };
+
+        stack.Children.Add(thumb);
+        stack.Children.Add(new TextBlock { Text = "涂装名占位标题" });
+        stack.Children.Add(new TextBlock { Text = "作者 · 12.3 MB · 下载 456" });
+
+        return new Border
+        {
+            Padding = new Thickness(12),
+            BorderThickness = new Thickness(1),
+            Child = stack,
+        };
+    }
+
     private static double HeightFor(AspectRatioHeightConverter converter, double columnWidth, double ratio, double actualWidth)
         => (double)converter.Convert(
             new object[] { columnWidth, ratio, actualWidth }, typeof(double), null, System.Globalization.CultureInfo.InvariantCulture);
