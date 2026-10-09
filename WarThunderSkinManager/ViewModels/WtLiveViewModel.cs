@@ -27,11 +27,14 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>浏览顺序：最近发布（时间倒序，§5）。</summary>
     private const string SortCreated = "created";
 
-    /// <summary>
-    /// 缩略图解码宽度：约 1.25× 典型列宽（240~360），兼顾清晰度与内存——
-    /// 解码是全尺寸图的若干分之一，卡片多了也不会把内存吃光。
-    /// </summary>
-    private const int ThumbnailDecodeWidth = 320;
+    /// <summary>缩略图解码宽度的**兜底值**（视图还没报来真实列宽时用）。</summary>
+    private const int DefaultThumbnailWidth = 320;
+
+    /// <summary>解码宽度下限：再窄也别低于这个，否则高窗口下会糊。</summary>
+    private const int MinThumbnailWidth = 160;
+
+    /// <summary>解码宽度上限：超高窗口下的封顶（位图内存 ≈ 宽 × 高 × 4）。</summary>
+    private const int MaxThumbnailWidth = 480;
 
     /// <summary>缩略图下载并发上限：不刷站（站点有风控，见 API 文档 §8.7）。</summary>
     private const int ThumbnailConcurrency = 4;
@@ -66,8 +69,20 @@ public partial class WtLiveViewModel : ObservableObject
 
     private int _nextPage;
     private bool _started;
+    private int _thumbnailWidth = DefaultThumbnailWidth;
 
     public WtLiveViewModel() => Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
+
+    /// <summary>
+    /// 视图把面板算出的**实际列宽**下发到这里：缩略图按列宽级别解码。
+    /// 位图内存 ≈ 解码宽 × 高 × 4 字节，这一项直接决定滚很久之后的内存占用；
+    /// 只影响**之后**加载的缩略图（已有的不重解码）。
+    /// </summary>
+    public void SetColumnWidth(double columnWidth)
+    {
+        var width = (int)Math.Round(columnWidth);
+        _thumbnailWidth = Math.Clamp(width, MinThumbnailWidth, MaxThumbnailWidth);
+    }
 
     partial void OnErrorMessageChanged(string value)
     {
@@ -171,8 +186,11 @@ public partial class WtLiveViewModel : ObservableObject
         await _thumbnailGate.WaitAsync();
         try
         {
+            // 先取当前解码宽度：等下载完再取，期间的窗口缩放会让同一批图尺寸不一致
+            var decodeWidth = _thumbnailWidth;
+
             var bytes = await WTLiveService.FetchImageAsync(card.PreviewUrl!, CancellationToken.None);
-            card.PreviewImage = await Task.Run(() => DecodeThumbnail(bytes));
+            card.PreviewImage = await Task.Run(() => DecodeThumbnail(bytes, decodeWidth));
         }
         catch (Exception ex)
         {
@@ -184,15 +202,15 @@ public partial class WtLiveViewModel : ObservableObject
         }
     }
 
-    /// <summary>按列宽级别解码（<see cref="ThumbnailDecodeWidth"/>），OnLoad + Freeze：不占文件句柄、可跨线程传递。</summary>
-    private static ImageSource DecodeThumbnail(byte[] bytes)
+    /// <summary>按列宽级别解码，OnLoad + Freeze：不占文件句柄、可跨线程传递。全尺寸原图（常 1~2 MB）不解码进内存。</summary>
+    private static ImageSource DecodeThumbnail(byte[] bytes, int decodeWidth)
     {
         using var stream = new MemoryStream(bytes);
 
         var bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.StreamSource = stream;
-        bitmap.DecodePixelWidth = ThumbnailDecodeWidth;
+        bitmap.DecodePixelWidth = decodeWidth;
         bitmap.CacheOption = BitmapCacheOption.OnLoad;
         bitmap.CreateOptions = BitmapCreateOptions.None;
         bitmap.EndInit();

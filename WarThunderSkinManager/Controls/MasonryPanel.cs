@@ -56,7 +56,18 @@ public class MasonryPanel : Panel
     /// 卡片把图片高度绑到它上即可在图片下载完成前按比例占位。
     /// </summary>
     public static readonly DependencyProperty ColumnWidthProperty = DependencyProperty.Register(
-        nameof(ColumnWidth), typeof(double), typeof(MasonryPanel), new PropertyMetadata(0d));
+        nameof(ColumnWidth), typeof(double), typeof(MasonryPanel),
+        new PropertyMetadata(0d, OnColumnWidthChanged));
+
+    /// <summary>
+    /// 实际列宽变化（测量算出后触发）。视图据此把**缩略图解码宽度对齐到真实列宽**：
+    /// 解码图片的内存 ≈ 宽 × 高 × 4 字节，按固定大尺寸解码会白白多占（窄窗口能把内存砍掉近半）；
+    /// 反过来解码得太小在宽窗口下发糊。见 <c>WtLiveView</c>。
+    /// </summary>
+    public event EventHandler? ColumnWidthChanged;
+
+    private static void OnColumnWidthChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        => ((MasonryPanel)d).ColumnWidthChanged?.Invoke(d, EventArgs.Empty);
 
     /// <summary>当前实际列宽（只读使用；由面板测量时写入）。</summary>
     public double ColumnWidth

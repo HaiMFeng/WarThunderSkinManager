@@ -32,7 +32,7 @@
                           HorizontalScrollBarVisibility="Disabled"
                           ScrollChanged="ListScroll_ScrollChanged">
                 <StackPanel>
-                    <ItemsControl ItemsSource="{Binding WtLive.Items}">
+                    <ItemsControl x:Name="CardList" ItemsSource="{Binding WtLive.Items}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ctrl:MasonryPanel TargetItemWidth="240" MinItemWidth="170"
