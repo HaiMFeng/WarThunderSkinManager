@@ -1174,6 +1174,55 @@
         </Setter>
     </Style>
 
+    <!-- ============ 处理中反馈（加载圈 / 进度条，§2.6） ============
+         全应用复用：遮罩容器（Views/BusyOverlay.xaml）与页内进度条都取这里，
+         避免"自绘条 / 原生条"两套视觉。详见 docs/处理中反馈统一设计.md。 -->
+
+    <!-- 加载圈：**实心弧**（自绘）。用 ControlTemplate 而非 Style 设 RenderTransform ——
+         模板里的 Ellipse 是每个实例新建的，RotateTransform 不会在多个加载圈之间共享
+         （共享同一个 Freezable 会让几处动画互相打架）。
+         不用图标字形：FA 的 circle-notch 画出来是一串短划（"点串"观感）；也不做渐隐：
+         1× 真实尺寸下渐隐会让半圈看着像断掉 —— 见 界面设计规范.md §2.6。
+         几何：中心线半径 (18-2)/2 = 8，周长 2π×8 ≈ 50.27，÷ 描边 2 ≈ 25.13 → 20.94 实 + 4.19 空。 -->
+    <Style x:Key="BusySpinner" TargetType="ContentControl">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContentControl">
+                    <Ellipse Width="18" Height="18"
+                             Stroke="{StaticResource BrushPrimary}" StrokeThickness="2"
+                             StrokeDashArray="20.94 4.19" StrokeDashCap="Round"
+                             RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <RotateTransform/>
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Triggers>
+                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation
+                                            Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                            From="0" To="360" Duration="0:0:1.1"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 进度条：扁平细条 + 主题主色。**不重写 Template**：自绘模板下 PART_Indicator 不会自动变宽
+         （见 SkinManagementView / ImportProgressWindow 里的同类注释），只改视觉属性，
+         宽度仍交给系统模板按 Value 计算；元素上显式设的 Width/Height 优先级更高
+         （如部件表那个 14×14 的不定态小圈），不会被这里覆盖。 -->
+    <Style TargetType="ProgressBar">
+        <Setter Property="Height" Value="4"/>
+        <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
     <!-- ============ 滚动条（扁平细样式） ============ -->
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="Transparent"/>

@@ -1,4 +1,4 @@
-﻿<Window x:Class="WarThunderSkinManager.MainWindow"
+<Window x:Class="WarThunderSkinManager.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
@@ -338,66 +338,9 @@
                 </StackPanel>
             </Border>
 
-            <!-- 全局"处理中"遮罩（§2.6）：复制 / 删除 / 导入 / 重建资源库这类操作要 1 秒以上，
-                 耗时部分虽在后台线程（界面不冻结），但**用户侧没有反馈** → 容易被当成没反应而连点。
-                 遮罩既给出反馈（加载圈 + 文案），又挡住交互（从根上杜绝重复触发）。
-                 文案与可见性由 BusyIndicator 驱动（嵌套时取最外层文案）。 -->
-            <Grid Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="50">
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Busy.IsBusy}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
-
-                <!-- 压暗底：沿用主题背景色（四套主题自动一致），只压不填实，保留页面轮廓 -->
-                <Border Background="{StaticResource BrushBackground}" Opacity="0.72"/>
-
-                <Border HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Background="{StaticResource BrushSurface}"
-                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                        CornerRadius="10" Padding="22,16">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.22" Color="#000000"/>
-                    </Border.Effect>
-
-                    <StackPanel Orientation="Horizontal">
-                        <!-- 加载圈：**实心弧**（自绘，持续旋转直到遮罩消失）。
-                             不用图标字体——FA 的 circle-notch 画的是**一串短划**（"点串"观感）；
-                             也不做渐隐——**1× 真实尺寸下渐隐会让半圈看着像断掉**（渲染对比后选定，见
-                             `界面设计规范.md` §2.6）。这里只要"圆环少一段"：
-                             ① Ellipse 描边走主题主色；② StrokeDashArray 只留约 300°
-                             （**单位 = 描边宽度的倍数**：中心线周长 2π×8≈50.27，÷描边 2 ≈ 25.13
-                             → 20.94 实 + 4.19 空）；③ 圆头、整体绕中心旋转。 -->
-                        <Ellipse Width="18" Height="18" VerticalAlignment="Center"
-                                 Stroke="{StaticResource BrushPrimary}" StrokeThickness="2"
-                                 StrokeDashArray="20.94 4.19" StrokeDashCap="Round"
-                                 RenderTransformOrigin="0.5,0.5">
-                            <Ellipse.RenderTransform>
-                                <RotateTransform/>
-                            </Ellipse.RenderTransform>
-                            <Ellipse.Triggers>
-                                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                                    <BeginStoryboard>
-                                        <Storyboard RepeatBehavior="Forever">
-                                            <DoubleAnimation
-                                                Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                From="0" To="360" Duration="0:0:1.1"/>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </EventTrigger>
-                            </Ellipse.Triggers>
-                        </Ellipse>
-
-                        <TextBlock Text="{Binding Busy.Text}" Margin="12,0,0,0" FontSize="13"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
+            <!-- 全局"处理中"遮罩（§2.6）：样式统一、可复用，实现见 Views/BusyOverlay.xaml。
+                 文案 / 进度 / 取消由 BusyIndicator 驱动（嵌套时取最外层）。 -->
+            <views:BusyOverlay Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="50"/>
         </Grid>
     </Border>
 </Window>

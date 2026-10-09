@@ -1590,6 +1590,50 @@ internal static class SelfTest
                          + $"内层释放后仍忙 = {stillBusy}、文案不变 = {textStillOuter}（应 True/True），"
                          + $"全部释放 = {clearedAfterAll}（应 True）");
 
+            // ---- 统一容器：进度与取消（docs/处理中反馈统一设计.md 阶段 1）----
+            // 进度 / 取消由最外层作用域决定、越界夹紧、无总量退化为不定态、计数归零后连同取消一起重置
+            var cancelRequested = 0;
+            var progressScope = busyIndicator.Begin("带进度", () => cancelRequested++);
+            var cancelShown = busyIndicator.CanCancel;
+            var barHiddenInitially = !busyIndicator.BarVisible;
+
+            progressScope.Report(0.42);
+            var barShown = busyIndicator.BarVisible;
+            var pctText = busyIndicator.ProgressText;
+
+            progressScope.Report(1.7); // 越界：必须夹到 1，否则进度条会溢出卡片
+            var clampedProgress = busyIndicator.Progress;
+
+            progressScope.Report(3, 8);
+            var countText = busyIndicator.ProgressText;
+            var countFraction = busyIndicator.Progress;
+
+            progressScope.Report(3, 0); // 总量为 0：退化为不定态（只转圈），不显示进度条
+            var degradedToIndeterminate = !busyIndicator.BarVisible;
+
+            // 嵌套：内层不得改动最外层的进度，也不得顶掉最外层的取消入口
+            var innerProgressScope = busyIndicator.Begin("内层带进度");
+            innerProgressScope.Report(0.9);
+            var innerReportIgnored = busyIndicator.Progress < 0.0001 && busyIndicator.ProgressText.Length == 0;
+            var outerCancelKept = busyIndicator.CanCancel;
+            innerProgressScope.Dispose();
+
+            busyIndicator.RequestCancel();
+            busyIndicator.RequestCancel(); // 重复请求必须无害：回调只生效一次
+            var cancelFiredOnce = cancelRequested == 1;
+
+            progressScope.Dispose();
+            var resetAfterAll = !busyIndicator.IsBusy && !busyIndicator.BarVisible
+                && !busyIndicator.CanCancel && busyIndicator.Progress == 0 && busyIndicator.Text.Length == 0;
+
+            log.AppendLine($"统一容器进度 : 取消按钮 = {cancelShown}（给了回调应 True）、起始无进度条 = {barHiddenInitially}（应 True），"
+                         + $"报 0.42 → 进度条 = {barShown}、文案 = {pctText}（应 True/42%），"
+                         + $"越界 1.7 → 进度 = {clampedProgress}（应 1），报 3/8 → 文案 = {countText}、比例 = {countFraction}（应 3 / 8、0.375），"
+                         + $"总量 0 → 退化不定态 = {degradedToIndeterminate}（应 True）");
+            log.AppendLine($"统一容器嵌套 : 内层报进度被忽略 = {innerReportIgnored}（应 True）、不顶掉最外层取消 = {outerCancelKept}（应 True），"
+                         + $"重复请求取消只生效一次 = {cancelFiredOnce}（应 True），"
+                         + $"全部释放后彻底重置 = {resetAfterAll}（应 True）");
+
             // ---- 应用自更新（§6，docs/应用自更新设计.md）：离线可验证的部分 ----
             // 版本比较：必须按 SemVer（字符串比会在 0.1.10 vs 0.1.9 上翻车；-dev 是预发布标识）
             AppVersion.TryParse("v0.1.4-dev", out var vCur);
