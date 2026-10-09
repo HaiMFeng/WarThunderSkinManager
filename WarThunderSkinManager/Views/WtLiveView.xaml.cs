@@ -11,7 +11,7 @@ namespace WarThunderSkinManager.Views;
 /// 「WT Live」页：瀑布流浏览 + 滚动到底自动加载下一页（数据与分页逻辑在 <see cref="WtLiveViewModel"/>）。
 /// <para>
 /// 视图层只做三件事：**首次可见时触发首屏**、**滚动接近底部时请求下一页**、**缩略图圆角裁剪**；
-/// 另外把面板算出的列宽转给 VM，让缩略图**按列宽级别解码**（位图内存的大头）。
+/// 另外把面板算出的列宽 + 屏幕缩放转给 VM，让缩略图**按要显示的设备像素解码**（位图内存的大头）。
 /// </para>
 /// </summary>
 public partial class WtLiveView : UserControl
@@ -39,8 +39,8 @@ public partial class WtLiveView : UserControl
     private WtLiveViewModel? ViewModel => (DataContext as MainViewModel)?.WtLive;
 
     /// <summary>
-    /// 盯住面板的实际列宽并转给 VM（缩略图按列宽解码）。面板在 ItemsControl 的模板里，
-    /// 只在**布局跑过之后**才存在，所以首次可见时用 Loaded 优先级再找一次。
+    /// 盯住面板的实际列宽，连同屏幕缩放一起转给 VM（缩略图按**设备像素宽**解码）。
+    /// 面板在 ItemsControl 的模板里，只在**布局跑过之后**才存在，所以首次可见时用 Loaded 优先级再找一次。
     /// </summary>
     private void HookColumnWidth()
     {
@@ -53,9 +53,22 @@ public partial class WtLiveView : UserControl
             _panel = FindPanel(CardList);
             if (_panel == null) return;
 
-            _panel.ColumnWidthChanged += (_, _) => ViewModel?.SetColumnWidth(_panel.ColumnWidth);
-            ViewModel?.SetColumnWidth(_panel.ColumnWidth);
+            _panel.ColumnWidthChanged += (_, _) => PushThumbnailWidth();
+
+            // 窗口被拖到缩放比不同的另一块屏幕上：列宽（DIP）没变，但设备像素变了
+            if (Window.GetWindow(this) is { } window) window.DpiChanged += (_, _) => PushThumbnailWidth();
+
+            PushThumbnailWidth();
         }));
+    }
+
+    /// <summary>把「缩略图要占多少设备像素」下发给 VM = 面板列宽（DIP）× 当前屏幕缩放。</summary>
+    private void PushThumbnailWidth()
+    {
+        if (_panel == null) return;
+
+        var dpi = VisualTreeHelper.GetDpi(_panel);
+        ViewModel?.SetDisplayWidth(_panel.ColumnWidth, dpi.DpiScaleX);
     }
 
     /// <summary>深度优先找瀑布流面板（面板本身没有 x:Name，只能在可视化树里找）。</summary>

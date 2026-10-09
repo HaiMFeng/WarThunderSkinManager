@@ -40,6 +40,13 @@ public partial class AppConfig : ObservableObject
     [ObservableProperty] private string _theme = "blue";
 
     /// <summary>
+    /// WT Live 卡片缩略图的清晰度档位（low / medium / high，见 Services.WtLiveQualityCatalog；
+    /// **默认低清**——就是站点列表接口原生给的那张图，省流量也省内存）。
+    /// 改档只影响**之后**加载的缩略图，已加载的卡片不重下。
+    /// </summary>
+    [ObservableProperty] private string _wtLiveImageQuality = "low";
+
+    /// <summary>
     /// 是否启用「多源复用」（§3.13，默认关闭）：用户把 UV 一致、贴图可互换的部件位置（from）
     /// 分为一组后，涂装包属性页选贴图时同组其他 from 的贴图也进入候选（红色「多源」标注）。
     /// 关闭只停用（导航页隐藏、候选恢复常规），组数据保留。

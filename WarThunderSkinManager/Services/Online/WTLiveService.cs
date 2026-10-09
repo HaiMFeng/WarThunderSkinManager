@@ -47,8 +47,10 @@ public sealed record WTLivePost(
 /// <param name="Author">作者昵称</param>
 /// <param name="Title">卡片标题：描述首行（HTML 已剥离；为空时退回压缩包文件名 → <c>#帖子id</c>）</param>
 /// <param name="Description">描述纯文本（多行，供详情/预览使用）</param>
-/// <param name="PreviewUrl">预览缩略图 URL（CDN）；null = 该帖没有预览图</param>
+/// <param name="PreviewUrl">预览缩略图 URL（CDN，**低清变体**）；null = 该帖没有预览图</param>
 /// <param name="Ratio">预览图宽高比（宽/高）；缺失时按 16:9 兜底</param>
+/// <param name="PreviewWidth">预览缩略图申报的像素宽；0 = 未申报（解码宽度按不封顶处理）。
+/// 站点在同一路径上还有 <c>_mq</c> / 原图变体，见 <see cref="WtLiveQualityCatalog"/></param>
 /// <param name="FileName">附件压缩包文件名；空 = 该帖没有站内附件（作者用外部网盘）</param>
 /// <param name="FileLink">附件下载直链（<c>/dl/&lt;hash&gt;/</c>）；空 = 无站内附件</param>
 /// <param name="FileSize">附件字节数（0 = 未知）</param>
@@ -63,6 +65,7 @@ public sealed record WTLiveFeedItem(
     string Description,
     string? PreviewUrl,
     double Ratio,
+    int PreviewWidth,
     string FileName,
     string FileLink,
     long FileSize,
@@ -232,7 +235,7 @@ public static class WTLiveService
         var items = new List<WTLiveFeedItem>(raw.Count);
         foreach (var one in raw)
         {
-            var (previewUrl, ratio) = ReadPreview(one.Images);
+            var (previewUrl, ratio, previewWidth) = ReadPreview(one.Images);
             var description = HtmlToText(one.Description ?? "");
             var fileName = one.File?.Name ?? "";
 
@@ -243,6 +246,7 @@ public static class WTLiveService
                 description,
                 previewUrl,
                 ratio,
+                previewWidth,
                 fileName,
                 one.File?.Link ?? "",
                 one.File?.Size ?? 0,
@@ -286,32 +290,37 @@ public static class WTLiveService
     }
 
     /// <summary>
-    /// 预览图 URL 与宽高比。实测响应里 <c>images</c> 是**对象**（§3.2），这里同时容错数组形式；
+    /// 预览图 URL、宽高比与申报宽度。实测响应里 <c>images</c> 是**对象**（§3.2），这里同时容错数组形式；
     /// 比例字段缺失时用宽高算，都拿不到则 16:9 兜底（见 <c>Controls/AspectRatioHeightConverter</c>）。
+    /// 申报宽度只用于**给解码宽度封顶**（见 <see cref="WtLiveQualityCatalog"/>），不参与布局。
     /// </summary>
-    private static (string? Url, double Ratio) ReadPreview(JsonElement images)
+    private static (string? Url, double Ratio, int Width) ReadPreview(JsonElement images)
     {
         if (images.ValueKind == JsonValueKind.Array)
-            return images.GetArrayLength() > 0 ? ReadPreviewObject(images[0]) : (null, DefaultRatio);
+            return images.GetArrayLength() > 0 ? ReadPreviewObject(images[0]) : (null, DefaultRatio, 0);
 
-        return images.ValueKind == JsonValueKind.Object ? ReadPreviewObject(images) : (null, DefaultRatio);
+        return images.ValueKind == JsonValueKind.Object ? ReadPreviewObject(images) : (null, DefaultRatio, 0);
     }
 
-    private static (string? Url, double Ratio) ReadPreviewObject(JsonElement element)
+    private static (string? Url, double Ratio, int Width) ReadPreviewObject(JsonElement element)
     {
         var url = element.TryGetProperty("src", out var src) ? src.GetString() : null;
+
+        var width = 0;
+        if (element.TryGetProperty("width", out var widthElement)
+            && widthElement.TryGetDouble(out var declared) && declared > 0)
+            width = (int)Math.Round(declared);
 
         var ratio = 0d;
         if (element.TryGetProperty("ratio", out var ratioElement) && ratioElement.TryGetDouble(out var parsed))
             ratio = parsed;
 
-        if (ratio <= 0
-            && element.TryGetProperty("width", out var widthElement) && widthElement.TryGetDouble(out var width)
+        if (ratio <= 0 && width > 0
             && element.TryGetProperty("height", out var heightElement) && heightElement.TryGetDouble(out var height)
-            && width > 0 && height > 0)
+            && height > 0)
             ratio = width / height;
 
-        return (string.IsNullOrWhiteSpace(url) ? null : url, ratio > 0 ? ratio : DefaultRatio);
+        return (string.IsNullOrWhiteSpace(url) ? null : url, ratio > 0 ? ratio : DefaultRatio, width);
     }
 
     /// <summary>预览图比例兜底（截图类预览绝大多数是 16:9）。</summary>

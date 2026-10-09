@@ -1536,6 +1536,21 @@ internal static class SelfTest
             log.AppendLine($"HTML 剥离: 首行 = \"{htmlText.Split('\n')[0]}\"（应 First line），行数 = {htmlText.Split('\n').Length}（应 3），"
                          + $"实体解码 = {htmlText.Contains("&more", StringComparison.Ordinal) == false && htmlText.Contains("& more", StringComparison.Ordinal)}");
 
+            // ---- 卡片缩略图清晰度档位（Services.WtLiveQualityCatalog）----
+            // 站点为同一张预览图提供多级变体（2026-10-09 实测：_lq 386px / _mq 800px / 去后缀即原图 900~1500px，_hq 为 404）
+            const string sampleThumb = "https://cdn-live.warthunder.com/uploads/69/4d/48/hash_lq/name.png";
+            var highUrl = sampleThumb.Replace("_lq/", "/", StringComparison.Ordinal);
+            log.AppendLine($"缩略图档位: 低清原样 = {WtLiveQualityCatalog.ResolveUrl(sampleThumb, "low") == sampleThumb}（应 True），"
+                         + $"中清换 _mq = {WtLiveQualityCatalog.ResolveUrl(sampleThumb, "medium").Contains("_mq/", StringComparison.Ordinal)}（应 True），"
+                         + $"高清去后缀 = {WtLiveQualityCatalog.ResolveUrl(sampleThumb, "high") == highUrl}（应 True），"
+                         + $"未知档位回落低清 = {WtLiveQualityCatalog.Normalize("bogus") == WtLiveQualityCatalog.Low}（应 True），"
+                         + $"非预期 URL 原样 = {WtLiveQualityCatalog.ResolveUrl("https://x/a.png", "high") == "https://x/a.png"}（应 True）");
+            log.AppendLine($"解码宽度   : 低清按源图封顶 = {WtLiveQualityCatalog.DecodeWidth("low", 500, 386)}（应 386：源图只有 386，放大只白占内存），"
+                         + $"中清 800 封顶 = {WtLiveQualityCatalog.DecodeWidth("medium", 900, 386)}（应 800），"
+                         + $"高清按需 = {WtLiveQualityCatalog.DecodeWidth("high", 501, 386)}（应 501 = 334 DIP × 150% 缩放），"
+                         + $"下限 = {WtLiveQualityCatalog.DecodeWidth("low", 60, 0)}（应 160），"
+                         + $"上限 = {WtLiveQualityCatalog.DecodeWidth("high", 4000, 0)}（应 1280）");
+
             // ---- 下载阶段进度与重试节奏（§3.15：预览图是下载的一部分，独占 20%）----
             var progressCases = new (double Zip, double Preview, bool HasPreview, double Expect)[]
             {

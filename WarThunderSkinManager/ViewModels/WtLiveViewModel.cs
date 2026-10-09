@@ -27,14 +27,8 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>浏览顺序：最近发布（时间倒序，§5）。</summary>
     private const string SortCreated = "created";
 
-    /// <summary>缩略图解码宽度的**兜底值**（视图还没报来真实列宽时用）。</summary>
-    private const int DefaultThumbnailWidth = 320;
-
-    /// <summary>解码宽度下限：再窄也别低于这个，否则高窗口下会糊。</summary>
-    private const int MinThumbnailWidth = 160;
-
-    /// <summary>解码宽度上限：超高窗口下的封顶（位图内存 ≈ 宽 × 高 × 4）。</summary>
-    private const int MaxThumbnailWidth = 480;
+    /// <summary>缩略图要显示的设备像素宽的**兜底值**（视图还没报来实际列宽时用）。</summary>
+    private const double DefaultThumbnailWidth = 320;
 
     /// <summary>缩略图下载并发上限：不刷站（站点有风控，见 API 文档 §8.7）。</summary>
     private const int ThumbnailConcurrency = 4;
@@ -69,20 +63,35 @@ public partial class WtLiveViewModel : ObservableObject
 
     private int _nextPage;
     private bool _started;
-    private int _thumbnailWidth = DefaultThumbnailWidth;
+
+    /// <summary>缩略图在屏幕上要占的**设备像素宽** = 面板列宽（DIP）× 屏幕缩放（视图下发）。</summary>
+    private double _neededDeviceWidth = DefaultThumbnailWidth;
+
+    /// <summary>当前清晰度档位（<see cref="WtLiveQualityCatalog"/>；设置页改档时由 <see cref="SetQuality"/> 更新）。</summary>
+    private string _quality = WtLiveQualityCatalog.DefaultQuality;
 
     public WtLiveViewModel() => Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
 
     /// <summary>
-    /// 视图把面板算出的**实际列宽**下发到这里：缩略图按列宽级别解码。
-    /// 位图内存 ≈ 解码宽 × 高 × 4 字节，这一项直接决定滚很久之后的内存占用；
+    /// 视图把卡片缩略图**实际要显示的尺寸**下发到这里：面板列宽（DIP）+ 屏幕缩放。
+    /// 解码宽度按**设备像素**算（列宽 × 缩放）——只按 DIP 算，125% / 150% 缩放的屏幕上
+    /// 位图会被再放大一次，看着就是糊的。
+    /// 位图内存 ≈ 解码宽 × 高 × 4 字节，这一项是滚很久之后内存的主项；
     /// 只影响**之后**加载的缩略图（已有的不重解码）。
     /// </summary>
-    public void SetColumnWidth(double columnWidth)
+    public void SetDisplayWidth(double dipWidth, double dpiScale)
     {
-        var width = (int)Math.Round(columnWidth);
-        _thumbnailWidth = Math.Clamp(width, MinThumbnailWidth, MaxThumbnailWidth);
+        if (dipWidth <= 0 || dpiScale <= 0) return;
+
+        _neededDeviceWidth = dipWidth * dpiScale;
     }
+
+    /// <summary>
+    /// 切换缩略图清晰度档位（设置页「WT Live 卡片图片清晰度」）。
+    /// 只影响**之后**加载的缩略图：一页 25 张，改档就把已显示的图重下一遍既费流量也压站点；
+    /// 想立刻看新档位的效果，点列表上方的「刷新」重载这一页即可。
+    /// </summary>
+    public void SetQuality(string? quality) => _quality = WtLiveQualityCatalog.Normalize(quality);
 
     partial void OnErrorMessageChanged(string value)
     {
@@ -176,24 +185,47 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 下载 + 解码一张缩略图并回填。全程不碰 UI 线程（<see cref="BitmapImage.Freeze"/> 后即可跨线程使用），
-    /// 失败只是这张卡片留着占位图标，不影响列表本身。
+    /// 下载 + 解码一张缩略图并回填。全程不碰 UI 线程（<see cref="BitmapImage.Freeze"/> 后即可跨线程使用）；
+    /// 失败只是这张卡片回到「缺图」占位图标，不影响列表本身。
+    /// <para>
+    /// 下载的是**当前档位对应的变体**（<see cref="WtLiveQualityCatalog.ResolveUrl"/>）；
+    /// 中 / 高清变体拿不到（站点没生成该尺寸、改版）时**回退到接口给的低清图**——卡片不该因此空着。
+    /// </para>
     /// </summary>
     private async Task LoadThumbnailAsync(WtLiveCardItem card)
     {
-        if (string.IsNullOrWhiteSpace(card.PreviewUrl)) return;
+        if (string.IsNullOrWhiteSpace(card.PreviewUrl))
+        {
+            card.ThumbnailState = WtLiveThumbnailState.Missing;
+            return;
+        }
 
+        // 档位与解码宽度各取一次快照：等下载完再取，期间的改档 / 窗口缩放会让同一批图尺寸不一致
+        var quality = _quality;
+        var decodeWidth = WtLiveQualityCatalog.DecodeWidth(quality, _neededDeviceWidth, card.PreviewWidth);
+        var url = WtLiveQualityCatalog.ResolveUrl(card.PreviewUrl, quality);
+
+        card.ThumbnailState = WtLiveThumbnailState.Loading; // 重试时也从加载态重新开始
         await _thumbnailGate.WaitAsync();
         try
         {
-            // 先取当前解码宽度：等下载完再取，期间的窗口缩放会让同一批图尺寸不一致
-            var decodeWidth = _thumbnailWidth;
+            try
+            {
+                card.PreviewImage = await FetchAndDecodeAsync(url, decodeWidth);
+            }
+            catch when (url != card.PreviewUrl)
+            {
+                // 高档位变体失败 → 用接口原样给的低清图兜底（解码宽度也按低清重算，别把小图放大）
+                var fallback = WtLiveQualityCatalog.DecodeWidth(
+                    WtLiveQualityCatalog.Low, _neededDeviceWidth, card.PreviewWidth);
+                card.PreviewImage = await FetchAndDecodeAsync(card.PreviewUrl!, fallback);
+            }
 
-            var bytes = await WTLiveService.FetchImageAsync(card.PreviewUrl!, CancellationToken.None);
-            card.PreviewImage = await Task.Run(() => DecodeThumbnail(bytes, decodeWidth));
+            card.ThumbnailState = WtLiveThumbnailState.Ready;
         }
         catch (Exception ex)
         {
+            card.ThumbnailState = WtLiveThumbnailState.Missing;
             System.Diagnostics.Debug.WriteLine($"WT Live 预览图失败 {card.PreviewUrl}：{ex.Message}");
         }
         finally
@@ -202,7 +234,17 @@ public partial class WtLiveViewModel : ObservableObject
         }
     }
 
-    /// <summary>按列宽级别解码，OnLoad + Freeze：不占文件句柄、可跨线程传递。全尺寸原图（常 1~2 MB）不解码进内存。</summary>
+    private static async Task<ImageSource> FetchAndDecodeAsync(string url, int decodeWidth)
+    {
+        var bytes = await WTLiveService.FetchImageAsync(url, CancellationToken.None);
+        return await Task.Run(() => DecodeThumbnail(bytes, decodeWidth));
+    }
+
+    /// <summary>
+    /// 按 <paramref name="decodeWidth"/> 解码，OnLoad + Freeze：不占文件句柄、可跨线程传递。
+    /// 高清档位下下载的是原图（常 900~1500px 宽、1 MB 上下），这里**只解到卡片需要的宽度**，
+    /// 全尺寸位图不进内存（位图内存 ≈ 解码宽 × 高 × 4 字节，差一档就是几倍）。
+    /// </summary>
     private static ImageSource DecodeThumbnail(byte[] bytes, int decodeWidth)
     {
         using var stream = new MemoryStream(bytes);

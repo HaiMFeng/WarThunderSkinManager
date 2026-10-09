@@ -53,6 +53,21 @@ public sealed class ThemeItem
     public override string ToString() => DisplayName;
 }
 
+/// <summary>WT Live 卡片图片清晰度下拉项（名称走语言文件 wtlive.quality.* 键）。</summary>
+public sealed class WtLiveQualityItem
+{
+    public string Id { get; }
+    public string DisplayName { get; }
+
+    public WtLiveQualityItem(string id)
+    {
+        Id = id;
+        DisplayName = WtLiveQualityCatalog.DisplayName(id);
+    }
+
+    public override string ToString() => DisplayName;
+}
+
 /// <summary>主窗体导航页。</summary>
 /// <summary>
 /// 「更新应用」卡片的状态（§3.16）。**唯一事实来源**：按钮可见性 / 可用性全部由它派生
@@ -307,11 +322,18 @@ public partial class MainViewModel : ObservableObject
         Vehicles = new VehiclesViewModel(config);
         PartReuse = new PartReuseViewModel(config);
         WtLive = new WtLiveViewModel(); // 无本地状态：数据全部来自站点，进页面才拉（首屏懒加载）
+        WtLive.SetQuality(config.WtLiveImageQuality); // 卡片缩略图清晰度档位（设置页可改）
 
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
         Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();
         _selectedTheme = Themes.FirstOrDefault(
             t => string.Equals(t.Id, config.Theme, StringComparison.OrdinalIgnoreCase)) ?? Themes[0];
+
+        // 清晰度档位下拉：同上，当前档位直接写字段（未知值回落默认档）
+        WtLiveQualities = WtLiveQualityCatalog.QualityIds.Select(id => new WtLiveQualityItem(id)).ToList();
+        _selectedWtLiveQuality = WtLiveQualities.FirstOrDefault(
+            q => string.Equals(q.Id, config.WtLiveImageQuality, StringComparison.OrdinalIgnoreCase))
+            ?? WtLiveQualities[0];
 
         // 子页状态变化 → 刷新标题右侧的统一提示位点
         Skins.PropertyChanged += OnChildChanged;
@@ -1048,6 +1070,28 @@ public partial class MainViewModel : ObservableObject
             // exe 被占用 / 权限拒绝等 → 提示而非崩溃
             ShowStatus(Loc.Format("settings.restart.failed", ex.Message));
         }
+    }
+
+    // ---------- WT Live 卡片图片清晰度 ----------
+
+    /// <summary>清晰度档位下拉项（低清 / 中清 / 高清，见 Services.WtLiveQualityCatalog）。</summary>
+    public IReadOnlyList<WtLiveQualityItem> WtLiveQualities { get; }
+
+    [ObservableProperty] private WtLiveQualityItem? _selectedWtLiveQuality;
+
+    /// <summary>
+    /// 改档即落盘并转给 <see cref="WtLive"/>（缩略图按档位选源图与解码宽度）；
+    /// 只影响**之后**加载的缩略图——已加载的卡片不重下（一页 25 张，重下既费流量也压站点）。
+    /// </summary>
+    partial void OnSelectedWtLiveQualityChanged(WtLiveQualityItem? value)
+    {
+        if (value == null) return;
+        if (string.Equals(value.Id, Config.WtLiveImageQuality, StringComparison.OrdinalIgnoreCase)) return;
+
+        Config.WtLiveImageQuality = value.Id;
+        SafePersist();
+        WtLive.SetQuality(value.Id);
+        ShowStatus(Loc.Format("settings.wtliveQuality.changed", value.DisplayName));
     }
 
     // ---------- 界面语言（功能设计 §3.9）----------

@@ -52,9 +52,39 @@
                                         <Border x:Name="Thumb" Background="{StaticResource BrushSurface}" CornerRadius="10"
                                                 ClipToBounds="True" SizeChanged="Thumbnail_SizeChanged">
                                             <Grid>
+                                                <!-- 加载中：转圈。**未加载的卡片不给占位图标**——进页面就有几十张图在
+                                                     排队取图（并发 4），静态图标会让人以为这些帖子本来就没图 -->
+                                                <Viewbox Width="24" Height="24"
+                                                         HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Viewbox.Style>
+                                                        <Style TargetType="Viewbox">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsThumbnailLoading}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Viewbox.Style>
+                                                    <ContentControl Style="{StaticResource BusySpinner}"/>
+                                                </Viewbox>
+
+                                                <!-- 无预览图 / 加载失败：占位图标（失败不转圈，否则永远在"加载"） -->
                                                 <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
                                                            FontSize="22" Foreground="{StaticResource BrushTextMuted}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsThumbnailMissing}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+
                                                 <Image Source="{Binding PreviewImage}" Stretch="UniformToFill"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <!-- 占位高度按**图片实际可用宽度**算：列宽比它宽（差卡片内边距 + 描边），

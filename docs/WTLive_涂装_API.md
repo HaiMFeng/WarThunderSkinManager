@@ -107,11 +107,30 @@ Feed.type    = 'regular';
 | `author` | object | `{id, nickname, avatar}`，头像来自 `cdn-live.warthunder.com` |
 | `likes` / `views` / `downloads` / `comments` | int | 互动计数 |
 | `description` | string | 简介（含 HTML 标签与 `#标签`） |
-| `images` | **array** | 预览图**数组**（2026-10-09 实测：1~4 张，非对象）；每项 `{id, type, src, width, height, ratio}`，`src` 为 `cdn-live.warthunder.com` 缩略图（路径带 `_lq` 低清）。取首项作列表卡片缩略图 |
+| `images` | **array** | 预览图**数组**（2026-10-09 实测：1~4 张，非对象）；每项 `{id, type, src, width, height, ratio}`，`src` 为 `cdn-live.warthunder.com` 缩略图（路径带 `_lq` 低清，`width`/`height` 就是这张图的尺寸——实测恒为 386 宽）。取首项作列表卡片缩略图 |
 | `file` | object | **下载信息**：`{id, name, link, type, size}`；`link` 即下载直链 |
 | `pbr_ready` | bool | 是否 PBR 就绪 |
 | `inverted_roughness` | bool | 粗糙度反转标记 |
 | `isAuthor` / `isLiked` / `visible` / `featured` / `isSpecial` / `isPinned` / `isMarketSuitable` / `canDelete` / `canEdit` / `doubt` | 各类布尔标志 | 权限/状态位 |
+
+#### 3.2.1 预览图的清晰度分级（2026-10-09 实测）
+
+同一张预览图在 CDN 上是**按后缀分级的同一路径**，只是最后一级目录带不同后缀段：
+
+| 路径形态 | 实测尺寸 | 实测体积 | 可用性 |
+|---|---|---|---|
+| `…/<hash>_lq/<文件名>` | 386×607 | 404 KB | ✅ 列表接口 **给出的就是这个** |
+| `…/<hash>_mq/<文件名>` | 800×1258 | 1.5 MB | ✅ 存在 |
+| `…/<hash>/<文件名>`（去掉 `_lq`） | 916×1440 | 619 KB | ✅ 即**原图** |
+| `…/<hash>_hq/<文件名>` | — | — | ❌ 404 |
+
+- 抽样 6 条帖子：`_lq` 与"去后缀原图"**全部可用**；原图体积约 `_lq` 的 2~8 倍（0.2~1.1 MB），
+  宽高比与 `_lq` 一致（不是裁切，而是同图更高分辨率）。
+- 体积因图而异（上表是同一张图的对比）：`_mq` 不一定比原图小，**不要按体积选档**，按分辨率选。
+- 客户端按用户选的档位改写路径即可拿更清楚的图（实现见 `Services/WtLiveQualityCatalog.cs`，
+  设置项「WT Live 卡片图片清晰度」默认低清）；改写后 404 / 解码失败时**回退列表给的低清 URL**。
+- 详情接口（§13.1 的 `posts/get`）里 `images[].orig.src` 就是上面的"原图"、`images[].mq` 是 `_mq` 变体，
+  但**列表页不需要多请求一次**——路径规则就够。
 
 ### 3.3 分页
 
