@@ -1573,6 +1573,30 @@ internal static class SelfTest
                          + $"单张不动 = {WtLiveDetailViewModel.Step(0, 1, 1)}（应 0），"
                          + $"没有图 = {WtLiveDetailViewModel.Step(0, 0, 1)}（应 0）");
 
+            // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
+            //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----
+            var bindingPaths = new (Type Owner, string Name)[]
+            {
+                (typeof(MainViewModel), nameof(MainViewModel.WtLive)),
+                (typeof(MainViewModel), nameof(MainViewModel.Skins)),
+                (typeof(MainViewModel), nameof(MainViewModel.OpenLinkCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ReloadThumbnailCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Detail)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.OpenCommand)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.CloseCommand)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.NextCommand)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.PreviousCommand)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.RetryCommand)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.ReloadImageCommand)),
+                (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanReloadThumbnail)),
+                (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.CanReload)),
+                (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.IsLoading)),
+            };
+            var missingBindings = string.Join(", ", bindingPaths
+                .Where(p => p.Owner.GetProperty(p.Name) is null)
+                .Select(p => $"{p.Owner.Name}.{p.Name}"));
+            log.AppendLine($"绑定路径   : {bindingPaths.Length} 个成员缺失 = [{missingBindings}]（应为空 [])");
+
             // ---- 下载阶段进度与重试节奏（§3.15：预览图是下载的一部分，独占 20%）----
             var progressCases = new (double Zip, double Preview, bool HasPreview, double Expect)[]
             {

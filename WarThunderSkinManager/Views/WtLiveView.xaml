@@ -72,12 +72,14 @@
                                                         <ContentControl Style="{StaticResource BusySpinner}"/>
                                                     </Viewbox>
 
-                                                    <!-- 5s 还没好（SlowLoadWatcher）→ 给个出口，别让人对着圈干等 -->
+                                                    <!-- 5s 还没好（SlowLoadWatcher）→ 给个出口，别让人对着圈干等。
+                                                         命令在 WtLive 上（**不是** MainViewModel 上）：少写一层 .WtLive 时
+                                                         WPF 只会静默绑定失败——按钮点下去什么都不发生，最难查的一类 bug -->
                                                     <Button Content="{loc:Loc wtlive.reload}"
                                                             Margin="0,8,0,0" HorizontalAlignment="Center"
                                                             MinWidth="72" Height="26" Padding="10,0" FontSize="12"
                                                             CommandParameter="{Binding}"
-                                                            Command="{Binding DataContext.ReloadThumbnailCommand,
+                                                            Command="{Binding DataContext.WtLive.ReloadThumbnailCommand,
                                                                       RelativeSource={RelativeSource AncestorType=ItemsControl}}">
                                                         <Button.Style>
                                                             <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
