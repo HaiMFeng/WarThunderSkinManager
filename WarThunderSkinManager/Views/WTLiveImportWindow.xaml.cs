@@ -61,6 +61,35 @@ public partial class WTLiveImportWindow : Window
         ShowPost(post);
     }
 
+    /// <summary>
+    /// 「粘贴」：把剪贴板里的文本填进网址框并立即读取（省去手动 Ctrl+V 再点「读取」）。
+    /// 剪贴板可能被其他进程占着（<see cref="Clipboard.GetText"/> 会抛），失败走提示而不是崩。
+    /// </summary>
+    private void Paste_Click(object sender, RoutedEventArgs e)
+    {
+        if (!FetchButton.IsEnabled) return; // 读取中防重入，与「读取」同一道护栏
+
+        string text;
+        try
+        {
+            text = Clipboard.GetText().Trim();
+        }
+        catch (Exception)
+        {
+            ShowError(Loc["wtlive.paste.failed"]);
+            return;
+        }
+
+        if (text.Length == 0)
+        {
+            ShowError(Loc["wtlive.paste.empty"]);
+            return;
+        }
+
+        UrlBox.Text = text;
+        Fetch_Click(sender, e); // 链接无效 / 无站内文件等提示由读取路径统一给出
+    }
+
     private void ShowPost(WTLivePost post)
     {
         HintText.Visibility = Visibility.Collapsed;
@@ -109,6 +138,7 @@ public partial class WTLiveImportWindow : Window
     private void SetBusyState(bool busy)
     {
         FetchButton.IsEnabled = !busy;
+        PasteButton.IsEnabled = !busy;
         FetchButton.Content = busy ? Loc["wtlive.fetching"] : Loc["wtlive.fetch"];
     }
 

@@ -38,15 +38,24 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- 网址输入 -->
+                <!-- 网址输入；「粘贴」图标按钮在「读取」左侧：一键把剪贴板里的链接填进来并读取 -->
                 <Grid Grid.Row="0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="UrlBox" Style="{StaticResource BaseTextBox}" VerticalContentAlignment="Center"
                              KeyDown="UrlBox_KeyDown"/>
-                    <Button x:Name="FetchButton" Grid.Column="1" Content="{loc:Loc wtlive.fetch}"
+                    <!-- 仅图标按钮（FA paste，F0EA）：内容只有字形，必须给 ToolTip。
+                         套 SecondaryButton 是为了与右侧「读取」同高同框（都是 34 + 边框）——
+                         ButtonBase 自带 Padding=16,0 与 SemiBold，34 宽会被挤扁、字形会被合成加粗变糊，
+                         所以两样都覆盖掉 -->
+                    <Button x:Name="PasteButton" Grid.Column="1" Content="&#xF0EA;"
+                            Style="{StaticResource SecondaryButton}" Width="34" Padding="0" Margin="8,0,0,0"
+                            FontFamily="{StaticResource IconFont}" FontSize="14" FontWeight="Normal"
+                            ToolTip="{loc:Loc wtlive.paste}" Click="Paste_Click"/>
+                    <Button x:Name="FetchButton" Grid.Column="2" Content="{loc:Loc wtlive.fetch}"
                             Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="Fetch_Click"/>
                 </Grid>
 
