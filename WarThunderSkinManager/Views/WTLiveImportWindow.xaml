@@ -70,7 +70,13 @@
                         <TextBlock Text="{loc:Loc wtlive.displayName}" Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
                         <TextBox x:Name="DisplayNameBox" Style="{StaticResource BaseTextBox}"/>
                         <TextBlock Text="{loc:Loc wtlive.description}" Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
-                        <TextBlock x:Name="DescriptionText" Style="{StaticResource PageSubtitle}" TextWrapping="Wrap"/>
+                        <!-- 用可编辑文本框而非 TextBlock：描述正文里常带载具 / 涂装名，用户需要能选中复制。
+                             覆盖 BaseTextBox 的固定高度（34）与垂直居中，改为可随内容增高、顶部对齐的多行框；
+                             超过 MaxHeight 后在框内滚动，避免长正文把窗口撑高 -->
+                        <TextBox x:Name="DescriptionText" Style="{StaticResource BaseTextBox}"
+                                 Height="Auto" MinHeight="34" MaxHeight="140" Padding="6,5"
+                                 VerticalContentAlignment="Top" TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"/>
                     </StackPanel>
                 </ScrollViewer>
 
