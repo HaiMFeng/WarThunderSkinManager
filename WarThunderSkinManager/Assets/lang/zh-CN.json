@@ -10,6 +10,7 @@
   "common.browse": "浏览",
   "common.open": "打开",
   "common.cancel": "取消",
+  "common.canceling": "正在取消…",
   "common.ok": "确定",
   "common.continue": "继续",
   "common.tip": "提示",

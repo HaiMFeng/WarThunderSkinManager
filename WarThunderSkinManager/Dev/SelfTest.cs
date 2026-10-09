@@ -1624,7 +1624,8 @@ internal static class SelfTest
 
             progressScope.Dispose();
             var resetAfterAll = !busyIndicator.IsBusy && !busyIndicator.BarVisible
-                && !busyIndicator.CanCancel && busyIndicator.Progress == 0 && busyIndicator.Text.Length == 0;
+                && !busyIndicator.CanCancel && busyIndicator.Progress == 0 && busyIndicator.Text.Length == 0
+                && busyIndicator.Detail.Length == 0 && !busyIndicator.CancelRequested;
 
             log.AppendLine($"统一容器进度 : 取消按钮 = {cancelShown}（给了回调应 True）、起始无进度条 = {barHiddenInitially}（应 True），"
                          + $"报 0.42 → 进度条 = {barShown}、文案 = {pctText}（应 True/42%），"
@@ -1633,6 +1634,29 @@ internal static class SelfTest
             log.AppendLine($"统一容器嵌套 : 内层报进度被忽略 = {innerReportIgnored}（应 True）、不顶掉最外层取消 = {outerCancelKept}（应 True），"
                          + $"重复请求取消只生效一次 = {cancelFiredOnce}（应 True），"
                          + $"全部释放后彻底重置 = {resetAfterAll}（应 True）");
+
+            // ---- 统一容器：副文案 / 自定义进度文案 / 取消已请求态（迁移进度窗按字节显示 "12.3 MB / 4.5 GB" 要用）----
+            var detailScope = busyIndicator.Begin("带副文案", () => { });
+
+            detailScope.SetDetail("正在解构 xxx.zip");
+            var detailShown = busyIndicator.Detail;
+            detailScope.SetDetail("");
+            var detailCleared = busyIndicator.Detail.Length == 0;
+
+            detailScope.Report(0.5, "1.5 GB / 3.0 GB"); // 自定义文案：不显示百分比
+            var customText = busyIndicator.ProgressText;
+            var customFraction = busyIndicator.Progress;
+
+            var cancelFlagInitially = !busyIndicator.CancelRequested;
+            busyIndicator.RequestCancel();
+            var cancelFlagSet = busyIndicator.CancelRequested;
+            detailScope.Dispose();
+            var cancelFlagReset = !busyIndicator.CancelRequested;
+
+            log.AppendLine($"统一容器副文案: 设置 = {detailShown}（应 正在解构 xxx.zip），清空后折叠 = {detailCleared}（应 True），"
+                         + $"自定义进度文案 = {customText}、比例 = {customFraction}（应 1.5 GB / 3.0 GB、0.5）");
+            log.AppendLine($"统一容器取消态: 初始未请求 = {cancelFlagInitially}（应 True），请求后 = {cancelFlagSet}（应 True），"
+                         + $"释放后复位 = {cancelFlagReset}（应 True）");
 
             // ---- 应用自更新（§6，docs/应用自更新设计.md）：离线可验证的部分 ----
             // 版本比较：必须按 SemVer（字符串比会在 0.1.10 vs 0.1.9 上翻车；-dev 是预发布标识）

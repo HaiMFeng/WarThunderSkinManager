@@ -6,20 +6,20 @@ namespace WarThunderSkinManager.Services;
 
 /// <summary>
 /// **全局"处理中"指示**：界面侧 = 主窗口上的遮罩 + 旋转加载圈 + 文案（§2.6），
-/// 由 <see cref="Views.BusyOverlay"/> 承载；按需附带进度条与取消入口。
+/// 由 <see cref="Views.BusyOverlay"/> 承载；按需附带副文案、进度条与取消入口。
 /// </summary>
 /// <remarks>
-/// 用于"点了按钮但几秒内看不到任何变化"的长操作：复制 / 删除 / 导入 / 重建资源库。
+/// 用于"点了按钮但几秒内看不到任何变化"的长操作：复制 / 删除 / 导入 / 迁移 / 重建资源库。
 /// 这些操作的耗时部分已经在后台线程（界面不冻结），但**用户侧没有任何反馈** →
 /// 容易被当成"没反应"而连点、或在操作进行中切页面/退出。遮罩同时挡住交互，从根上避免重复触发。
 /// <para>
-/// 用法：<c>using var _ = BusyIndicator.Instance.Begin(Loc["busy.duplicate"]);</c>
+/// 用法：<c>using var scope = BusyIndicator.Instance.Begin(Loc["busy.duplicate"]);</c>
 /// —— 可嵌套（内部计数）；文案取**最外层**那次（外层才是用户理解的"这次操作"），
 /// 计数归零才隐藏遮罩。调用与释放都在 UI 线程上（异步流程 <c>await</c> 后会回到 UI 线程）。
 /// </para>
 /// <para>
-/// 进度与取消**由最外层作用域决定**（内层的 <see cref="Scope.Report"/> 被忽略）：
-/// 嵌套时若允许内层改进度，进度条会随内层起落跳变。取消入口见 <see cref="RequestCancel"/>。
+/// 副文案 / 进度 / 取消**都由最外层作用域决定**（内层的设置被忽略）：
+/// 嵌套时若允许内层改这些，进度条与副文案会随内层起落跳变。
 /// </para>
 /// <para>
 /// 遮罩出现/消失**不做延时**：这些操作本来就要 1 秒以上，立即可见比"防闪烁"更重要。
@@ -33,10 +33,12 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     private readonly object _gate = new();
     private int _count;
     private string _text = "";
+    private string _detail = "";
     private bool _barVisible;
     private double _progress;
     private string _progressText = "";
     private bool _canCancel;
+    private bool _cancelRequested;
     private Action? _onCancel;
 
     private BusyIndicator() { }
@@ -47,17 +49,23 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     /// <summary>当前显示的文案（最外层那次 <see cref="Begin(string)"/> 传进来的）。</summary>
     public string Text => _text;
 
+    /// <summary>副文案：正在处理的具体条目（如"正在解构 xxx.zip"）；为空时界面折叠该行。</summary>
+    public string Detail => _detail;
+
     /// <summary>是否显示进度条（无总量时保持 false → 只有加载圈，即"不确定态"）。</summary>
     public bool BarVisible => _barVisible;
 
     /// <summary>进度条取值，<c>0..1</c>（仅 <see cref="BarVisible"/> 为 true 时有意义）。</summary>
     public double Progress => _progress;
 
-    /// <summary>进度文案（<c>42%</c> 或 <c>3 / 8</c>），无进度时为空。</summary>
+    /// <summary>进度文案（<c>42%</c> / <c>3 / 8</c> / 自定义如 <c>12.3 MB / 4.5 GB</c>），无进度时为空。</summary>
     public string ProgressText => _progressText;
 
     /// <summary>是否显示「取消」按钮（<see cref="Begin(string, Action)"/> 传了回调才为 true）。</summary>
     public bool CanCancel => _canCancel;
+
+    /// <summary>取消是否已被请求（界面据此把按钮置灰：请求已投递，等流程自己收尾）。</summary>
+    public bool CancelRequested => _cancelRequested;
 
     /// <summary>进入"处理中"状态；<c>Dispose</c> 时退出。可嵌套，成对使用（<c>using var</c> 最省心）。</summary>
     public Scope Begin(string text) => Begin(text, null);
@@ -70,6 +78,7 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     /// 非空 → 遮罩上出现「取消」按钮，点击时执行它。**取消入口必须始终可点**：
     /// 全屏遮罩只应在"取消入口就在遮罩上"时才用于长任务（实测教训见
     /// <c>docs\处理中反馈统一设计.md</c> §3.6 与 <c>MainViewModel</c> 的应用更新下载注释）。
+    /// 回调应只做"置位取消令牌"这类轻量动作 —— 它在 UI 线程上执行。
     /// </param>
     public Scope Begin(string text, Action? onCancel)
     {
@@ -81,10 +90,12 @@ public sealed class BusyIndicator : INotifyPropertyChanged
             if (isOuter)
             {
                 _text = text;
+                _detail = "";
                 _barVisible = false;
                 _progress = 0;
                 _progressText = "";
                 _canCancel = onCancel != null;
+                _cancelRequested = false;
                 _onCancel = onCancel;
             }
 
@@ -98,17 +109,20 @@ public sealed class BusyIndicator : INotifyPropertyChanged
 
     /// <summary>
     /// 点击遮罩上的「取消」：把请求转给最外层那次操作。
-    /// 回调**只生效一次**（重复点击无副作用），按钮本身仍保持可见——由调用方决定后续反馈。
+    /// 重复点击无副作用（第二次起直接返回）；按钮仍保持可见但置灰，由调用方决定后续反馈。
     /// </summary>
     public void RequestCancel()
     {
         Action? action;
         lock (_gate)
         {
+            if (_cancelRequested) return; // 已请求过：别把取消请求重复投给同一流程
+            _cancelRequested = true;
             action = _onCancel;
-            _onCancel = null; // 一次即失效：避免连点把取消请求重复投给同一流程
+            _onCancel = null;
         }
 
+        Raise(nameof(CancelRequested));
         action?.Invoke();
     }
 
@@ -126,6 +140,16 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         Raise(nameof(ProgressText));
     }
 
+    private void SetDetail(string detail)
+    {
+        lock (_gate)
+        {
+            _detail = detail;
+        }
+
+        Raise(nameof(Detail));
+    }
+
     private void End()
     {
         bool cleared;
@@ -137,10 +161,12 @@ public sealed class BusyIndicator : INotifyPropertyChanged
             if (cleared)
             {
                 _text = "";
+                _detail = "";
                 _barVisible = false;
                 _progress = 0;
                 _progressText = "";
                 _canCancel = false;
+                _cancelRequested = false;
                 _onCancel = null;
             }
         }
@@ -154,10 +180,12 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     {
         Raise(nameof(IsBusy));
         Raise(nameof(Text));
+        Raise(nameof(Detail));
         Raise(nameof(BarVisible));
         Raise(nameof(Progress));
         Raise(nameof(ProgressText));
         Raise(nameof(CanCancel));
+        Raise(nameof(CancelRequested));
     }
 
     private void Raise([CallerMemberName] string? name = null)
@@ -169,14 +197,17 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         private bool _done;
 
         /// <summary>
-        /// 报告确定态进度（<c>0..1</c>，文案显示为百分比）。
+        /// 报告确定态进度（<c>0..1</c>）。<paramref name="text"/> 为空时文案自动取百分比（<c>42%</c>），
+        /// 非空则原样显示（如按字节的 <c>12.3 MB / 4.5 GB</c>）。
         /// 仅**最外层**作用域生效；越界值夹到 <c>0..1</c>。
         /// </summary>
-        public void Report(double fraction)
+        public void Report(double fraction, string? text = null)
         {
             if (!isOuter) return;
+
             var clamped = Math.Clamp(fraction, 0, 1);
-            owner.SetProgress(true, clamped, $"{Math.Round(clamped * 100)}%");
+            owner.SetProgress(true, clamped,
+                string.IsNullOrEmpty(text) ? $"{Math.Round(clamped * 100)}%" : text);
         }
 
         /// <summary>
@@ -201,6 +232,13 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         {
             if (!isOuter) return;
             owner.SetProgress(false, 0, "");
+        }
+
+        /// <summary>设置副文案（正在处理的具体条目），传空串则界面折叠该行。仅**最外层**作用域生效。</summary>
+        public void SetDetail(string detail)
+        {
+            if (!isOuter) return;
+            owner.SetDetail(detail ?? "");
         }
 
         public void Dispose()
