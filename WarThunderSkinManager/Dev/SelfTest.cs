@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
 using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Common;
@@ -447,6 +449,69 @@ internal static class SelfTest
             MasonrySelfTest.Run(log);
             MasonrySelfTest.CheckCardAspect(log);   // 缩略图按比例占位不得裁边（曾被列宽算高裁掉约 12%）
             MasonrySelfTest.MeasureThroughput(log); // 卡片上规模后的一次完整布局成本（瀑布流不做虚拟化，需要有数）
+
+            // ---- 输入框内边距（BaseTextBox）：**Padding 只能生效一次** ----
+            // 模板若把 Padding 又绑给 Border，TextBox 自己再按 Padding 内缩一次 → 内缩两次，
+            // 按「边框 + Padding」摆的占位文案就会与输入光标错位（曾被报「光标落在占位文案的载字中间」）。
+            // 判据不看绝对值（含字形侧边距），只看**差值**：Padding 6 → 28 时文字起点该右移 22；
+            // 右移 44 即为被应用了两次。
+            try
+            {
+                var app = Application.Current;
+                app.Resources.MergedDictionaries.Add(ThemeCatalog.LoadThemeDictionary(null));
+                app.Resources.MergedDictionaries.Add(new ResourceDictionary
+                {
+                    Source = new Uri("Themes/ThemeResources.xaml", UriKind.Relative)
+                });
+
+                var origins = new List<double>();
+                foreach (var pad in new[] { 6.0, 28.0 })
+                {
+                    var host = new Grid { Width = 300 };
+                    var box = new TextBox
+                    {
+                        Style = (Style)app.Resources["BaseTextBox"],
+                        Padding = new Thickness(pad, 0, 0, 0),
+                        Text = "M"
+                    };
+                    host.Children.Add(box);
+                    host.Measure(new Size(300, double.PositiveInfinity));
+                    host.Arrange(new Rect(0, 0, 300, 34));
+                    box.ApplyTemplate();
+
+                    origins.Add(box.GetRectFromCharacterIndex(0).X);
+                }
+
+                // 纵向同理由 TextBox 自己施加（多行框「顶部对齐 + 5 内边距」靠它）
+                var multiHost = new Grid { Width = 300 };
+                var multi = new TextBox
+                {
+                    Style = (Style)app.Resources["BaseTextBox"],
+                    Height = 60,
+                    Padding = new Thickness(6, 5, 0, 0),
+                    VerticalContentAlignment = VerticalAlignment.Top,
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.Wrap,
+                    Text = "M"
+                };
+                multiHost.Children.Add(multi);
+                multiHost.Measure(new Size(300, double.PositiveInfinity));
+                multiHost.Arrange(new Rect(0, 0, 300, 60));
+                multi.ApplyTemplate();
+                var multiContent = multi.Template.FindName("PART_ContentHost", multi) as FrameworkElement;
+                var multiHostY = multiContent?.TransformToAncestor(multi).Transform(new Point(0, 0)).Y ?? double.NaN;
+                var multiTextY = multi.GetRectFromCharacterIndex(0).Y;
+
+                log.AppendLine($"输入框内边距: Padding 6 → 文字起点 {origins[0]:0.##}，28 → {origins[1]:0.##}，"
+                             + $"右移 {origins[1] - origins[0]:0.##}（应 22 = 28 - 6；44 即被应用了两次）"
+                             + $"，占位文案起点（边框 1 + Padding）= 7 / 29");
+                log.AppendLine($"输入框纵向内边距: 多行框 Padding.Top=5 → 文字 Y = {multiTextY:0.##}"
+                             + $"（内容宿主体 Y = {multiHostY:0.##}，应再 +5 ≈ {multiHostY + 5:0.##}）");
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine($"自检异常：输入框内边距探针抛错 → {ex.Message}");
+            }
 
             // ---- 库级部件表 / 跨载具复用（§3.5 / §3.6）----
             log.AppendLine();

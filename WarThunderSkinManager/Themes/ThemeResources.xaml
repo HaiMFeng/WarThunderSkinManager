@@ -127,7 +127,9 @@
     <Style x:Key="BaseTextBox" TargetType="TextBox">
         <Setter Property="Height" Value="34"/>
         <Setter Property="Padding" Value="6,0"/>
-        <!-- 内容内边距仅由 Border.Padding 生效一次，避免文字离边框过远 -->
+        <!-- 文字内边距**只由 TextBox 自己**按 Padding 内缩（模板里不再绑 Border.Padding）：
+             两者都做会内缩两次（实测 Padding=6 → 文字起点 15，=28 → 59，差值是 Padding 的两倍），
+             于是按 Padding 摆的占位文案就会与输入光标错位（自检「输入框内边距」会挡住这种回归） -->
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="BorderThickness" Value="1"/>
@@ -141,7 +143,7 @@
                     <Border x:Name="bd" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="6" Padding="{TemplateBinding Padding}"
+                            CornerRadius="6"
                             SnapsToDevicePixels="True">
                         <!-- 用 TemplateBinding 暴露对齐与滚动条：单行框沿用样式默认（Center / Hidden，外观不变），
                              多行框（如 WT Live 确认窗的描述）才能靠 VerticalContentAlignment=Top +
@@ -201,7 +203,7 @@
                     <Border x:Name="bd" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="6" Padding="{TemplateBinding Padding}"
+                            CornerRadius="6"
                             SnapsToDevicePixels="True">
                         <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"
                                       VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Hidden"

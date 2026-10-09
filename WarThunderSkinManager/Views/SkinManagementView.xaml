@@ -228,7 +228,8 @@
                     <Grid DockPanel.Dock="Top" Margin="8,0,8,8">
                         <TextBox Style="{StaticResource BaseTextBox}"
                                  Text="{Binding Skins.VehicleSearchText, UpdateSourceTrigger=PropertyChanged}"/>
-                        <TextBlock Text="{loc:Loc vehicles.search}" Margin="22,0,0,0" VerticalAlignment="Center"
+                        <!-- 占位文案与输入光标同一起点：BaseTextBox 的文字起点 = 边框 1 + Padding 6 -->
+                        <TextBlock Text="{loc:Loc vehicles.search}" Margin="7,0,0,0" VerticalAlignment="Center"
                                    Foreground="{StaticResource BrushTextMuted}" IsHitTestVisible="False">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
