@@ -39,7 +39,10 @@
                 MouseLeftButtonDown="Backdrop_MouseLeftButtonDown"
                 MouseLeftButtonUp="Backdrop_MouseLeftButtonUp"/>
 
-        <Border HorizontalAlignment="Center" VerticalAlignment="Stretch"
+        <!-- 宽度**不跟内容走**：Stretch + MaxWidth 才是"铺满可用宽度、最多 820"。
+             若用 Center，卡片宽度会退化成内容期望宽——低清缩略图只有 386px、文案又短时，
+             浮窗就被压成一根细条（原图加载完又撑开，观感还会跳） -->
+        <Border HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 MaxWidth="820" Margin="48,40"
                 Background="{StaticResource BrushSurface}"
                 BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
@@ -58,7 +61,7 @@
 
                 <!-- 轮播：占剩余高度；图片 Uniform 且只缩不放（低清垫底图不会被拉糊）。
                      **滚轮只在这一格里切图**——所以鼠标停在正文 / 信息区时，滚轮该滚文本就滚文本 -->
-                <Grid Grid.Row="0" MinHeight="180" PreviewMouseWheel="Carousel_PreviewMouseWheel">
+                <Grid Grid.Row="0" MinHeight="140" PreviewMouseWheel="Carousel_PreviewMouseWheel">
                     <Image Source="{Binding WtLive.Detail.Current.Image}"
                            Stretch="Uniform" StretchDirection="DownOnly"/>
 
@@ -198,9 +201,11 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- 正文：可选中复制（与「从 WT Live 下载」确认窗同一处理），限高滚动；空正文折叠该行 -->
-                <TextBox Grid.Row="2" Margin="0,10,0,0" MaxHeight="110"
-                         Height="Auto" MinHeight="34" Padding="6,5"
+                <!-- 正文：可选中复制（与「从 WT Live 下载」确认窗同一处理），限高滚动；空正文折叠该行。
+                     高度：短正文 80、长正文最多 180（12 行左右），超出在框内滚动——
+                     原图那格是 * 行，正文长多少图就让多少，两边都不挤 -->
+                <TextBox Grid.Row="2" Margin="0,10,0,0" MaxHeight="180"
+                         Height="Auto" MinHeight="80" Padding="6,5"
                          VerticalContentAlignment="Top" TextWrapping="Wrap" AcceptsReturn="True"
                          VerticalScrollBarVisibility="Auto" IsReadOnly="True"
                          Text="{Binding WtLive.Detail.Description, Mode=OneWay}">
