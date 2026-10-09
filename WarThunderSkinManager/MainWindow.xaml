@@ -176,6 +176,25 @@
                             </StackPanel>
                         </Button>
 
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.WtLive}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.WtLive}">
+                                            <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
+                                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xF54E;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                           Width="24" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc nav.wtlive}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
                         <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Settings}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
@@ -295,6 +314,38 @@
                                 </Style>
                             </views:PartsView.Style>
                         </views:PartsView>
+
+                        <views:WtLiveView>
+                            <views:WtLiveView.Style>
+                                <Style TargetType="UserControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="RenderTransform">
+                                        <Setter.Value>
+                                            <TranslateTransform Y="0"/>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.WtLive}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="0" To="1" Duration="0:0:0.25"/>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         From="10" To="0" Duration="0:0:0.25">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </views:WtLiveView.Style>
+                        </views:WtLiveView>
 
                         <views:SettingsView>
                             <views:SettingsView.Style>

@@ -1,0 +1,18 @@
+<UserControl x:Class="WarThunderSkinManager.Views.WtLiveView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
+    <!-- WT Live 涂装浏览页：当前只有页面骨架（标题 + 副标题），
+         列表 / 按载具筛选 / 下载导入待后续接入（接口依据见 docs/WTLive_涂装_API.md）。 -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="{loc:Loc wtlive.page.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

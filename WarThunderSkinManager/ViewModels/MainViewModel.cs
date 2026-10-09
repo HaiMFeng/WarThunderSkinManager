@@ -96,6 +96,10 @@ public enum TabKey
 
     /// <summary>「多源复用」页（§3.13）：仅在设置开启 <see cref="AppConfig.PartReuseEnabled"/> 后可见。</summary>
     PartReuse,
+
+    /// <summary>「WT Live」页：浏览 live.warthunder.com 上的公开涂装（按载具筛选 / 下载导入）。</summary>
+    WtLive,
+
     Settings
 }
 
