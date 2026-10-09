@@ -1188,7 +1188,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContentControl">
-                    <Ellipse Width="18" Height="18"
+                    <Ellipse Width="18" Height="18" VerticalAlignment="Center"
                              Stroke="{StaticResource BrushPrimary}" StrokeThickness="2"
                              StrokeDashArray="20.94 4.19" StrokeDashCap="Round"
                              RenderTransformOrigin="0.5,0.5">
