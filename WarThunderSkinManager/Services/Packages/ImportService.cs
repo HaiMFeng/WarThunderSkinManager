@@ -177,9 +177,13 @@ public static class ImportService
     /// 上百 GB 的批量导入用多核并行显著提速（<see cref="BlobStore.Store"/> 线程安全，包目录互不相交）。
     /// 取消在**包之间**生效：已完成的包是完整单元，保留并正常登记（<see cref="ImportResult.Canceled"/> 置位）。
     /// </summary>
+    /// <param name="sourceUrl">
+    /// 来源链接（WT Live 帖子网址等；可选）：整批候选同源，写入每个新包的 <see cref="PackageMeta.SourceUrl"/>。
+    /// </param>
     public static ImportResult Commit(IReadOnlyList<ImportCandidate> candidates, string resourceDir,
         ImportSourceType sourceType, string sourcePath,
-        IProgress<ImportProgress>? progress = null, CancellationToken cancellationToken = default)
+        IProgress<ImportProgress>? progress = null, CancellationToken cancellationToken = default,
+        string? sourceUrl = null)
     {
         // **按来源分组**（§3.1）：一个压缩包 / 一个导入文件夹 / UserSkins 的一个顶层文件夹 = 一个来源
         // = 一个导入记录（各自一个 Id）。未铺分组键的调用（键为空）→ 整批算一个来源，与旧行为一致。
@@ -227,7 +231,7 @@ public static class ImportService
                 {
                     var recordId = importIdByCandidate[candidate];
                     var decon = DeconstructionService.Deconstruct(
-                        candidate.BlkPath, resourceDir, recordId, candidate.SuggestedName);
+                        candidate.BlkPath, resourceDir, recordId, candidate.SuggestedName, sourceUrl);
 
                     lock (gate)
                     {

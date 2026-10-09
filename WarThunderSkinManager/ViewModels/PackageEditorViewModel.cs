@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -36,6 +37,10 @@ public partial class PackageEditorViewModel : ObservableObject
     private const int MaxCrossVehicleCandidates = 80;
 
     [ObservableProperty] private string _name;
+
+    /// <summary>来源链接（WT Live 帖子网址等）：只读信息 + 可编辑 + 「打开链接」。</summary>
+    [ObservableProperty] private string _sourceUrl = "";
+
     [ObservableProperty] private ImageSource? _previewImage;
     [ObservableProperty] private string _statusMessage = "";
     [ObservableProperty] private ObservableCollection<PartRow> _parts = new();
@@ -49,6 +54,7 @@ public partial class PackageEditorViewModel : ObservableObject
         _resourceDir = config.ResourceDirectory;
         _meta = meta;
         _name = meta.Name;
+        _sourceUrl = meta.SourceUrl;
         _extraBlkText = meta.ExtraBlkText ?? "";
 
         RefreshPreview();
@@ -156,9 +162,35 @@ public partial class PackageEditorViewModel : ObservableObject
         var clean = PackageNaming.Sanitize(Name);
         if (clean.Length > 0) _meta.Name = clean;
 
+        _meta.SourceUrl = SourceUrl.Trim(); // 来源链接（清空 = 移除）
+
         _meta.Preview = PreviewStore.Exists(_configDir, _meta.Id) ? PreviewStore.FileName(_meta.Id) : "";
 
         ApplyBlocks();
+    }
+
+    // ---------- 来源链接（§3.16）----------
+
+    /// <summary>链接非空 → 「打开链接」按钮可用。</summary>
+    public bool HasSourceUrl => SourceUrl.Trim().Length > 0;
+
+    partial void OnSourceUrlChanged(string value) => OnPropertyChanged(nameof(HasSourceUrl));
+
+    /// <summary>用系统默认浏览器打开来源链接（属性页「打开链接」——重新访问 WT Live 帖子）。</summary>
+    [RelayCommand]
+    private void OpenLink()
+    {
+        var url = SourceUrl.Trim();
+        if (url.Length == 0) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("pkg.editor.openLink.failed", ex.Message));
+        }
     }
 
     // ---------- 进阶：编辑 blk 块（§7.3，**窗口级交互**）----------

@@ -1573,6 +1573,14 @@ internal static class SelfTest
                          + $"单张不动 = {WtLiveDetailViewModel.Step(0, 1, 1)}（应 0），"
                          + $"没有图 = {WtLiveDetailViewModel.Step(0, 0, 1)}（应 0）");
 
+            // ---- 来源链接判定（§3.16）：下载前「已下载」比对——语言段 / 尾斜杠 / 大小写不同必须视为同一帖 ----
+            log.AppendLine($"来源链接判定: 同帖异语言段 = {WtLiveLink.Matches("https://live.warthunder.com/post/1189546/en/", "https://live.warthunder.com/post/1189546/ru/")}（应 True），"
+                         + $"尾斜杠差异 = {WtLiveLink.Matches("https://live.warthunder.com/post/1189546/", "https://live.warthunder.com/post/1189546")}（应 True），"
+                         + $"不同帖 = {WtLiveLink.Matches("https://live.warthunder.com/post/1189546/", "https://live.warthunder.com/post/1189547/")}（应 False），"
+                         + $"空链接 = {WtLiveLink.Matches("", "https://live.warthunder.com/post/1189546/")}（应 False），"
+                         + $"非帖子链接规范化比对 = {WtLiveLink.Matches("https://example.com/a/", "https://example.com/A")}（应 True），"
+                         + $"取帖子 id = {WtLiveLink.PostIdOf("https://live.warthunder.com/post/1189546/en/")}（应 1189546）");
+
             // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
             //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----
             var bindingPaths = new (Type Owner, string Name)[]
@@ -1591,6 +1599,9 @@ internal static class SelfTest
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanReloadThumbnail)),
                 (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.CanReload)),
                 (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.IsLoading)),
+                (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.SourceUrl)),
+                (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.HasSourceUrl)),
+                (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.OpenLinkCommand)),
             };
             var missingBindings = string.Join(", ", bindingPaths
                 .Where(p => p.Owner.GetProperty(p.Name) is null)

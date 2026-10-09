@@ -136,7 +136,7 @@ public partial class SkinsViewModel : ObservableObject
     /// 把该帖子的链接传进来），为空则空白等用户粘贴 / 输入（涂装管理页的入口，两者共用一个命令）。
     /// </summary>
     [RelayCommand]
-    private void OpenWtLiveImport(string? postUrl)
+    private async Task OpenWtLiveImport(string? postUrl)
     {
         if (!EnsureResourceDir()) return;
 
@@ -147,7 +147,45 @@ public partial class SkinsViewModel : ObservableObject
         window.Owner = Application.Current?.MainWindow;
         if (window.ShowDialog() != true || window.Post == null) return;
 
+        // 该帖的链接已挂在某个包里（= 已下载过）→ 提醒并询问是否再次下载（§3.16）
+        if (!await ConfirmNotDownloaded(window.Post)) return;
+
         StartWtLiveDownload(window.Post);
+    }
+
+    /// <summary>
+    /// 下载前查「链接表」：该帖链接已挂在某个涂装包上（<see cref="PackageMeta.SourceUrl"/>）即视为
+    /// **已下载过** → 提醒并询问是否再次下载（§3.16）。返回是否继续下载。
+    /// 查全库 meta 可能扫库（无内存快照时）→ 放后台并给「处理中」反馈。
+    /// </summary>
+    private async Task<bool> ConfirmNotDownloaded(WTLivePost post)
+    {
+        var url = WtLiveLink.PostUrl(post.LangGroup);
+        var resourceDir = _config.ResourceDirectory;
+        var configDir = _config.ConfigDirectory;
+
+        List<PackageLinkService.LinkMatch> matches;
+        using (BusyIndicator.Instance.Begin(Loc["busy.checkDownloaded"]))
+        {
+            matches = await Task.Run(() => PackageLinkService.Find(resourceDir, configDir, url));
+        }
+
+        if (matches.Count == 0) return true;
+
+        // 展示名：优先帖子显示名，缺失时退回压缩包名去扩展名 / 帖子 id
+        var display = post.DisplayName.Length > 0
+            ? post.DisplayName
+            : post.File != null ? Path.GetFileNameWithoutExtension(post.File.Name) : $"#{post.LangGroup}";
+
+        // 列前几个包名，其余折叠成「等 N 个」
+        var names = string.Join("、", matches.Take(3).Select(m => m.Name));
+        if (matches.Count > 3) names += Loc.Format("wtlive.redownloadMore", matches.Count - 3);
+
+        return MessageDialog.Confirm(
+            Loc.Format("wtlive.redownloadConfirm", display, matches.Count, names),
+            Loc["wtlive.redownloadTitle"],
+            Loc["wtlive.redownloadAgain"], Loc["common.cancel"],
+            icon: DialogIcon.Question);
     }
 
     /// <summary>
@@ -158,7 +196,7 @@ public partial class SkinsViewModel : ObservableObject
         if (post.File == null) return; // 弹窗侧已拦截
 
         var item = new WtLiveDownloadItem(post.LangGroup,
-            $"https://live.warthunder.com/post/{post.LangGroup}/en/",
+            WtLiveLink.PostUrl(post.LangGroup),
             post.File.Name, post.Author, post.DisplayName,
             post.File.Link, post.File.Size,
             post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null);
@@ -361,7 +399,8 @@ public partial class SkinsViewModel : ObservableObject
             // 一个压缩包 = 一个来源 = 一个导入 ID（§3.1；下载项本身就是一个 zip）
             ImportService.AssignGroupKey(candidates, zipPath, ImportSourceType.Archive);
 
-            var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath);
+            // 帖子链接随包落盘（item.Url）：属性页可打开，下次下载同一帖可提示「已下载」
+            var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath, sourceUrl: item.Url);
 
             // 导入成功 → 预览图（已下载完）应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
@@ -1629,7 +1668,7 @@ public partial class SkinsViewModel : ObservableObject
     /// </summary>
     private async Task<ImportResult?> RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
         string sourcePath, bool canDeleteArchive = false, IReadOnlyList<string>? archives = null,
-        string extraStatus = "")
+        string extraStatus = "", string? sourceUrl = null)
     {
         try
         {
@@ -1671,7 +1710,7 @@ public partial class SkinsViewModel : ObservableObject
 
                 // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
                 result = await Task.Run(() => ImportService.Commit(
-                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token));
+                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl));
             }
 
             PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建

@@ -29,6 +29,13 @@ public sealed class PackageMeta
     /// <summary>预览图（png，可选），键跟随包</summary>
     public string Preview { get; set; } = "";
 
+    /// <summary>
+    /// **来源链接**（可选）：导入时记录（WT Live 帖子网址等），属性页可编辑 / 打开。
+    /// 下载涂装前用它判断「这一帖是否已经下载过」（见 <see cref="PackageLinkService"/>）；
+    /// 链接**随包落盘**，删除包即一并消失，无需单独清理。
+    /// </summary>
+    public string SourceUrl { get; set; } = "";
+
     /// <summary>同载具内的显示顺序（用户可拖动卡片调整）</summary>
     public int Order { get; set; }
 

@@ -20,8 +20,9 @@ public sealed class DeconstructResult
 /// </summary>
 public static class DeconstructionService
 {
+    /// <param name="sourceUrl">来源链接（WT Live 帖子网址等；可选），随包落盘供属性页展示 / 打开。</param>
     public static DeconstructResult Deconstruct(string blkPath, string resourceDir, string sourceImportId,
-        string? name = null)
+        string? name = null, string? sourceUrl = null)
     {
         var warnings = new List<string>();
         var text = File.ReadAllText(blkPath, Encoding.UTF8);
@@ -47,7 +48,8 @@ public static class DeconstructionService
             VehicleId = package.VehicleId,
             Name = package.Name,
             SourceImportId = sourceImportId,
-            IsResource = true // 导入包 = 只读资源（§3.5）：编辑请复制，防止污染候选来源
+            IsResource = true, // 导入包 = 只读资源（§3.5）：编辑请复制，防止污染候选来源
+            SourceUrl = sourceUrl ?? "" // 来源链接（WT Live 下载时写入）
         };
 
         // to → 已入库内容（同一张贴图被多个 from 复用是常态：内容只入库一次，

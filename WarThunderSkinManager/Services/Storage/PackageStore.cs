@@ -102,6 +102,7 @@ public static class PackageStore
             VehicleId = source.VehicleId,
             Name = newName,
             SourceImportId = source.SourceImportId,
+            SourceUrl = source.SourceUrl, // 继承来源链接（副本与源包同源）
             IsResource = false, // 复制产物 = 普通包（可编辑；来源资源包不受影响，§3.5）
             Preview = "", // 下面按源包**实际有无预览图**决定是否填（缓存键跟随包，指向副本自己）
             Order = source.Order + 1,

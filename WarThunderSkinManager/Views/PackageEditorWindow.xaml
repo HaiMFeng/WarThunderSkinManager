@@ -98,6 +98,22 @@
                     <TextBox Style="{StaticResource BaseTextBox}"
                              Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
 
+                    <!-- 来源链接（§3.16）：WT Live 帖子网址——下载时记录，可编辑 / 打开重新访问 -->
+                    <TextBlock Text="{loc:Loc pkg.editor.link}" Style="{StaticResource FieldLabel}" Margin="0,18,0,6"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}"
+                                 Text="{Binding SourceUrl, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Button Grid.Column="1" Margin="8,0,0,0"
+                                Content="{loc:Loc pkg.editor.openLink}"
+                                Style="{StaticResource SecondaryButton}"
+                                Command="{Binding OpenLinkCommand}"
+                                IsEnabled="{Binding HasSourceUrl}"/>
+                    </Grid>
+
                     <!-- 资源包（§3.5 / §7）：只读素材——**不可解锁、不可修改**，只能复制为普通包后再改 -->
                     <Grid Margin="0,18,0,0">
                         <Grid.ColumnDefinitions>
