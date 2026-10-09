@@ -49,7 +49,7 @@
                                         CornerRadius="12" Padding="12" SnapsToDevicePixels="True">
                                     <StackPanel>
                                         <!-- 缩略图：圆角裁剪在 code-behind 做（ClipToBounds 不认 CornerRadius） -->
-                                        <Border Background="{StaticResource BrushSurface}" CornerRadius="10"
+                                        <Border x:Name="Thumb" Background="{StaticResource BrushSurface}" CornerRadius="10"
                                                 ClipToBounds="True" SizeChanged="Thumbnail_SizeChanged">
                                             <Grid>
                                                 <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
@@ -57,11 +57,14 @@
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 <Image Source="{Binding PreviewImage}" Stretch="UniformToFill"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <!-- 占位高度按**图片实际可用宽度**算：列宽比它宽（差卡片内边距 + 描边），
+                                                         用列宽会把图片左右各裁掉十几像素（见 AspectRatioHeightConverter） -->
                                                     <Image.Height>
                                                         <MultiBinding Converter="{StaticResource AspectRatioHeight}">
                                                             <Binding Path="ColumnWidth"
                                                                      RelativeSource="{RelativeSource AncestorType={x:Type ctrl:MasonryPanel}}"/>
                                                             <Binding Path="Ratio"/>
+                                                            <Binding Path="ActualWidth" ElementName="Thumb"/>
                                                         </MultiBinding>
                                                     </Image.Height>
                                                 </Image>

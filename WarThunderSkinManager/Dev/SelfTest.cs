@@ -430,6 +430,7 @@ internal static class SelfTest
 
             // ---- 瀑布流面板（Controls/MasonryPanel）：WT Live 浏览页的布局，断言最短列落位 ----
             MasonrySelfTest.Run(log);
+            MasonrySelfTest.CheckCardAspect(log); // 缩略图按比例占位不得裁边（曾被列宽算高裁掉约 12%）
 
             // ---- 库级部件表 / 跨载具复用（§3.5 / §3.6）----
             log.AppendLine();
