@@ -1551,6 +1551,21 @@ internal static class SelfTest
                          + $"下限 = {WtLiveQualityCatalog.DecodeWidth("low", 60, 0)}（应 160），"
                          + $"上限 = {WtLiveQualityCatalog.DecodeWidth("high", 4000, 0)}（应 1280）");
 
+            // ---- 卡片右下角「下载」入口：预填给确认窗的链接必须能解析，否则一打开就报「链接无效」----
+            static WTLiveFeedItem MakeFeedItem(long id, string? previewUrl, string fileLink) => new(
+                id, "锅盖头", "FHQ-11 Fire Rescue", "desc", previewUrl, 16d / 9d, 386,
+                "template_cn_hq_11.zip", fileLink, 4930419, 6, 3, 30,
+                $"https://live.warthunder.com/post/{id}/en/");
+
+            var cardWithFile = new WtLiveCardItem(MakeFeedItem(
+                1189546, sampleThumb, "https://live.warthunder.com/dl/845e4034/"));
+            var cardNoFile = new WtLiveCardItem(MakeFeedItem(1189547, null, ""));
+
+            log.AppendLine($"卡片下载入口: PostUrl 可解析 = {WTLiveService.IsPostUrl(cardWithFile.PostUrl) == 1189546}（应 True：预填打开才读得出来），"
+                         + $"有站内附件 → 显示按钮 = {cardWithFile.HasFile}（应 True），"
+                         + $"无附件 → 隐藏按钮 = {!cardNoFile.HasFile}（应 True），"
+                         + $"无预览图 → 占位图标 = {cardNoFile.ThumbnailState == WtLiveThumbnailState.Missing}（应 True）");
+
             // ---- 下载阶段进度与重试节奏（§3.15：预览图是下载的一部分，独占 20%）----
             var progressCases = new (double Zip, double Preview, bool HasPreview, double Expect)[]
             {

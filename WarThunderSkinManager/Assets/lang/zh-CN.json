@@ -547,6 +547,7 @@
   "wtlive.list.empty": "没有找到涂装",
   "wtlive.list.emptyHint": "换个载具筛选或稍后再来看看",
   "wtlive.card.downloads": "下载 {0}",
+  "wtlive.card.download": "下载这个涂装（进入下载确认）",
   "wtlive.quality.low": "低清",
   "wtlive.quality.medium": "中清",
   "wtlive.quality.high": "高清",

@@ -130,13 +130,21 @@ public partial class SkinsViewModel : ObservableObject
         catch { /* 收尾失败不影响退出 */ }
     }
 
-    /// <summary>打开「从 WT Live 下载」窗口（网址输入 + 校验 + 信息确认）。</summary>
+    /// <summary>
+    /// 打开「从 WT Live 下载」窗口（网址输入 + 校验 + 信息确认）。
+    /// <paramref name="postUrl"/> 非空时**预填并自动读取**（WT Live 浏览页卡片右下角的下载按钮
+    /// 把该帖子的链接传进来），为空则空白等用户粘贴 / 输入（涂装管理页的入口，两者共用一个命令）。
+    /// </summary>
     [RelayCommand]
-    private void OpenWtLiveImport()
+    private void OpenWtLiveImport(string? postUrl)
     {
         if (!EnsureResourceDir()) return;
 
-        var window = new WTLiveImportWindow { Owner = Application.Current?.MainWindow };
+        var window = string.IsNullOrWhiteSpace(postUrl)
+            ? new WTLiveImportWindow()
+            : new WTLiveImportWindow(postUrl);
+
+        window.Owner = Application.Current?.MainWindow;
         if (window.ShowDialog() != true || window.Post == null) return;
 
         StartWtLiveDownload(window.Post);

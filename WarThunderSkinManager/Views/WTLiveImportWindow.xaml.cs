@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,6 +14,10 @@ namespace WarThunderSkinManager.Views;
 /// 「从 WT Live 下载」窗口（§3.15）：粘贴帖子链接 → 校验并读取帖子信息
 /// （作者 / 文件 / 预览图 / 正文）→ 用户确认无误后「开始下载」，
 /// 下载与导入由 <see cref="ViewModels.SkinsViewModel.StartWtLiveDownload"/> 接管。
+/// <para>
+/// 两个入口，同一个窗口：涂装管理页的按钮**空白打开等粘贴**；
+/// WT Live 浏览页卡片右下角的下载按钮经 <see cref="WTLiveImportWindow(string)"/> **预填并自动读取**。
+/// </para>
 /// </summary>
 public partial class WTLiveImportWindow : Window
 {
@@ -23,14 +28,40 @@ public partial class WTLiveImportWindow : Window
 
     private bool _closed; // 窗口已关 → 异步读取完成的回调不再触碰界面
 
+    /// <summary>要预填并自动读取的帖子链接（见带参构造）；null = 空白等用户粘贴 / 输入。</summary>
+    private readonly string? _pendingUrl;
+
     public WTLiveImportWindow()
     {
         InitializeComponent();
         Closed += (_, _) => _closed = true;
         UrlBox.Focus();
+
+        // 预填链接（见带参构造）：等窗口显示出来再读——读取时要显示「正在读取涂装信息…」，
+        // 在构造里发起会赶在首次渲染之前，用户只看到结果、看不到过程
+        Loaded += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(_pendingUrl)) return;
+
+            UrlBox.Text = _pendingUrl;
+            UrlBox.CaretIndex = _pendingUrl.Length;
+            _ = FetchAsync();
+        };
     }
 
-    private async void Fetch_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// 预填帖子链接并**立即读取**（WT Live 浏览页卡片上的下载按钮走这条）：
+    /// 与"用户粘贴链接 → 点读取"同一条路径，只是省掉这两步。
+    /// </summary>
+    public WTLiveImportWindow(string postUrl) : this() => _pendingUrl = postUrl;
+
+    private void Fetch_Click(object sender, RoutedEventArgs e) => _ = FetchAsync();
+
+    /// <summary>
+    /// 读取 <see cref="UrlBox"/> 里的链接并展示帖子信息。「读取」按钮 / Enter / 「粘贴」/ 卡片预填
+    /// 都走这里，链接校验与失败提示只有一份。
+    /// </summary>
+    private async Task FetchAsync()
     {
         if (!FetchButton.IsEnabled) return; // 读取中防重入（Enter 键绕过禁用的按钮）
 
@@ -87,7 +118,7 @@ public partial class WTLiveImportWindow : Window
         }
 
         UrlBox.Text = text;
-        Fetch_Click(sender, e); // 链接无效 / 无站内文件等提示由读取路径统一给出
+        _ = FetchAsync(); // 链接无效 / 无站内文件等提示由读取路径统一给出
     }
 
     private void ShowPost(WTLivePost post)

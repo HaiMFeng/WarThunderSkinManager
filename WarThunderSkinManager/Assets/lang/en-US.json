@@ -547,6 +547,7 @@
   "wtlive.list.empty": "No camouflages found",
   "wtlive.list.emptyHint": "Try another vehicle filter, or come back later",
   "wtlive.card.downloads": "Downloads {0}",
+  "wtlive.card.download": "Download this skin (opens the download confirmation)",
   "wtlive.quality.low": "Low",
   "wtlive.quality.medium": "Medium",
   "wtlive.quality.high": "High",

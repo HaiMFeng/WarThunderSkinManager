@@ -103,9 +103,33 @@
 
                                         <TextBlock Text="{Binding Title}" Margin="2,10,2,0" FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding MetaText}" Margin="2,3,2,2"
-                                                   Style="{StaticResource PageSubtitle}"
-                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <!-- 副标题行 + 右下角「下载」：点它直接进「从 WT Live 下载」确认窗口，
+                                             帖子链接已填好并自动读取（省掉"复制链接 → 粘贴 → 读取"三步）。
+                                             没有站内附件的帖子不给按钮——那条路只会得到一句"没有可下载的文件" -->
+                                        <Grid Margin="2,1,2,0">
+                                            <TextBlock Text="{Binding MetaText}" Margin="0,0,26,0"
+                                                       Style="{StaticResource PageSubtitle}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"/>
+                                            <Button Content="&#xF019;" HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip="{loc:Loc wtlive.card.download}"
+                                                    CommandParameter="{Binding PostUrl}"
+                                                    Command="{Binding DataContext.Skins.OpenWtLiveImportCommand,
+                                                              RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasFile}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                        </Grid>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
