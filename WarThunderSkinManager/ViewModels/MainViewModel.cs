@@ -132,6 +132,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>「多源复用」页视图模型（§3.13，仅在设置开启后可进入）</summary>
     public PartReuseViewModel PartReuse { get; }
 
+    /// <summary>「WT Live」页视图模型（公开涂装浏览：瀑布流 + 滚动到底加载下一页，§3.15）</summary>
+    public WtLiveViewModel WtLive { get; }
+
     /// <summary>「多源复用」导航入口是否可见（跟随设置开关）。</summary>
     public bool PartReuseVisible => Config.PartReuseEnabled;
 
@@ -303,6 +306,7 @@ public partial class MainViewModel : ObservableObject
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
         PartReuse = new PartReuseViewModel(config);
+        WtLive = new WtLiveViewModel(); // 无本地状态：数据全部来自站点，进页面才拉（首屏懒加载）
 
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
         Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();

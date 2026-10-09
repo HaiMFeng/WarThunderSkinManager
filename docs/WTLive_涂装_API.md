@@ -83,7 +83,7 @@ Feed.type    = 'regular';
 
 ```json
 {
-  "status": <int>,
+  "status": "OK",
   "data": {
     "list": [ /* 涂装数组，见下 */ ],
     "pageTitle": "<string>",
@@ -91,6 +91,9 @@ Feed.type    = 'regular';
   }
 }
 ```
+
+> **更正（2026-10-09 实测）**：顶层 `status` 是**字符串** `"OK"`（本文档此前记为 `<int>`）；
+> 成败按它判定（与 `posts/get` 的 "ERR" 同一习惯）。`data` 的键实测为 `list` / `pageTitle` / `link`。
 
 单条涂装（`data.list[i]`）字段（已用真实响应核对）：
 
@@ -104,7 +107,7 @@ Feed.type    = 'regular';
 | `author` | object | `{id, nickname, avatar}`，头像来自 `cdn-live.warthunder.com` |
 | `likes` / `views` / `downloads` / `comments` | int | 互动计数 |
 | `description` | string | 简介（含 HTML 标签与 `#标签`） |
-| `images` | object | 预览图：`{id, type, src, width, height, ratio}`；`src` 为 `cdn-live.warthunder.com` 缩略图 |
+| `images` | **array** | 预览图**数组**（2026-10-09 实测：1~4 张，非对象）；每项 `{id, type, src, width, height, ratio}`，`src` 为 `cdn-live.warthunder.com` 缩略图（路径带 `_lq` 低清）。取首项作列表卡片缩略图 |
 | `file` | object | **下载信息**：`{id, name, link, type, size}`；`link` 即下载直链 |
 | `pbr_ready` | bool | 是否 PBR 就绪 |
 | `inverted_roughness` | bool | 粗糙度反转标记 |

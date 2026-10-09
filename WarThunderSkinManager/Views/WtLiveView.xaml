@@ -1,18 +1,218 @@
 <UserControl x:Class="WarThunderSkinManager.Views.WtLiveView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
-    <!-- WT Live 涂装浏览页：当前只有页面骨架（标题 + 副标题），
-         列表 / 按载具筛选 / 下载导入待后续接入（接口依据见 docs/WTLive_涂装_API.md）。 -->
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+             xmlns:ctrl="clr-namespace:WarThunderSkinManager.Controls">
+    <!-- WT Live 涂装浏览：瀑布流（等宽卡片 / 高度随图片比例 / 最短列优先，见 Controls/MasonryPanel.cs）
+         + 滚动到底自动加载下一页。接口依据见 docs/WTLive_涂装_API.md。 -->
+    <UserControl.Resources>
+        <!-- 列宽 + 宽高比 → 缩略图占位高度：图片没下载完也先按比例占好位置 -->
+        <ctrl:AspectRatioHeightConverter x:Key="AspectRatioHeight"/>
+    </UserControl.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0">
-            <TextBlock Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="{loc:Loc wtlive.page.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
-        </StackPanel>
+        <Grid Grid.Row="0">
+            <StackPanel>
+                <TextBlock Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+                <TextBlock Text="{loc:Loc wtlive.page.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <Button Content="{loc:Loc wtlive.refresh}" Style="{StaticResource SecondaryButton}"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" MinWidth="76"
+                    Command="{Binding WtLive.RefreshCommand}"/>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <ScrollViewer x:Name="ListScroll" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          ScrollChanged="ListScroll_ScrollChanged">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding WtLive.Items}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ctrl:MasonryPanel TargetItemWidth="240" MinItemWidth="170"
+                                                   MaxItemWidth="360" MaxColumns="5" ItemGap="16"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- 卡片：白底 + 1px 描边 + 圆角 12。不用 Card 样式（它带阴影：
+                                     瀑布流一屏几十张，逐张阴影的开销不值当，改用描边分层） -->
+                                <Border Background="{StaticResource BrushBackground}"
+                                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                                        CornerRadius="12" Padding="12" SnapsToDevicePixels="True">
+                                    <StackPanel>
+                                        <!-- 缩略图：圆角裁剪在 code-behind 做（ClipToBounds 不认 CornerRadius） -->
+                                        <Border Background="{StaticResource BrushSurface}" CornerRadius="10"
+                                                ClipToBounds="True" SizeChanged="Thumbnail_SizeChanged">
+                                            <Grid>
+                                                <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
+                                                           FontSize="22" Foreground="{StaticResource BrushTextMuted}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <Image Source="{Binding PreviewImage}" Stretch="UniformToFill"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Image.Height>
+                                                        <MultiBinding Converter="{StaticResource AspectRatioHeight}">
+                                                            <Binding Path="ColumnWidth"
+                                                                     RelativeSource="{RelativeSource AncestorType={x:Type ctrl:MasonryPanel}}"/>
+                                                            <Binding Path="Ratio"/>
+                                                        </MultiBinding>
+                                                    </Image.Height>
+                                                </Image>
+                                            </Grid>
+                                        </Border>
+
+                                        <TextBlock Text="{Binding Title}" Margin="2,10,2,0" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding MetaText}" Margin="2,3,2,2"
+                                                   Style="{StaticResource PageSubtitle}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- 页脚（已有内容时）：加载下一页 / 失败重试 / 已到底，三者互斥 -->
+                    <Grid Margin="0,16,0,8">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding WtLive.IsLoading}" Value="True"/>
+                                                <Condition Binding="{Binding WtLive.HasItems}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <ContentControl Style="{StaticResource BusySpinner}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc wtlive.list.loading}" Margin="10,0,0,0"
+                                       Style="{StaticResource PageSubtitle}" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding WtLive.HasError}" Value="True"/>
+                                                <Condition Binding="{Binding WtLive.HasItems}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="&#xF06A;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                       Foreground="{StaticResource BrushDanger}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding WtLive.ErrorMessage}" Margin="8,0,12,0" MaxWidth="420"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                       Foreground="{StaticResource BrushDanger}"/>
+                            <Button Content="{loc:Loc wtlive.list.retry}" Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding WtLive.RetryCommand}"/>
+                        </StackPanel>
+
+                        <TextBlock Text="{loc:Loc wtlive.list.end}" HorizontalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding WtLive.IsExhausted}" Value="True"/>
+                                                <Condition Binding="{Binding WtLive.HasItems}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 列表还空着时的整屏状态：首次加载 / 首次失败 / 没有结果（互斥） -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding WtLive.IsLoading}" Value="True"/>
+                                    <Condition Binding="{Binding WtLive.HasItems}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <ContentControl Style="{StaticResource BusySpinner}" HorizontalAlignment="Center"/>
+                <TextBlock Text="{loc:Loc wtlive.list.loading}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                           Style="{StaticResource PageSubtitle}"/>
+            </StackPanel>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding WtLive.HasError}" Value="True"/>
+                                    <Condition Binding="{Binding WtLive.HasItems}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <TextBlock Text="&#xF06A;" FontFamily="{StaticResource IconFont}" FontSize="26"
+                           Foreground="{StaticResource BrushDanger}" HorizontalAlignment="Center"/>
+                <TextBlock Text="{Binding WtLive.ErrorMessage}" Margin="0,10,0,0" TextWrapping="Wrap"
+                           TextAlignment="Center" Foreground="{StaticResource BrushDanger}"/>
+                <Button Content="{loc:Loc wtlive.list.retry}" Style="{StaticResource SecondaryButton}"
+                        HorizontalAlignment="Center" Margin="0,14,0,0" MinWidth="88"
+                        Command="{Binding WtLive.RetryCommand}"/>
+            </StackPanel>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding WtLive.HasItems}" Value="False"/>
+                                    <Condition Binding="{Binding WtLive.IsLoading}" Value="False"/>
+                                    <Condition Binding="{Binding WtLive.HasError}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="26"
+                           Foreground="{StaticResource BrushTextMuted}" HorizontalAlignment="Center"/>
+                <TextBlock Text="{loc:Loc wtlive.list.empty}" Margin="0,10,0,0" HorizontalAlignment="Center"
+                           FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock Text="{loc:Loc wtlive.list.emptyHint}" Margin="0,6,0,0" TextWrapping="Wrap"
+                           TextAlignment="Center" Style="{StaticResource PageSubtitle}"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

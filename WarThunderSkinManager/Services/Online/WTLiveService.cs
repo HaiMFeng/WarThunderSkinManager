@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -37,6 +38,41 @@ public sealed record WTLivePost(
     IReadOnlyList<string> ImageUrls,
     WTLiveFile? File,
     int Downloads);
+
+/// <summary>
+/// 涂装列表页（浏览用）的一件涂装，取自 <c>get_regular</c> 的 <c>data.list[]</c>
+/// （字段含义见 <c>docs/WTLive_涂装_API.md</c> §3.2）。
+/// </summary>
+/// <param name="LangGroup">帖子定位 id（跨语言唯一 → 列表去重主键，也用于拼帖子网址）</param>
+/// <param name="Author">作者昵称</param>
+/// <param name="Title">卡片标题：描述首行（HTML 已剥离；为空时退回压缩包文件名 → <c>#帖子id</c>）</param>
+/// <param name="Description">描述纯文本（多行，供详情/预览使用）</param>
+/// <param name="PreviewUrl">预览缩略图 URL（CDN）；null = 该帖没有预览图</param>
+/// <param name="Ratio">预览图宽高比（宽/高）；缺失时按 16:9 兜底</param>
+/// <param name="FileName">附件压缩包文件名；空 = 该帖没有站内附件（作者用外部网盘）</param>
+/// <param name="FileLink">附件下载直链（<c>/dl/&lt;hash&gt;/</c>）；空 = 无站内附件</param>
+/// <param name="FileSize">附件字节数（0 = 未知）</param>
+/// <param name="Downloads">帖子下载数</param>
+/// <param name="Likes">点赞数</param>
+/// <param name="Views">浏览数</param>
+/// <param name="PostUrl">帖子网址（用于「在浏览器中打开」）</param>
+public sealed record WTLiveFeedItem(
+    long LangGroup,
+    string Author,
+    string Title,
+    string Description,
+    string? PreviewUrl,
+    double Ratio,
+    string FileName,
+    string FileLink,
+    long FileSize,
+    int Downloads,
+    int Likes,
+    int Views,
+    string PostUrl);
+
+/// <summary>一页涂装列表；<paramref name="HasMore"/> = 本页满页（站点固定 25/页，不足即到底，§3.3）。</summary>
+public sealed record WTLiveFeedPage(IReadOnlyList<WTLiveFeedItem> Items, bool HasMore);
 
 /// <summary>
 /// WT Live（官方涂装分享站）的读取与下载（功能设计 §3.15）。
@@ -140,6 +176,146 @@ public static class WTLiveService
             file,
             dto.Downloads);
     }
+
+    /// <summary>列表页固定页大小（站点每页 25 条，返回不足 25 即到底，§3.3）。</summary>
+    public const int FeedPageSize = 25;
+
+    /// <summary>
+    /// 拉取一页涂装列表（**浏览用**，匿名，§3）。列表 / 筛选 / 预览全部免登录，
+    /// 因此本产品不做登录与订阅（§14）。
+    /// </summary>
+    /// <param name="page">页码，从 0 起</param>
+    /// <param name="vehicle">
+    /// 载具裸 id（<c>units.csv</c> 首列去前缀去 <c>_N</c> 后缀，如 <c>cn_m1a2t</c>，§4.2）；
+    /// 空 = 不按载具筛选。
+    /// </param>
+    /// <param name="sort">
+    /// <c>created</c>（最近发布，时间倒序）/ <c>rating</c>（热门）/ <c>comments</c> / <c>downloads</c>（§5）。
+    /// </param>
+    public static async Task<WTLiveFeedPage> FetchFeedPageAsync(
+        int page, string? vehicle, string sort, CancellationToken ct)
+    {
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("content", "camouflage"),
+            new("sort", sort),
+            new("page", page.ToString(CultureInfo.InvariantCulture)),
+            new("period", "0"),   // 0 = 不限时间范围
+            new("subtype", "all"),
+            new("searchString", ""),
+            new("user", "0"),     // 0 = 不限作者
+        };
+
+        // vehicle 是该接口**没有公开 UI** 但实际支持的参数：站点不传时为空，页面即全部涂装
+        if (!string.IsNullOrWhiteSpace(vehicle)) form.Add(new("vehicle", vehicle));
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, "https://live.warthunder.com/api/feed/get_regular/");
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        request.Headers.Referrer = new Uri("https://live.warthunder.com/feed/camouflages/");
+        request.Version = HttpVersion.Version11; // 站点经 Cloudflare，H2 握手偶发失败 → 强制 1.1
+        request.Content = new FormUrlEncodedContent(form);
+
+        using var response = await Http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        var dto = JsonSerializer.Deserialize<FeedResponse>(json);
+
+        // 站点参数错误/被风控时仍回 HTTP 200，成败看 status（实测正常为 "OK"）
+        if (dto == null || (dto.Status?.Length > 0 && !string.Equals(dto.Status, "OK", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException($"涂装列表被服务端拒绝（status={dto?.Status ?? "无响应体"}）");
+
+        var raw = dto.Data?.List;
+        if (raw == null) throw new InvalidDataException("涂装列表返回异常（缺 data.list，站点可能改版）");
+
+        var items = new List<WTLiveFeedItem>(raw.Count);
+        foreach (var one in raw)
+        {
+            var (previewUrl, ratio) = ReadPreview(one.Images);
+            var description = HtmlToText(one.Description ?? "");
+            var fileName = one.File?.Name ?? "";
+
+            items.Add(new WTLiveFeedItem(
+                one.LangGroup,
+                one.Author?.Nickname ?? "",
+                FeedTitle(description, fileName, one.LangGroup),
+                description,
+                previewUrl,
+                ratio,
+                fileName,
+                one.File?.Link ?? "",
+                one.File?.Size ?? 0,
+                one.Downloads,
+                one.Likes,
+                one.Views,
+                $"https://live.warthunder.com/post/{one.LangGroup}/en/"));
+        }
+
+        return new WTLiveFeedPage(items, items.Count >= FeedPageSize);
+    }
+
+    /// <summary>
+    /// 取图片字节（缩略图用）。走与接口同一客户端与请求头约定（浏览器 UA / 1.1 / Referer）——
+    /// 图片在 CDN 上，用 <see cref="System.Windows.Media.Imaging.BitmapImage"/> 直接给 URL 会绕开这些约定，
+    /// 也拿不到解码尺寸控制。
+    /// </summary>
+    public static async Task<byte[]> FetchImageAsync(string url, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Referrer = new Uri("https://live.warthunder.com/");
+        request.Version = HttpVersion.Version11;
+
+        using var response = await Http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsByteArrayAsync(ct);
+    }
+
+    /// <summary>卡片标题：描述首行（作者一般把涂装名写在第一行）；没有描述时退回压缩包文件名 / 帖子 id。</summary>
+    private static string FeedTitle(string description, string fileName, long langGroup)
+    {
+        var line = description;
+        var breakIndex = line.IndexOf('\n');
+        if (breakIndex >= 0) line = line[..breakIndex];
+        line = line.Trim();
+
+        if (line.Length > 120) line = line[..120]; // 极端长首行截断，卡片不被撑爆
+        if (line.Length > 0) return line;
+
+        return fileName.Length > 0 ? Path.GetFileNameWithoutExtension(fileName) : $"#{langGroup}";
+    }
+
+    /// <summary>
+    /// 预览图 URL 与宽高比。实测响应里 <c>images</c> 是**对象**（§3.2），这里同时容错数组形式；
+    /// 比例字段缺失时用宽高算，都拿不到则 16:9 兜底（见 <c>Controls/AspectRatioHeightConverter</c>）。
+    /// </summary>
+    private static (string? Url, double Ratio) ReadPreview(JsonElement images)
+    {
+        if (images.ValueKind == JsonValueKind.Array)
+            return images.GetArrayLength() > 0 ? ReadPreviewObject(images[0]) : (null, DefaultRatio);
+
+        return images.ValueKind == JsonValueKind.Object ? ReadPreviewObject(images) : (null, DefaultRatio);
+    }
+
+    private static (string? Url, double Ratio) ReadPreviewObject(JsonElement element)
+    {
+        var url = element.TryGetProperty("src", out var src) ? src.GetString() : null;
+
+        var ratio = 0d;
+        if (element.TryGetProperty("ratio", out var ratioElement) && ratioElement.TryGetDouble(out var parsed))
+            ratio = parsed;
+
+        if (ratio <= 0
+            && element.TryGetProperty("width", out var widthElement) && widthElement.TryGetDouble(out var width)
+            && element.TryGetProperty("height", out var heightElement) && heightElement.TryGetDouble(out var height)
+            && width > 0 && height > 0)
+            ratio = width / height;
+
+        return (string.IsNullOrWhiteSpace(url) ? null : url, ratio > 0 ? ratio : DefaultRatio);
+    }
+
+    /// <summary>预览图比例兜底（截图类预览绝大多数是 16:9）。</summary>
+    private const double DefaultRatio = 16d / 9d;
 
     /// <summary>
     /// 下载到 <paramref name="destPath"/>（1 MB 缓冲；进度按字节报 0..1 比例；自动创建目标目录）。
@@ -291,5 +467,35 @@ public static class WTLiveService
         [JsonPropertyName("name")] public string? Name { get; set; }
         [JsonPropertyName("link")] public string? Link { get; set; }
         [JsonPropertyName("size")] public long Size { get; set; }
+    }
+
+    // ---- 列表页（get_regular）DTO（2026-10-09 实测核对）----
+
+    private sealed class FeedResponse
+    {
+        /// <summary>实测是字符串 <c>"OK"</c>（文档 §3.2 曾记为数字，已按实测更正）。</summary>
+        [JsonPropertyName("status")] public string? Status { get; set; }
+        [JsonPropertyName("data")] public FeedDataDto? Data { get; set; }
+    }
+
+    private sealed class FeedDataDto
+    {
+        [JsonPropertyName("list")] public List<FeedItemDto>? List { get; set; }
+    }
+
+    private sealed class FeedItemDto
+    {
+        [JsonPropertyName("lang_group")] public long LangGroup { get; set; }
+        [JsonPropertyName("author")] public AuthorDto? Author { get; set; }
+        [JsonPropertyName("description")] public string? Description { get; set; }
+
+        /// <summary>预览图：实测是对象（<c>{id,type,src,width,height,ratio}</c>），保留 <see cref="JsonElement"/>
+        /// 以容错数组形式，字段缺失时不至于整页解析失败。</summary>
+        [JsonPropertyName("images")] public JsonElement Images { get; set; }
+
+        [JsonPropertyName("file")] public FileDto? File { get; set; }
+        [JsonPropertyName("downloads")] public int Downloads { get; set; }
+        [JsonPropertyName("likes")] public int Likes { get; set; }
+        [JsonPropertyName("views")] public int Views { get; set; }
     }
 }

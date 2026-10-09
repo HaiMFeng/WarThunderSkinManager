@@ -1,0 +1,97 @@
+using System.Collections.Generic;
+using System.Windows.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
+using WarThunderSkinManager.Services;
+
+namespace WarThunderSkinManager.ViewModels;
+
+/// <summary>
+/// 「WT Live」浏览列表的一张卡片（一件涂装）。数据来自 <see cref="WTLiveFeedItem"/>（列表接口原样字段），
+/// 缩略图由 <see cref="WtLiveViewModel"/> 在后台下载解码后回填 <see cref="PreviewImage"/>。
+/// </summary>
+/// <remarks>
+/// 卡片高度 = 缩略图高度（列宽 / <see cref="Ratio"/>）+ 文字块，全部由模板按内容测量；
+/// 缩略图未就绪时**高度也已经确定**（图片按 <see cref="Ratio"/> 占位），不会因图片到达而重排。
+/// </remarks>
+public partial class WtLiveCardItem : ObservableObject
+{
+    private static LocalizationManager Loc => LocalizationManager.Instance;
+
+    public WtLiveCardItem(WTLiveFeedItem item)
+    {
+        LangGroup = item.LangGroup;
+        Title = item.Title;
+        Author = item.Author;
+        Description = item.Description;
+        PreviewUrl = item.PreviewUrl;
+        Ratio = item.Ratio;
+        FileName = item.FileName;
+        FileLink = item.FileLink;
+        FileSize = item.FileSize;
+        Downloads = item.Downloads;
+        Likes = item.Likes;
+        Views = item.Views;
+        PostUrl = item.PostUrl;
+
+        MetaText = BuildMeta();
+    }
+
+    /// <summary>帖子定位 id（列表去重主键，也用于拼帖子网址）。</summary>
+    public long LangGroup { get; }
+
+    /// <summary>卡片标题（描述首行）。</summary>
+    public string Title { get; }
+
+    /// <summary>作者昵称。</summary>
+    public string Author { get; }
+
+    /// <summary>描述纯文本（多行；后续做详情/下载确认时可复用，列表不显示）。</summary>
+    public string Description { get; }
+
+    /// <summary>预览缩略图 URL；null = 该帖没有预览图。</summary>
+    public string? PreviewUrl { get; }
+
+    /// <summary>预览图宽高比（宽/高）→ 卡片按它撑开缩略图高度。</summary>
+    public double Ratio { get; }
+
+    /// <summary>附件压缩包文件名；空 = 该帖没有站内附件（作者用外部网盘）。</summary>
+    public string FileName { get; }
+
+    /// <summary>附件下载直链；空 = 无站内附件。</summary>
+    public string FileLink { get; }
+
+    /// <summary>附件字节数（0 = 未知）。</summary>
+    public long FileSize { get; }
+
+    /// <summary>帖子下载数。</summary>
+    public int Downloads { get; }
+
+    /// <summary>点赞数。</summary>
+    public int Likes { get; }
+
+    /// <summary>浏览数。</summary>
+    public int Views { get; }
+
+    /// <summary>帖子网址（「在浏览器中打开」用）。</summary>
+    public string PostUrl { get; }
+
+    /// <summary>卡片副标题：作者 · 体积 · 下载数（缺项自动省略，不留空分隔符）。</summary>
+    public string MetaText { get; }
+
+    /// <summary>是否有站内可下载的附件（无附件时后续只能引导去浏览器下载）。</summary>
+    public bool HasFile => FileLink.Length > 0;
+
+    /// <summary>缩略图（后台下载 + 冻结后回填）；null = 下载中 / 失败 → 模板显示占位图标。</summary>
+    [ObservableProperty] private ImageSource? _previewImage;
+
+    private string BuildMeta()
+    {
+        var parts = new List<string>(3);
+
+        if (!string.IsNullOrWhiteSpace(Author)) parts.Add(Author);
+        if (FileSize > 0) parts.Add(DataResetService.FormatSize(FileSize));
+        if (Downloads > 0) parts.Add(Loc.Format("wtlive.card.downloads", Downloads));
+
+        return string.Join(" · ", parts);
+    }
+}
