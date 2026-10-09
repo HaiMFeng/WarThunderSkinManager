@@ -143,8 +143,13 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="6" Padding="{TemplateBinding Padding}"
                             SnapsToDevicePixels="True">
-                        <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"
-                                      VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Hidden"
+                        <!-- 用 TemplateBinding 暴露对齐与滚动条：单行框沿用样式默认（Center / Hidden，外观不变），
+                             多行框（如 WT Live 确认窗的描述）才能靠 VerticalContentAlignment=Top +
+                             VerticalScrollBarVisibility=Auto 实现"顶部对齐 + 超出后框内滚动" -->
+                        <ScrollViewer x:Name="PART_ContentHost"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"
+                                      HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
                                       Focusable="False"/>
                     </Border>
                     <ControlTemplate.Triggers>

@@ -64,30 +64,41 @@
                            Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,8,0,0"/>
 
                 <!-- 涂装信息（读取成功后显示）；预览图不放确认窗内联加载（国内加载慢会卡住界面），
-                     下载导入完成后在后台取原图设为涂装包预览 -->
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,12,0,0"
-                              Visibility="Collapsed" x:Name="InfoPanel">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBlock Text="{loc:Loc wtlive.author}" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock x:Name="AuthorText" Margin="12,0,24,0"/>
-                            <TextBlock Text="{loc:Loc wtlive.file}" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock x:Name="FileText" Margin="12,0,24,0"/>
-                            <TextBlock Text="{loc:Loc wtlive.downloads}" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock x:Name="DownloadsText" Margin="12,0,0,0"/>
-                        </StackPanel>
-                        <TextBlock Text="{loc:Loc wtlive.displayName}" Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
-                        <TextBox x:Name="DisplayNameBox" Style="{StaticResource BaseTextBox}"/>
-                        <TextBlock Text="{loc:Loc wtlive.description}" Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
-                        <!-- 用可编辑文本框而非 TextBlock：描述正文里常带载具 / 涂装名，用户需要能选中复制。
-                             覆盖 BaseTextBox 的固定高度（34）与垂直居中，改为可随内容增高、顶部对齐的多行框；
-                             超过 MaxHeight 后在框内滚动，避免长正文把窗口撑高 -->
-                        <TextBox x:Name="DescriptionText" Style="{StaticResource BaseTextBox}"
-                                 Height="Auto" MinHeight="34" MaxHeight="140" Padding="6,5"
-                                 VerticalContentAlignment="Top" TextWrapping="Wrap" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto"/>
+                     下载导入完成后在后台取原图设为涂装包预览。
+                     用 Grid（而非按内容测量的 StackPanel / ScrollViewer）：描述框占**剩余高度**，
+                     窗口放大时随之撑满，正文过长则在框内滚动 -->
+                <Grid Grid.Row="2" x:Name="InfoPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="{loc:Loc wtlive.author}" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock x:Name="AuthorText" Margin="12,0,24,0"/>
+                        <TextBlock Text="{loc:Loc wtlive.file}" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock x:Name="FileText" Margin="12,0,24,0"/>
+                        <TextBlock Text="{loc:Loc wtlive.downloads}" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock x:Name="DownloadsText" Margin="12,0,0,0"/>
                     </StackPanel>
-                </ScrollViewer>
+
+                    <TextBlock Grid.Row="1" Text="{loc:Loc wtlive.displayName}"
+                               Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
+                    <TextBox Grid.Row="2" x:Name="DisplayNameBox" Style="{StaticResource BaseTextBox}"/>
+
+                    <TextBlock Grid.Row="3" Text="{loc:Loc wtlive.description}"
+                               Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
+                    <!-- 用可编辑文本框而非 TextBlock：描述正文里常带载具 / 涂装名，用户需要能选中复制。
+                         覆盖 BaseTextBox 的固定高度（34）与垂直居中，改为**占满剩余高度**、顶部对齐的多行框；
+                         正文超过框高时在框内滚动（不撑高窗口） -->
+                    <TextBox Grid.Row="4" x:Name="DescriptionText" Style="{StaticResource BaseTextBox}"
+                             Height="Auto" MinHeight="34" Padding="6,5"
+                             VerticalContentAlignment="Top" TextWrapping="Wrap" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"/>
+                </Grid>
 
                 <!-- 底部动作 -->
                 <StackPanel Grid.Row="3" Margin="0,14,0,0">

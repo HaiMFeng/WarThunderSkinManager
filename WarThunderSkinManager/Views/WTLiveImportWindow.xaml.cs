@@ -114,6 +114,10 @@ public partial class WTLiveImportWindow : Window
             DataResetService.FormatSize(post.File.Size));
 
         InfoPanel.Visibility = Visibility.Visible;
+        // 信息区是拉伸布局（描述框占剩余高度）：未读取时窗口按内容紧凑显示，这里撑到舒适高度、
+        // 并抬高最小高度，保证缩放时信息区始终放得下；用户此后仍可自由缩放（ResizeMode=CanResize）
+        MinHeight = 400;
+        if (double.IsNaN(Height) || Height < 520) Height = 520;
         StartButton.IsEnabled = true;
     }
 
