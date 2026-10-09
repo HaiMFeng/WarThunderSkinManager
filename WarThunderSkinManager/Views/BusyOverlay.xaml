@@ -48,7 +48,10 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <ProgressBar Width="220" Maximum="1" Value="{Binding Progress}"
+                    <!-- Value 必须显式 OneWay：ProgressBar.Value 的默认绑定模式是双向，
+                         而 BusyIndicator.Progress 是只读属性（只有 getter）→ 不写 Mode 会在运行期
+                         抛「无法对只读属性进行 TwoWay 绑定」。这类错误自检抓不到（自检不建 UI） -->
+                    <ProgressBar Width="220" Maximum="1" Value="{Binding Progress, Mode=OneWay}"
                                  HorizontalAlignment="Left"/>
                     <TextBlock Text="{Binding ProgressText}" Margin="0,6,0,0" FontSize="12"
                                Foreground="{StaticResource BrushTextMuted}"/>
