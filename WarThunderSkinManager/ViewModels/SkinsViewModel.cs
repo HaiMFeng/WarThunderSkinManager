@@ -1802,8 +1802,10 @@ public partial class SkinsViewModel : ObservableObject
                             { Current = Loc.Format("import.progressScanningArchive", Path.GetFileName(archive)) });
 
                         // **一个压缩包 = 一个来源 = 一个导入 ID**（§3.1）
+                        // 基础名 = 压缩包文件名（去扩展名），与「从 WT Live 下载」同一规则
+                        // （WT Live 的显示名本就是附件文件名，见 WTLiveService）；包内嵌套段由 Scan 补
                         var scanned = ImportService.Scan(extracted, ImportSourceType.Archive,
-                            ArchivePackName(archive, extracted), ct);
+                            Path.GetFileNameWithoutExtension(archive), ct);
                         ImportService.AssignGroupKey(scanned, archive, ImportSourceType.Archive);
                         list.AddRange(scanned);
                     }
@@ -1915,16 +1917,6 @@ public partial class SkinsViewModel : ObservableObject
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher == null) action();
         else dispatcher.Invoke(action);
-    }
-
-    /// <summary>压缩包的建议包名：压缩包文件名（去扩展名）；包内只有一个顶层文件夹时取该文件夹名。</summary>
-    private static string ArchivePackName(string archivePath, string extractedRoot)
-    {
-        var entries = Directory.GetFileSystemEntries(extractedRoot);
-        if (entries.Length == 1 && Directory.Exists(entries[0]))
-            return Path.GetFileName(entries[0]);
-
-        return Path.GetFileNameWithoutExtension(archivePath);
     }
 
     /// <summary>按用户勾选删除压缩包（删除失败只提示数量，不影响导入结果）。</summary>

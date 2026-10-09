@@ -24,7 +24,7 @@ public sealed record WTLiveFile(string Name, string Link, long Size);
 /// <param name="Id">当前语言版本帖子 id</param>
 /// <param name="Author">作者昵称</param>
 /// <param name="DescriptionText">正文纯文本（HTML 已剥离）</param>
-/// <param name="DisplayName">建议显示名：正文首个非空行（截断 60 字符），回退文件名</param>
+/// <param name="DisplayName">建议显示名 = 附件压缩包文件名（去扩展名）；无附件时为空</param>
 /// <param name="ImageUrls">预览原图 URL（按帖子顺序）</param>
 /// <param name="File">附件文件；null = 该帖没有站内附件（可能外链网盘）</param>
 /// <param name="Downloads">帖子下载数</param>
