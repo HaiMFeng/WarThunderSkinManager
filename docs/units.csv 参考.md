@@ -2,7 +2,7 @@
 
 > **性质**：对《战争雷霆》本地化文件 `units.csv` 的调查记录与使用说明。
 > 本项目已将其作为**嵌入资源**（`Assets/units.csv`）用于载具显示名解析（§3.7，
-> `Services/VehicleNameTable`），本文保留格式与解析结论供维护参考。
+> `Services/Catalog/VehicleNameTable`），本文保留格式与解析结论供维护参考。
 >
 > 数据快照即嵌入资源本体（随程序发布；内容会随游戏版本演进——更新时从上游仓库
 > 拉取新表替换 `WarThunderSkinManager/Assets/units.csv` 重新编译即可）。

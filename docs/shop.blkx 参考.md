@@ -2,7 +2,7 @@
 
 > **性质**：本文档是对《战争雷霆》客户端数据文件 `shop.blkx` 的调查记录与使用说明。
 > 本项目已将其作为**嵌入资源**（`Assets/shop.blkx`）用于载具国家自动归类（§3.4，
-> `Services/CountryResolver`），本文保留解析方法与数据结论供维护参考。
+> `Services/Catalog/CountryResolver`），本文保留解析方法与数据结论供维护参考。
 >
 > 数据快照即嵌入资源本体（来源见下，注意其内容会随游戏版本演进——可随程序更新重新编译，
 > 也可在设置页「更新资源」（§3.15）在线更新：运行时写入用户表 `<配置目录>/ref/shop.blkx`
@@ -118,7 +118,7 @@ C# 侧可用 `System.Text.Json` 的 `JsonDocument` 流式遍历，无需实体�
 
 ## 5. 使用方式（已实现：载具国家自动归类，§3.4）
 
-`Services/CountryResolver` 启动后解析嵌入表一次并缓存，`Resolve(vehicleId)` 精确查表：
+`Services/Catalog/CountryResolver` 启动后解析嵌入表一次并缓存，`Resolve(vehicleId)` 精确查表：
 
 ```
 匹配流程：

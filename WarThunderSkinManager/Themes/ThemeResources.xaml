@@ -65,7 +65,7 @@
          也不混用手绘几何或位图图标；字号统一走尺寸档（docs/界面设计规范.md §2.5）。
          FA 的墨迹覆盖比 MDL2 大，同一位置的字号已整体下调一档。 -->
     <!-- 图标字体族由 App.OnStartup 注入到 Application.Resources 的 "IconFont" 键
-         （嵌入字体要提取后用 file URI 形式引用，XAML 里写不出来；见 Services/IconFontLoader）。
+         （嵌入字体要提取后用 file URI 形式引用，XAML 里写不出来；见 Services/Infrastructure/IconFontLoader）。
          这里**不要**再定义 IconFont：本字典自己的键会盖住 App 资源里的那个。 -->
 
 
