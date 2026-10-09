@@ -189,7 +189,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF54E;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                <TextBlock Text="&#xF290;" FontFamily="{StaticResource IconFont}" FontSize="14"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.wtlive}" VerticalAlignment="Center"/>
                             </StackPanel>
