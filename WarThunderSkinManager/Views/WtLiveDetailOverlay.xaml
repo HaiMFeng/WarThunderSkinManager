@@ -29,12 +29,15 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- 滚轮切图：事件必须在浮窗里吃掉，否则会穿透去滚底下的瀑布流 -->
-    <Grid PreviewMouseWheel="Root_PreviewMouseWheel">
+    <!-- 遮罩根：滚轮只挂在轮播格上（见下）——挂在这里会把正文文本框的滚动一起吃掉 -->
+    <Grid>
         <!-- 压暗底：沿用主题背景色（与全局「处理中」遮罩同一套观感，四套主题自动一致），
-             同时挡住底下页面的交互；点空白处 = 关窗 -->
+             同时挡住底下页面的交互；点空白处 = 关窗。
+             ⚠️ 关窗必须用 **MouseLeftButtonUp**：若在 Down 里关，浮窗当场 Collapsed，
+             这次点击的 Up 就落到下面那张卡片上，顺带又打开了另一个详情 -->
         <Border Background="{StaticResource BrushBackground}" Opacity="0.72"
-                MouseLeftButtonDown="Backdrop_MouseLeftButtonDown"/>
+                MouseLeftButtonDown="Backdrop_MouseLeftButtonDown"
+                MouseLeftButtonUp="Backdrop_MouseLeftButtonUp"/>
 
         <Border HorizontalAlignment="Center" VerticalAlignment="Stretch"
                 MaxWidth="820" Margin="48,40"
@@ -53,10 +56,21 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- 轮播：占剩余高度；图片 Uniform 且只缩不放（低清垫底图不会被拉糊） -->
-                <Grid Grid.Row="0" MinHeight="180">
+                <!-- 轮播：占剩余高度；图片 Uniform 且只缩不放（低清垫底图不会被拉糊）。
+                     **滚轮只在这一格里切图**——所以鼠标停在正文 / 信息区时，滚轮该滚文本就滚文本 -->
+                <Grid Grid.Row="0" MinHeight="180" PreviewMouseWheel="Carousel_PreviewMouseWheel">
                     <Image Source="{Binding WtLive.Detail.Current.Image}"
                            Stretch="Uniform" StretchDirection="DownOnly"/>
+
+                    <!-- 关窗：浮窗右上角（图标形式，同其它图标按钮一样必须给 ToolTip）。
+                         垫一层浅色圆角底：图片深浅不定，纯图标会有一半场合看不清 -->
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0"
+                            Background="{StaticResource BrushSurface}" Opacity="0.92" CornerRadius="14">
+                        <Button Content="&#xF00D;" Style="{StaticResource IconButton}"
+                                Width="28" Height="28" FontSize="14"
+                                ToolTip="{loc:Loc common.close}"
+                                Command="{Binding WtLive.Detail.CloseCommand}"/>
+                    </Border>
 
                     <!-- 这一张正在下载 / 解码 -->
                     <Viewbox Width="28" Height="28" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -210,14 +224,12 @@
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <!-- 下载 = 既有的「从 WT Live 下载」确认窗（链接已预填并自动读取）；
-                             没有站内附件的帖子置灰（信息区已写明原因） -->
+                             没有站内附件的帖子置灰（信息区已写明原因）。
+                             关窗不在这一行：它挪到了浮窗右上角的图标按钮（Esc / 点空白处同样可关） -->
                         <Button Content="{loc:Loc wtlive.detail.download}" Style="{StaticResource PrimaryButton}"
                                 IsEnabled="{Binding WtLive.Detail.HasFile}"
                                 Command="{Binding Skins.OpenWtLiveImportCommand}"
                                 CommandParameter="{Binding WtLive.Detail.PostUrl}"/>
-                        <Button Content="{loc:Loc common.close}" Style="{StaticResource SecondaryButton}"
-                                Margin="10,0,0,0" MinWidth="72"
-                                Command="{Binding WtLive.Detail.CloseCommand}"/>
                     </StackPanel>
                 </Grid>
             </Grid>
