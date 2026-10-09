@@ -228,8 +228,11 @@
                     <Grid DockPanel.Dock="Top" Margin="8,0,8,8">
                         <TextBox Style="{StaticResource BaseTextBox}"
                                  Text="{Binding Skins.VehicleSearchText, UpdateSourceTrigger=PropertyChanged}"/>
-                        <!-- 占位文案与输入光标同一起点：BaseTextBox 的文字起点 = 边框 1 + Padding 6 -->
-                        <TextBlock Text="{loc:Loc vehicles.search}" Margin="7,0,0,0" VerticalAlignment="Center"
+                        <!-- 占位文案**居中**（输入文字仍左对齐——两者是各自独立的元素）；
+                             左右对称留白，居中点即框中心；过长时省略号收尾 -->
+                        <TextBlock Text="{loc:Loc vehicles.search}" Margin="8,0"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
                                    Foreground="{StaticResource BrushTextMuted}" IsHitTestVisible="False">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
