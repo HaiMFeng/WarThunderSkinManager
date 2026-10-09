@@ -8,7 +8,6 @@
         Icon="Assets/app.ico"
         Height="720" Width="1120"
         MinWidth="900" MinHeight="560"
-        Opacity="0"
         FontFamily="symbols_skyquake, Segoe UI, Microsoft YaHei UI"
         Foreground="{StaticResource BrushText}"
         Background="{StaticResource BrushBackground}"
@@ -21,18 +20,25 @@
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"/>
     </WindowChrome.WindowChrome>
 
+    <!-- 启动淡入（§6）：**动画内部根容器，而不是窗口本身**。
+         窗口级 Opacity<1 需要把 HWND 变成分层窗口，而分层样式要到动画首次赋值才生效 ——
+         首帧窗口仍以"未分层"的实色整窗背景绘制一下，随后才被置为透明再淡入，表现为启动
+         瞬间"一层灰色遮罩闪一下"（自初版就存在）。改为动 RootBorder 后窗口自身始终不透明，
+         分层窗口与首帧闪烁一并消失；淡入观感（300ms）不变。 -->
     <Window.Triggers>
         <EventTrigger RoutedEvent="FrameworkElement.Loaded">
             <BeginStoryboard>
                 <Storyboard>
-                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                    <DoubleAnimation Storyboard.TargetName="RootBorder"
+                                     Storyboard.TargetProperty="Opacity"
                                      From="0" To="1" Duration="0:0:0.3"/>
                 </Storyboard>
             </BeginStoryboard>
         </EventTrigger>
     </Window.Triggers>
 
-    <Border x:Name="RootBorder" BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
+    <Border x:Name="RootBorder" Opacity="0"
+            BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="36"/>
