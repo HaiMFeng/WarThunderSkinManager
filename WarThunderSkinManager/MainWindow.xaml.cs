@@ -79,6 +79,30 @@ public partial class MainWindow : Window
         viewModel.Skins.CleanupOnExit();
     }
 
+    /// <summary>
+    /// 遮罩期间的键盘闸门：遮罩只挡鼠标，键盘仍能 Tab 到主界面控件再回车/空格触发它
+    /// （模态窗不会这样）→ 这里吞掉遮罩期间的按键，让"遮罩 = 模态"成立。
+    /// 唯一放行 <c>Esc</c>：转成遮罩上的「取消」请求（该操作不可取消时什么也不做）。
+    /// </summary>
+    /// <remarks>
+    /// 主窗口本身没有快捷键 / <c>InputBindings</c>，所以只需挡"焦点还在界面控件上"这一路。
+    /// 遮罩挂在主窗口上，因此别的窗口打开时不受此闸门影响 —— 保持既有约定：
+    /// 属性页 / 确认框关闭之后才进长操作。
+    /// </remarks>
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        var busy = BusyIndicator.Instance;
+        if (busy.IsBusy)
+        {
+            if (e.Key == Key.Escape && busy.CanCancel) busy.RequestCancel();
+
+            e.Handled = true;
+            return;
+        }
+
+        base.OnPreviewKeyDown(e);
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.StatusFlash)) PulseStatusGlow();

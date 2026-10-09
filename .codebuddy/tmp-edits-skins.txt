@@ -1,0 +1,277 @@
+@@@E1
+<<<OLD
+    private async void RunImport(Func<List<ImportCandidate>> scan, ImportSourceType sourceType, string sourcePath)
+    {
+        try
+        {
+            // 扫描在后台执行（要读取全部 blk 文本，大库是秒级操作，§3.1）
+            var window = new ImportProgressWindow(Loc["import.progressScanning"], total: 0)
+                { Owner = Application.Current?.MainWindow };
+
+            var scanTask = Task.Run(scan);
+            _ = scanTask.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+
+            window.ShowDialog(); // 阻塞至扫描完成 / 用户取消（关窗即取消）
+
+            // await（而非 Result）：正确展开取消异常（Result 会包成 AggregateException 把取消误报为失败）
+            var candidates = await scanTask;
+            await RunImportAsync(candidates, sourceType, sourcePath);
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户取消扫描：无导入发生，静默返回
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+    }
+>>>OLD
+<<<NEW
+    private async void RunImport(Func<CancellationToken, List<ImportCandidate>> scan,
+        ImportSourceType sourceType, string sourcePath)
+    {
+        try
+        {
+            // 扫描在后台执行（要读取全部 blk 文本，大库是秒级操作，§3.1）。
+            // 取消走遮罩上的「取消」→ CancellationTokenSource，Scan 内部按 token 提前退出；
+            // 与旧的"关窗即取消"相比，这里是**真的中止流程**（旧实现的 scan 收不到 token，
+            // 取消后仍会继续导入——catch 分支本是为此准备的，一直没被走到）
+            using var cts = new CancellationTokenSource();
+            List<ImportCandidate> candidates;
+
+            using (BusyIndicator.Instance.Begin(Loc["import.progressScanning"], cts.Cancel))
+            {
+                candidates = await Task.Run(() => scan(cts.Token), cts.Token);
+            }
+
+            await RunImportAsync(candidates, sourceType, sourcePath);
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户取消扫描：无导入发生，静默返回
+        }
+        catch (Exception ex)
+        {
+            ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// 把导入进度映射到统一遮罩（原 <c>ImportProgressWindow.Update</c> 的等价物）：
+    /// 解压等阶段带 <see cref="ImportProgress.Fraction"/> → 百分比；
+    /// 解构阶段按 Done/Total → 计数；两者都没有 → 不定态（只转圈）。
+    /// <c>Current</c> 一律进副文案。
+    /// </summary>
+    private static void ApplyImportProgress(BusyIndicator.Scope scope, ImportProgress progress)
+    {
+        if (progress.Fraction is { } fraction) scope.Report(fraction);
+        else if (progress.Total > 0) scope.Report(progress.Done, progress.Total);
+        else scope.HideBar();
+
+        scope.SetDetail(progress.Current);
+    }
+>>>NEW
+@@@E2
+<<<OLD
+            // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，
+            // 上百 GB 批量导入时进度窗实时可取消——取消在包之间生效，已完成的包保留
+            var progressWindow = new ImportProgressWindow(Loc["import.progressCommitting"], candidates.Count)
+                { Owner = Application.Current?.MainWindow };
+            var reporter = new Progress<ImportProgress>(progressWindow.Update);
+
+            var commitTask = Task.Run(() => ImportService.Commit(
+                candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, progressWindow.Cancellation.Token));
+            _ = commitTask.ContinueWith(_ => progressWindow.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+
+            progressWindow.ShowDialog(); // 模态至解构完成 / 取消（进度经 Progress<T> 回调更新）
+
+            // await（而非 Result）：手动关窗后任务按包粒度收尾，期间 UI 保持响应
+            var result = await commitTask; // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
+            PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
+>>>OLD
+<<<NEW
+            // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，
+            // 上百 GB 批量导入时可从遮罩上取消——取消在包之间生效，已完成的包保留
+            using var cts = new CancellationTokenSource();
+            ImportResult result;
+
+            using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressCommitting"], cts.Cancel))
+            {
+                scope.Report(0, candidates.Count); // 与旧进度窗一致：起始就显示 0 / N
+                var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
+
+                // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
+                result = await Task.Run(() => ImportService.Commit(
+                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token));
+            }
+
+            PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
+>>>NEW
+@@@E3
+<<<OLD
+            // 准备阶段（解压 + 扫描）**全部后台执行**（§3.1 大批量）：进度窗全程可见、可取消——
+            // 解压按条目报比例（字节优先），解析按压缩包 / 文件夹逐个显示；密码框经调度器回 UI 线程弹出
+            var window = new ImportProgressWindow(Loc["import.progressPreparing"], total: 0)
+                { Owner = Application.Current?.MainWindow };
+            IProgress<ImportProgress> reporter = new Progress<ImportProgress>(window.Update);
+
+            var prepare = Task.Run(async () =>
+            {
+                var list = new List<ImportCandidate>();
+                var ct = window.Cancellation.Token;
+
+                foreach (var archive in archives)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var extracted = await ExtractArchiveWithPromptAsync(archive, resourceDir, reporter, ct);
+                    if (extracted == null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    staging.Add(extracted);
+
+                    // 解析（读全部 blk 文本，秒级）：逐压缩包显示（用户示例的「正在解析 xxx.zip」）
+                    reporter.Report(new ImportProgress
+                        { Current = Loc.Format("import.progressScanningArchive", Path.GetFileName(archive)) });
+
+                    // **一个压缩包 = 一个来源 = 一个导入 ID**（§3.1）
+                    var scanned = ImportService.Scan(extracted, ImportSourceType.Archive,
+                        ArchivePackName(archive, extracted), ct);
+                    ImportService.AssignGroupKey(scanned, archive, ImportSourceType.Archive);
+                    list.AddRange(scanned);
+                }
+
+                foreach (var folder in folders)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    reporter.Report(new ImportProgress
+                        { Current = Loc.Format("import.progressScanningFolder", Path.GetFileName(folder)) });
+
+                    // **一个文件夹 = 一个来源 = 一个导入 ID**（§3.1）
+                    var scanned = ImportService.Scan(folder, ImportSourceType.Folder, null, ct);
+                    ImportService.AssignGroupKey(scanned, folder, ImportSourceType.Folder);
+                    list.AddRange(scanned);
+                }
+
+                return list;
+            });
+
+            _ = prepare.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
+            window.ShowDialog(); // 阻塞至准备完成 / 取消（关窗即取消）
+
+            var candidates = prepare.Result; // 取消 → OperationCanceledException（下方捕获）
+>>>OLD
+<<<NEW
+            // 准备阶段（解压 + 扫描）**全部后台执行**（§3.1 大批量）：遮罩全程可见、可取消——
+            // 解压按条目报比例（字节优先），解析按压缩包 / 文件夹逐个显示；密码框经调度器回 UI 线程弹出
+            using var cts = new CancellationTokenSource();
+            List<ImportCandidate> candidates;
+
+            using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressPreparing"], cts.Cancel))
+            {
+                IProgress<ImportProgress> reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
+
+                candidates = await Task.Run(async () =>
+                {
+                    var list = new List<ImportCandidate>();
+                    var ct = cts.Token;
+
+                    foreach (var archive in archives)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        var extracted = await ExtractArchiveWithPromptAsync(archive, resourceDir, reporter, ct);
+                        if (extracted == null)
+                        {
+                            skipped++;
+                            continue;
+                        }
+
+                        staging.Add(extracted);
+
+                        // 解析（读全部 blk 文本，秒级）：逐压缩包显示（用户示例的「正在解析 xxx.zip」）
+                        reporter.Report(new ImportProgress
+                            { Current = Loc.Format("import.progressScanningArchive", Path.GetFileName(archive)) });
+
+                        // **一个压缩包 = 一个来源 = 一个导入 ID**（§3.1）
+                        var scanned = ImportService.Scan(extracted, ImportSourceType.Archive,
+                            ArchivePackName(archive, extracted), ct);
+                        ImportService.AssignGroupKey(scanned, archive, ImportSourceType.Archive);
+                        list.AddRange(scanned);
+                    }
+
+                    foreach (var folder in folders)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        reporter.Report(new ImportProgress
+                            { Current = Loc.Format("import.progressScanningFolder", Path.GetFileName(folder)) });
+
+                        // **一个文件夹 = 一个来源 = 一个导入 ID**（§3.1）
+                        var scanned = ImportService.Scan(folder, ImportSourceType.Folder, null, ct);
+                        ImportService.AssignGroupKey(scanned, folder, ImportSourceType.Folder);
+                        list.AddRange(scanned);
+                    }
+
+                    return list;
+                }, cts.Token);
+            }
+>>>NEW
+@@@E4
+<<<OLD
+        catch (Exception ex)
+        {
+            // async void 的未捕获异常会直接崩掉进程 → 兜底提示
+            ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+        finally
+        {
+            ArchiveService.CleanupStaging(staging);
+        }
+>>>OLD
+<<<NEW
+        catch (OperationCanceledException)
+        {
+            // 用户取消（准备阶段或解构阶段）→ 静默返回：取消不是失败，别报「导入失败」
+        }
+        catch (Exception ex)
+        {
+            // async void 的未捕获异常会直接崩掉进程 → 兜底提示
+            ShowStatus(Loc.Format("import.failed", ex.Message));
+        }
+        finally
+        {
+            ArchiveService.CleanupStaging(staging);
+        }
+>>>NEW
+@@@E5
+<<<OLD
+            RunImport(() => ImportService.Scan(folders[0], ImportSourceType.Folder),
+                      ImportSourceType.Folder, folders[0]);
+>>>OLD
+<<<NEW
+            RunImport(ct => ImportService.Scan(folders[0], ImportSourceType.Folder, cancellationToken: ct),
+                      ImportSourceType.Folder, folders[0]);
+>>>NEW
+@@@E6
+<<<OLD
+        RunImport(() =>
+        {
+            var candidates = ImportService.Scan(userSkins, ImportSourceType.UserSkins);
+            ImportService.GroupByTopFolder(userSkins, candidates);
+            return candidates;
+        }, ImportSourceType.UserSkins, userSkins);
+>>>OLD
+<<<NEW
+        RunImport(ct =>
+        {
+            var candidates = ImportService.Scan(userSkins, ImportSourceType.UserSkins, cancellationToken: ct);
+            ImportService.GroupByTopFolder(userSkins, candidates);
+            return candidates;
+        }, ImportSourceType.UserSkins, userSkins);
+>>>NEW
