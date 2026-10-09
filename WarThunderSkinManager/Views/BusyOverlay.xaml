@@ -1,7 +1,9 @@
 <UserControl x:Class="WarThunderSkinManager.Views.BusyOverlay"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+             Focusable="True" FocusVisualStyle="{x:Null}"
+             KeyboardNavigation.TabNavigation="Cycle">
     <!-- 可见性由 BusyIndicator 的引用计数驱动（见 BusyOverlay.xaml.cs），
          全局唯一实例 → 不可能同时叠加两个遮罩 -->
     <UserControl.Style>

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -434,56 +435,56 @@ public partial class MainViewModel : ObservableObject
             return true;
         }
 
-        var window = new MigrationProgressWindow(Loc["migrate.running"]) { Owner = Application.Current?.MainWindow };
-        var reporter = new Progress<MigrationProgress>(window.Update);
-
         // 忙碌锁：迁移期间后台任务（快照核对 / blob 回收）见忙即让，防止并发读写造成访问冲突
         using var busy = AppBusy.Enter();
+        using var cts = new CancellationTokenSource();
 
-        var task = Task.Run(() =>
-        {
-            var result = new MigrationResult();
-
-            foreach (var (kind, oldDir, newDir) in changes)
-            {
-                var items = kind switch
-                {
-                    // 配置目录：带走配置与用户数据；previews 缓存不迁（按需重建）
-                    "config" => (IReadOnlyList<string>)new[]
-                        { "config.json", "lang", "mappings", "index", "ref" },
-                    "userSkins" => new[] { "WTSM" },
-                    _ => Directory.GetFileSystemEntries(oldDir)
-                        .Select(entry => Path.GetFileName(entry)!)
-                        .ToList()
-                };
-
-                var part = DirectoryMigrator.Migrate(oldDir, newDir, items, reporter, window.Cancellation.Token);
-                result.MovedBytes += part.MovedBytes;
-                result.Warnings.AddRange(part.Warnings);
-                if (part.Canceled)
-                {
-                    result.Canceled = true; // 已复制半成品已清理，源完好（同卷已改名条目保留在目标）
-                    break;
-                }
-            }
-
-            return result;
-        });
-
-        _ = task.ContinueWith(_ => window.Close(), TaskScheduler.FromCurrentSynchronizationContext());
-        window.ShowDialog(); // 模态至迁移完成 / 取消（关窗即取消，见窗口 Closing 钩子）
-
-        // **await 而非 Result**：用户手动关窗后任务还要收尾当前文件，同步取结果会阻塞 UI（假死）
         MigrationResult migrated;
 
-        try
+        // 统一遮罩 + 全局独占（禁用式）：迁移期间主界面与此刻已存在的其它顶层窗整体锁住，
+        // 取消入口就在遮罩上——封锁范围与旧模态进度窗等价（见 docs/处理中反馈统一设计.md §4.2）
+        using (var scope = BusyIndicator.Instance.Begin(Loc["migrate.running"], cts.Cancel))
         {
-            migrated = await task;
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(Loc.Format("migrate.failed", ex.GetBaseException().Message));
-            return false;
+            var reporter = new Progress<MigrationProgress>(p => ApplyMigrationProgress(scope, p));
+
+            try
+            {
+                // **await 而非 Result**：后台任务异常时同步取结果会阻塞 UI（假死）
+                migrated = await Task.Run(() =>
+                {
+                    var result = new MigrationResult();
+
+                    foreach (var (kind, oldDir, newDir) in changes)
+                    {
+                        var items = kind switch
+                        {
+                            // 配置目录：带走配置与用户数据；previews 缓存不迁（按需重建）
+                            "config" => (IReadOnlyList<string>)new[]
+                                { "config.json", "lang", "mappings", "index", "ref" },
+                            "userSkins" => new[] { "WTSM" },
+                            _ => Directory.GetFileSystemEntries(oldDir)
+                                .Select(entry => Path.GetFileName(entry)!)
+                                .ToList()
+                        };
+
+                        var part = DirectoryMigrator.Migrate(oldDir, newDir, items, reporter, cts.Token);
+                        result.MovedBytes += part.MovedBytes;
+                        result.Warnings.AddRange(part.Warnings);
+                        if (part.Canceled)
+                        {
+                            result.Canceled = true; // 已复制半成品已清理，源完好（同卷已改名条目保留在目标）
+                            break;
+                        }
+                    }
+
+                    return result;
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(Loc.Format("migrate.failed", ex.GetBaseException().Message));
+                return false;
+            }
         }
 
         if (migrated.Canceled)
@@ -507,6 +508,19 @@ public partial class MainViewModel : ObservableObject
                     DataResetService.FormatSize(migrated.MovedBytes), migrated.Warnings.Count));
 
         return true;
+    }
+
+    /// <summary>
+    /// 把迁移进度映射到统一遮罩（原 <c>MigrationProgressWindow.Update</c> 的等价物）：
+    /// 按字节显示 <c>已迁移 / 总量</c>，当前条目进副文案。
+    /// </summary>
+    private static void ApplyMigrationProgress(BusyIndicator.Scope scope, MigrationProgress progress)
+    {
+        var total = progress.TotalBytes > 0 ? progress.TotalBytes : 1;
+        scope.Report(
+            Math.Clamp(progress.DoneBytes / (double)total, 0, 1),
+            $"{DataResetService.FormatSize(progress.DoneBytes)} / {DataResetService.FormatSize(total)}");
+        scope.SetDetail(progress.Current);
     }
 
     private static bool SamePath(string a, string b)
