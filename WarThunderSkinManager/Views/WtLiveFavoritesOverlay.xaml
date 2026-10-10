@@ -32,7 +32,7 @@
                 BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
                 CornerRadius="12" Padding="18">
             <Border.Effect>
-                <DropShadowEffect BlurRadius="22" ShadowDepth="2" Opacity="0.26" Color="#000000"/>
+                <DropShadowEffect BlurRadius="22" ShadowDepth="2" Opacity="0.26" Color="{StaticResource ColorShadow}"/>
             </Border.Effect>
 
             <Grid>
