@@ -617,6 +617,19 @@ internal static class SelfTest
                 var chipBox = (TextBox)layoutView.FindName("SearchBox");
                 var shellAtEmpty = chipShell.ActualHeight;
 
+                // 输入文字的真实起点（Padding 不是同一个量：内容宿主还有固有内缩），胶囊必须与它左对齐
+                layoutVm.SearchText = "M";
+                layoutHost.UpdateLayout();
+                var textOriginX = chipBox.GetRectFromCharacterIndex(0).X;
+                layoutVm.SearchText = "";
+
+                // 输入框**自带描边**是"框里还有一个框"的根源：BaseTextBox 的模板聚焦时把内框硬改成
+                // 1.5px 蓝色（ControlTemplate.Triggers 里的 Setter，外面设 BorderThickness=0 也压不住），
+                // 所以这里用了只含内容宿主的模板。聚焦态在自检里测不了（没有窗口拿不到键盘焦点），
+                // 于是断言换成"模板里没有会加粗描边的触发器"。
+                var innerFrame = chipBox.Template.Triggers.OfType<Trigger>()
+                    .Any(t => t.Setters.OfType<Setter>().Any(s => s.Property == Border.BorderThicknessProperty));
+
                 layoutVm.AppendTagChip("shorekeeper_wuthering_waves");
                 layoutHost.UpdateLayout();
                 var listOfOneRow = chipList.ActualHeight;
@@ -627,9 +640,12 @@ internal static class SelfTest
                 layoutHost.UpdateLayout();
 
                 log.AppendLine($"搜索框布局 : 空态高 = {shellAtEmpty:0.##}（应 34 = 排序下拉 / 刷新按钮）"
-                             + $"，胶囊左边距 = {chipList.Margin.Left:0.##}（应 = 输入框左内边距 {chipBox.Padding.Left:0.##}，与输入文字左对齐）"
+                             + $"，胶囊左边距 = {chipList.Margin.Left:0.##}，输入文字起点 = {textOriginX:0.##}（两者应相等 = 左对齐）"
                              + $"，有胶囊后撑高到 = {chipShell.ActualHeight:0.##}（应 > 34，框跟着长高）"
                              + $"，四个长标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）");
+                log.AppendLine($"搜索框描边 : 输入框模板会自己加粗描边 = {innerFrame}（应 False：描边只由外壳画，"
+                             + $"双层就成了「框里还有一个框」）"
+                             + $"，外壳描边 = {chipShell.BorderThickness.Left:0.##}（应 1）");
 
             }
             catch (Exception ex)

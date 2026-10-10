@@ -71,10 +71,13 @@
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
                                         </Trigger>
-                                        <!-- 聚焦优先级更高：鼠标还停在框上也该按聚焦色画 -->
+                                        <!-- 聚焦优先级更高：鼠标还停在框上也该按聚焦色画。
+                                             描边加粗到 1.5 是**替代** BaseTextBox 聚焦时的那一下加粗
+                                             （它的 1.5 画在输入框自己的内框上，这里改由外壳来画） -->
                                         <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchBox}"
                                                      Value="True">
                                             <Setter Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
+                                            <Setter Property="BorderThickness" Value="1.5"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -82,9 +85,10 @@
                         </Border>
 
                         <!-- 胶囊（载具 / 标签）：多了自动换行、框跟着长高。一个也没有时整行收起。
-                             左边距 28 = 输入框的左内边距：胶囊与下面的文字**左对齐**，
-                             放大镜独占左边那条 28 的槽（见下面那个 TextBlock），整个框才像"一个框" -->
-                        <ItemsControl x:Name="ChipList" Grid.Row="0" Margin="28,6,8,0"
+                             左边距 30 = 输入文字**实测**的左起点（输入框 Padding 28 + 内容宿主固有内缩 2，
+                             自检「搜索框布局」会挡住两者错位）→ 胶囊与下面的文字左对齐，
+                             放大镜独占左边那条槽（见下面那个 TextBlock），整个框才像"一个框" -->
+                        <ItemsControl x:Name="ChipList" Grid.Row="0" Margin="30,6,8,0"
                                       ItemsSource="{Binding WtLive.Chips}">
                             <ItemsControl.Style>
                                 <Style TargetType="ItemsControl">
@@ -138,14 +142,25 @@
                         </ItemsControl>
 
                         <!-- 输入行：框里只剩"正在输入的那一段"（高 32 = 外壳 34 - 上下描边 2）。
-                             边框 / 底色交给外壳，所以这里 BorderThickness=0 + 透明底（模板里那层 Border 就看不见了） -->
+                             **换掉 BaseTextBox 的模板**：那个模板聚焦时会把内框硬改成 1.5px 蓝色
+                             （ControlTemplate.Triggers 里的 Setter 压不住，外面把 BorderThickness 设 0 也没用），
+                             于是外框里又套一个蓝框 —— "框里还有一个框"，胶囊就显得跟它不一体。
+                             新模板只留内容宿主：**描边只由外壳 SearchShell 画**（聚焦/悬停反馈也由它给） -->
                         <TextBox x:Name="SearchBox" Grid.Row="1" Style="{StaticResource BaseTextBox}"
-                                 Height="32" BorderThickness="0" Background="Transparent"
-                                 Padding="28,0,28,0"
+                                 Height="32" Padding="28,0,28,0"
                                  Text="{Binding WtLive.SearchText, UpdateSourceTrigger=PropertyChanged}"
                                  PreviewKeyDown="SearchBox_PreviewKeyDown"
                                  PreviewMouseLeftButtonDown="SearchBox_PreviewMouseLeftButtonDown"
-                                 LostKeyboardFocus="SearchBox_LostKeyboardFocus"/>
+                                 LostKeyboardFocus="SearchBox_LostKeyboardFocus">
+                            <TextBox.Template>
+                                <ControlTemplate TargetType="TextBox">
+                                    <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  VerticalScrollBarVisibility="Hidden"
+                                                  HorizontalScrollBarVisibility="Hidden"/>
+                                </ControlTemplate>
+                            </TextBox.Template>
+                        </TextBox>
 
                         <!-- 前置放大镜（纯装饰，不挡点击）：**跨两行、顶对齐**——
                              没有胶囊时它落在唯一的输入行里（9 + 图标半高 ≈ 居中，与原样式一致）；
