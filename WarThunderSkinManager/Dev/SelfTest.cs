@@ -798,6 +798,15 @@ internal static class SelfTest
                     for (var i = 0; i < 6; i++) winVm.AppendTagChip("very_long_tag_" + i);
                     win.UpdateLayout();
 
+                    // 立刻收掉搜索下拉：**输入即展开**（见 WtLiveViewModel.OnSearchTextChanged），
+                    // 而 Popup 是**独立的顶层窗口** —— 窗口停在屏幕外也没用，WPF 会把它钳回屏幕内，
+                    // 于是它跑到桌面左上角去了（自检跑起来时那里会闪一个候选框，就是这么来的）。
+                    // 下面这条断言把"别把下拉留在屏幕上"钉住：以后谁再在这里打开它而忘了关，自检先报出来
+                    var leakedPopup = winView.FindName("SearchPopup") as Popup;
+                    winVm.CloseSuggestions();
+                    win.UpdateLayout();
+                    var popupClosed = leakedPopup == null || !leakedPopup.IsOpen;
+
                     var bar = FindDescendant<ScrollBar>(wScroll);
                     var isPressOnScrollBar = typeof(WarThunderSkinManager.Views.WtLiveView)
                         .GetMethod("IsPressOnScrollBar",
@@ -819,6 +828,11 @@ internal static class SelfTest
                                  + $"落在「×」= {(clearDecision?.ToString() ?? "跳过")}（应 False：照常聚焦，点掉再接着打字），"
                                  + $"「×」在外壳子树里 = {clearInsideShell}（应 True）、滚动条在外壳子树里 = "
                                  + $"{(barInsideShell?.ToString() ?? "跳过")}（应 True：隧道必过外壳）");
+                    log.AppendLine($"搜索下拉残留: 用完即收 = {popupClosed}"
+                                 + "（应 True：Popup 是独立顶层窗口，窗口停在屏幕外也挡不住它跑到桌面左上角）");
+
+                    if (!popupClosed)
+                        log.AppendLine("自检异常：搜索下拉用完没收（自检会把候选框留在桌面上，闪到人）");
 
                     // ⑤ 换搜索条件 / 排序（VM 把列表清空重拉）→ 瀑布流必须**回到顶部**。
                     //    停在原来的位置等于开局就看不见第一条（列表内容全变了，位置却还按旧内容算）
