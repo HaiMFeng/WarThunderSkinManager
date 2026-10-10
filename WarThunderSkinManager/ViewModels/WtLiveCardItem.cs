@@ -37,6 +37,8 @@ public partial class WtLiveCardItem : ObservableObject
         LangGroup = item.LangGroup;
         Title = item.Title;
         Author = item.Author;
+        AuthorId = item.AuthorId;
+        AuthorAvatarUrl = item.AuthorAvatar;
         Description = item.Description;
         Tags = item.Tags;
         PreviewUrl = item.PreviewUrl;
@@ -50,7 +52,7 @@ public partial class WtLiveCardItem : ObservableObject
         Views = item.Views;
         PostUrl = item.PostUrl;
 
-        MetaText = BuildMeta();
+        MetaSuffix = BuildMetaSuffix();
 
         // 有预览图 → 卡片一出现就是「加载中」（转圈）；没有 → 直接是「缺图」（占位图标）
         ThumbnailState = string.IsNullOrWhiteSpace(PreviewUrl)
@@ -64,8 +66,17 @@ public partial class WtLiveCardItem : ObservableObject
     /// <summary>卡片标题（描述首行）。</summary>
     public string Title { get; }
 
-    /// <summary>作者昵称。</summary>
+    /// <summary>作者昵称（卡片上做成超链接，点它 = 搜这个作者的涂装）。</summary>
     public string Author { get; }
+
+    /// <summary>作者 id（按作者搜索的**查询值**；0 = 接口没给 → 链接点了也没用，视图据此禁用）。</summary>
+    public long AuthorId { get; }
+
+    /// <summary>作者头像 URL（详情浮窗的圆形头像用）；空 = 没给。</summary>
+    public string AuthorAvatarUrl { get; }
+
+    /// <summary>作者名可点（有 id 才可点）。</summary>
+    public bool CanSearchAuthor => AuthorId > 0;
 
     /// <summary>描述纯文本（多行；后续做详情/下载确认时可复用，列表不显示）。</summary>
     public string Description { get; }
@@ -104,8 +115,12 @@ public partial class WtLiveCardItem : ObservableObject
     /// <summary>帖子网址（「在浏览器中打开」用）。</summary>
     public string PostUrl { get; }
 
-    /// <summary>卡片副标题：作者 · 体积 · 下载数（缺项自动省略，不留空分隔符）。</summary>
-    public string MetaText { get; }
+    /// <summary>
+    /// 卡片副标题里**作者之后**的那一段：<c> · 1.5 MB · 下载 10</c>
+    /// （缺项自动省略；全缺就是空串）。作者名是超链接、在视图里单独一个 <c>Run</c>，
+    /// 拼在同一个流式行里，所以这里自己带上前导分隔符；没有作者时就不带。
+    /// </summary>
+    public string MetaSuffix { get; }
 
     /// <summary>是否有站内可下载的附件（无附件时后续只能引导去浏览器下载）。</summary>
     public bool HasFile => FileLink.Length > 0;
@@ -143,14 +158,16 @@ public partial class WtLiveCardItem : ObservableObject
         if (value != WtLiveThumbnailState.Loading) CanReloadThumbnail = false;
     }
 
-    private string BuildMeta()
+    private string BuildMetaSuffix()
     {
-        var parts = new List<string>(3);
+        var parts = new List<string>(2);
 
-        if (!string.IsNullOrWhiteSpace(Author)) parts.Add(Author);
         if (FileSize > 0) parts.Add(DataResetService.FormatSize(FileSize));
         if (Downloads > 0) parts.Add(Loc.Format("wtlive.card.downloads", Downloads));
 
-        return string.Join(" · ", parts);
+        if (parts.Count == 0) return "";
+
+        var body = string.Join(" · ", parts);
+        return Author.Length > 0 ? " · " + body : body;
     }
 }

@@ -17,7 +17,7 @@
     </UserControl.Style>
 
     <UserControl.Resources>
-        <!-- 信息行：为空的那行自动收起（作者 / 文件 可能缺项，不留空行） -->
+        <!-- 信息行：为空的那行自动收起（统计行可能整行缺项，不留空行） -->
         <Style x:Key="InfoLine" TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
             <Setter Property="Margin" Value="0,4,0,0"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
@@ -26,6 +26,13 @@
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
             </Style.Triggers>
+        </Style>
+
+        <!-- 作者行：同款外观，但**不要"空了就收起"**那条 —— 收起判据读的是 TextBlock.Text，
+             而这一行装的是 Hyperlink（Text 始终为空），套 InfoLine 会被误判成空行整行消失 -->
+        <Style x:Key="AuthorLine" TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
     </UserControl.Resources>
 
@@ -196,34 +203,83 @@
                     </Border>
                 </Grid>
 
-                <!-- 信息：标题 + 作者 / 文件 / 互动统计（缺项自动收起） -->
-                <StackPanel Grid.Row="1" Margin="0,14,0,0">
-                    <TextBlock Text="{Binding WtLive.Detail.Title}" FontSize="15" FontWeight="SemiBold"
-                               TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding WtLive.Detail.Author}" Style="{StaticResource InfoLine}"/>
-                    <TextBlock Text="{Binding WtLive.Detail.FileText}" Style="{StaticResource InfoLine}"/>
-                    <TextBlock Text="{Binding WtLive.Detail.StatsText}" Style="{StaticResource InfoLine}"/>
+                <!-- 信息区：**两列** —— 左「作者头像（圆形）」，右「标题 / 作者（超链接）/ 一行统计」。
+                     头像的宽高在 DetailInfo_SizeChanged 里跟着右列走（右列多高、圆就多大），
+                     所以两边**占同一高度**、看起来是一整块；点头像或作者名都 = 按作者搜索 -->
+                <Grid Grid.Row="1" Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>   <!-- 头像列：宽度由头像自己定（见 code-behind 的同步） -->
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                    <!-- 读取失败：给出原因与重试（卡片那层信息仍在上面，不至于空窗） -->
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding WtLive.Detail.HasError}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="{Binding WtLive.Detail.ErrorMessage}" FontSize="12"
-                                   Foreground="{StaticResource BrushDanger}" TextWrapping="Wrap"
-                                   MaxWidth="520" VerticalAlignment="Center"/>
-                        <Button Content="{loc:Loc wtlive.list.retry}" Style="{StaticResource SecondaryButton}"
-                                Margin="10,0,0,0" MinWidth="72"
-                                Command="{Binding WtLive.Detail.RetryCommand}"/>
+                    <Border x:Name="AuthorAvatarBox" Grid.Column="0"
+                            Width="64" Height="64" CornerRadius="999"
+                            VerticalAlignment="Center"
+                            Background="{StaticResource BrushBackground}"
+                            BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                            Cursor="Hand"
+                            ToolTip="{loc:Loc wtlive.detail.searchAuthor}"
+                            MouseLeftButtonUp="AuthorAvatar_MouseLeftButtonUp">
+                        <Grid>
+                            <!-- 头像原图（圆形靠 code-behind 挂的椭圆 Clip 裁，Border 的圆角裁不到子元素） -->
+                            <Image Source="{Binding WtLive.Detail.AuthorAvatar}" Stretch="UniformToFill"/>
+
+                            <!-- 没有头像 / 还没下好：占位图标（不下发"加载中"——头像不是内容主体） -->
+                            <TextBlock Text="&#xF007;" FontFamily="{StaticResource IconFont}"
+                                       FontSize="22" Foreground="{StaticResource BrushTextMuted}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding WtLive.Detail.AuthorAvatar}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+
+                    <!-- 右列：上面那一叠（标题 / 作者 / 统计）就是 DetailInfo —— **头像跟它同高**；
+                         错误行不在其中，免得"详情没读到"一出现就把头像也撑大 -->
+                    <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                        <StackPanel x:Name="DetailInfo" SizeChanged="DetailInfo_SizeChanged">
+                            <TextBlock Text="{Binding WtLive.Detail.Title}" FontSize="15" FontWeight="SemiBold"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock Style="{StaticResource AuthorLine}">
+                                <Hyperlink Command="{Binding WtLive.Detail.SearchAuthorCommand}"
+                                           Foreground="{StaticResource BrushPrimary}"
+                                           TextDecorations="Underline"
+                                           ToolTip="{loc:Loc wtlive.detail.searchAuthor}">
+                                    <Run Text="{Binding WtLive.Detail.Author, Mode=OneWay}"/>
+                                </Hyperlink>
+                            </TextBlock>
+                            <TextBlock Text="{Binding WtLive.Detail.StatsText}" Style="{StaticResource InfoLine}"/>
+                        </StackPanel>
+
+                        <!-- 读取失败：给出原因与重试（卡片那层信息仍在上面，不至于空窗） -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WtLive.Detail.HasError}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="{Binding WtLive.Detail.ErrorMessage}" FontSize="12"
+                                       Foreground="{StaticResource BrushDanger}" TextWrapping="Wrap"
+                                       MaxWidth="520" VerticalAlignment="Center"/>
+                            <Button Content="{loc:Loc wtlive.list.retry}" Style="{StaticResource SecondaryButton}"
+                                    Margin="10,0,0,0" MinWidth="72"
+                                    Command="{Binding WtLive.Detail.RetryCommand}"/>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
+                </Grid>
 
                 <!-- 正文：可选中复制（与「从 WT Live 下载」确认窗同一处理），限高滚动；空正文折叠该行。
                      高度：短正文 80、长正文最多 180（12 行左右），超出在框内滚动——

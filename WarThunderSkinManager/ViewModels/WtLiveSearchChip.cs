@@ -11,7 +11,14 @@ public enum WtLiveChipKind
     Vehicle,
 
     /// <summary>标签（接口 <c>searchString=#tag</c>）；可以叠多个（站点按并集处理）。</summary>
-    Tag
+    Tag,
+
+    /// <summary>
+    /// 作者（接口 <c>user=&lt;作者id&gt;</c>）；**最多一个，且与其他类型互斥**——
+    /// 站点同时给 <c>user=</c> 与 <c>searchString=</c> / <c>vehicle=</c> 时结果语义不明，
+    /// 所以加作者胶囊会清掉其余条件、有作者胶囊时也加不进其他（见 <see cref="WtLiveViewModel"/>）。
+    /// </summary>
+    User
 }
 
 /// <summary>
@@ -45,18 +52,24 @@ public partial class WtLiveSearchChip : ObservableObject
     public string Text { get; }
 
     /// <summary>
-    /// 胶囊上的文案：<c>载具:F-15E</c> / <c>标签:anime</c>
+    /// 胶囊上的文案：<c>载具:F-15E</c> / <c>标签:anime</c> / <c>用户:锅盖头</c>
     /// ——与下拉候选**同一套文案**（<c>wtlive.chip.*</c>），切换语言时由
     /// <see cref="WtLiveViewModel.ApplyLanguageChange"/> 重建。
     /// </summary>
-    public string Label => Kind == WtLiveChipKind.Vehicle
-        ? WtLiveSearchChipCatalog.VehicleLabel(Text)
-        : WtLiveSearchChipCatalog.TagLabel(Text);
+    public string Label => Kind switch
+    {
+        WtLiveChipKind.Vehicle => WtLiveSearchChipCatalog.VehicleLabel(Text),
+        WtLiveChipKind.User => WtLiveSearchChipCatalog.UserLabel(Text),
+        _ => WtLiveSearchChipCatalog.TagLabel(Text)
+    };
 
     /// <summary>左侧图标字形（与下拉候选用同一批字形）。</summary>
-    public string Icon => Kind == WtLiveChipKind.Vehicle
-        ? WtLiveSearchChipCatalog.VehicleIcon
-        : WtLiveSearchChipCatalog.TagIcon;
+    public string Icon => Kind switch
+    {
+        WtLiveChipKind.Vehicle => WtLiveSearchChipCatalog.VehicleIcon,
+        WtLiveChipKind.User => WtLiveSearchChipCatalog.UserIcon,
+        _ => WtLiveSearchChipCatalog.TagIcon
+    };
 
     /// <summary>语言切换后重算文案（Label 是算出来的，属性变更没人代播报 → 手动补）。</summary>
     internal void RefreshTexts()
@@ -79,6 +92,9 @@ internal static class WtLiveSearchChipCatalog
     /// <summary>标签图标（Font Awesome <c>tag</c>）。</summary>
     internal const string TagIcon = "\uF02B";
 
+    /// <summary>作者图标（Font Awesome <c>user</c>，与详情浮窗的头像占位同一字形）。</summary>
+    internal const string UserIcon = "\uF007";
+
     /// <summary>清空「×」图标。</summary>
     internal const string ClearIcon = "\uF00D";
 
@@ -87,6 +103,12 @@ internal static class WtLiveSearchChipCatalog
 
     /// <summary>标签胶囊 / 候选文案：<c>标签:anime</c>。</summary>
     internal static string TagLabel(string text) => Format("wtlive.chip.tag", text);
+
+    /// <summary>
+    /// 作者胶囊 / 候选文案：<c>用户:锅盖头</c>。显示名可能是昵称（从卡片 / 详情点过来时拿得到），
+    /// 也可能只有 id（在搜索框里手打 <c>@147560834</c> 时），两者都走这一套文案。
+    /// </summary>
+    internal static string UserLabel(string text) => Format("wtlive.chip.user", text);
 
     private static string Format(string key, string text)
         => string.Format(LocalizationManager.Instance[key], text);

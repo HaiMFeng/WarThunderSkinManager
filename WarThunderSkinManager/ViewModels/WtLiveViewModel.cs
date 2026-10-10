@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -98,6 +99,16 @@ public partial class WtLiveViewModel : ObservableObject
         => Chips.FirstOrDefault(c => c.Kind == WtLiveChipKind.Vehicle)?.Value;
 
     /// <summary>
+    /// 作者筛选（接口 <c>user=&lt;作者id&gt;</c>；胶囊里最多一个，null = 不限作者）。
+    /// <para>
+    /// **独占维度**：作者胶囊存在时不会有载具 / 标签胶囊（加作者会清掉它们、有它时也加不进别的），
+    /// 所以 <see cref="VehicleFilter"/> / <see cref="TagQuery"/> 必然同时为空（见 <see cref="AppendUserChip"/>）。
+    /// </para>
+    /// </summary>
+    internal string? UserFilter
+        => Chips.FirstOrDefault(c => c.Kind == WtLiveChipKind.User)?.Value;
+
+    /// <summary>
     /// 标签查询串（接口 <c>searchString=</c>；<c>#a #b</c>，单个空格分隔）。
     /// 站点只做标签搜索——裸词实测返回 0 条（见 <see cref="WtLiveTag"/>），所以这里只拼标签。
     /// </summary>
@@ -106,14 +117,18 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>
     /// 当前查询的摘要（**没有筛选时 = "所有涂装"**）：胶囊在界面上是"一块块"，这行把它写成人话，
-    /// 也点明走的是哪条通道（按载具 / 按标签）。页头左列第二行**始终**显示它（不像以前那样收起），
+    /// 也点明走的是哪条通道（按载具 / 按标签 / 按作者）。页头左列第二行**始终**显示它（不像以前那样收起），
     /// 所以空态也得有文案，就是那句默认的「所有涂装」。
     /// </summary>
     public string ActiveFilterText
     {
         get
         {
-            var parts = new List<string>(2);
+            var parts = new List<string>(3);
+
+            // 作者筛选是**独占**的：有它时必然没有别的条件（见 AppendUserChip）
+            if (Chips.FirstOrDefault(c => c.Kind == WtLiveChipKind.User) is { } author)
+                parts.Add(Loc.Format("wtlive.search.byUser", author.Text));
 
             if (VehicleFilter is { Length: > 0 } vehicle)
                 parts.Add(Loc.Format("wtlive.search.byVehicle",
@@ -159,14 +174,17 @@ public partial class WtLiveViewModel : ObservableObject
 
     public WtLiveViewModel()
     {
+        Detail.Owner = this; // 详情浮窗里点作者名 / 头像要跳回本页做「按作者搜索」
+
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
         Chips.CollectionChanged += (_, _) =>
         {
-            // 派生自胶囊的四个量：摘要、有没有筛选、「×」是否出现、载具值（XAML / 自检都读它们）
+            // 派生自胶囊的量：摘要、有没有筛选、「×」是否出现、载具 / 作者取值（XAML / 自检都读它们）
             OnPropertyChanged(nameof(HasFilter));
             OnPropertyChanged(nameof(ActiveFilterText));
             OnPropertyChanged(nameof(HasSearchInput));
             OnPropertyChanged(nameof(VehicleFilter));
+            OnPropertyChanged(nameof(UserFilter));
         };
 
         BuildSortOptions();
@@ -366,8 +384,10 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 应用一条搜索建议（点击 / Enter）：载具 → 载具胶囊；标签 → 标签胶囊；清除 → 清掉全部条件。
-    /// 胶囊**加**在现有条件上（不是替换）——多标签就是这么叠出来的；载具最多一个，再选即替换。
+    /// 应用一条搜索建议（点击 / Enter）：载具 → 载具胶囊；标签 → 标签胶囊；作者 → 作者胶囊；
+    /// 清除 → 清掉全部条件。
+    /// 载具 / 标签的胶囊**加**在现有条件上（不是替换）——多标签就是这么叠出来的；载具最多一个，再选即替换；
+    /// **作者除外**：它是独占维度，选中即清掉其余条件（见 <see cref="AppendUserChip"/>）。
     /// </summary>
     [RelayCommand]
     private void ApplySuggestion(WtLiveSearchSuggestion? suggestion)
@@ -386,6 +406,12 @@ public partial class WtLiveViewModel : ObservableObject
                 // 只吃掉"正在输入的那一个词"：粘贴 "#a #b" 时先收 a，框里留下 "#b" 接着收
                 SearchText = WtLiveTag.DropFirstToken(SearchText);
                 AppendTagChip(suggestion.Value);
+                break;
+
+            case WtLiveSearchKind.User:
+                // 整段输入都是一个作者（@id），输入框直接清空；现有条件由 AppendUserChip 清掉
+                SearchText = "";
+                AppendUserChip(suggestion.Value, suggestion.Text);
                 break;
 
             case WtLiveSearchKind.Clear:
@@ -434,6 +460,36 @@ public partial class WtLiveViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>
+    /// 按作者搜索（详情浮窗 / 卡片上的作者超链接、头像）：**先清掉现有条件**，只留这一个作者，再从第一页拉。
+    /// <para>
+    /// 与 <see cref="SearchTag"/> 同样先关浮窗（否则结果被它盖着看不见）；作者筛选本身是独占维度，
+    /// 叠在旧条件上只会得到语义不明的查询（见 <see cref="AppendUserChip"/>）。
+    /// </para>
+    /// </summary>
+    /// <param name="userId">作者 id（接口 <c>user=</c> 的取值；不是数字则什么都不做）</param>
+    /// <param name="displayName">作者昵称（胶囊上显示它；没有就显示 id）</param>
+    public void SearchUser(string? userId, string? displayName)
+    {
+        if (WtLiveUser.NormalizeId(userId).Length == 0) return;
+
+        Detail.CloseCommand.Execute(null); // 先关浮窗，否则结果被它盖着看不见
+
+        SearchText = "";
+        AppendUserChip(userId, displayName);
+        IsSuggestionsOpen = false;
+        Refresh();
+    }
+
+    /// <summary>卡片里点作者名（传整张卡片，省得视图拼参数）。</summary>
+    [RelayCommand]
+    private void SearchUserByCard(WtLiveCardItem? card)
+    {
+        if (card is not { CanSearchAuthor: true }) return;
+
+        SearchUser(card.AuthorId.ToString(CultureInfo.InvariantCulture), card.Author);
+    }
+
     /// <summary>清空搜索框与全部条件（搜索框右侧「×」）。有胶囊时重拉列表；只是打了字则仅清空。</summary>
     [RelayCommand]
     private void ClearSearch()
@@ -449,9 +505,14 @@ public partial class WtLiveViewModel : ObservableObject
 
     // ---------- 胶囊（搜索条件的唯一载体）----------
 
-    /// <summary>加一个标签胶囊（去重；**不刷新**，由调用方决定何时重拉）。</summary>
+    /// <summary>
+    /// 加一个标签胶囊（去重；**不刷新**，由调用方决定何时重拉）。
+    /// <para>**已有作者胶囊时一律不加**：作者筛选是独占维度（见 <see cref="AppendUserChip"/>）。</para>
+    /// </summary>
     internal void AppendTagChip(string? tag)
     {
+        if (UserFilter != null) return;
+
         var value = WtLiveTag.Normalize(tag);
         if (value.Length == 0) return;
         if (Chips.Any(c => c.Kind == WtLiveChipKind.Tag
@@ -460,13 +521,37 @@ public partial class WtLiveViewModel : ObservableObject
         Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Tag, value, value));
     }
 
-    /// <summary>加一个载具胶囊（**最多一个**：已有的载具被替换；**不刷新**）。</summary>
+    /// <summary>
+    /// 加一个载具胶囊（**最多一个**：已有的载具被替换；**不刷新**）。
+    /// <para>**已有作者胶囊时一律不加**（同上）。</para>
+    /// </summary>
     internal void AppendVehicleChip(string vehicleId, string? displayName)
     {
+        if (UserFilter != null) return;
         if (string.IsNullOrWhiteSpace(vehicleId)) return;
 
         ClearChips(WtLiveChipKind.Vehicle);
         Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Vehicle, vehicleId, displayName ?? ""));
+    }
+
+    /// <summary>
+    /// 加一个作者胶囊：**作者筛选是独占维度** —— 先清掉全部现有条件（载具 / 标签 / 旧作者），只留这一个。
+    /// <para>
+    /// 站点同时给 <c>user=</c> 与 <c>searchString=</c> / <c>vehicle=</c> 时结果语义不明，
+    /// 所以这里**不做叠加**（与"多标签能叠"正好相反）；反过来
+    /// <see cref="AppendTagChip"/> / <see cref="AppendVehicleChip"/> 在有作者胶囊时也一律不加。
+    /// </para>
+    /// **不刷新**，由调用方决定何时重拉。
+    /// </summary>
+    /// <param name="userId">作者 id（可带 <c>@</c>；不是数字则什么都不做）</param>
+    /// <param name="displayName">作者昵称；没有就用 id 当显示名</param>
+    internal void AppendUserChip(string? userId, string? displayName)
+    {
+        var id = WtLiveUser.NormalizeId(userId);
+        if (id.Length == 0) return;
+
+        ClearChips();
+        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.User, id, displayName ?? ""));
     }
 
     /// <summary>清掉全部胶囊（<paramref name="kind"/> 非空时只清这一类）；**不刷新**。</summary>
@@ -550,6 +635,11 @@ public partial class WtLiveViewModel : ObservableObject
     /// 已经以 <c>#</c> 开头就不再给载具——<c>#xx</c> 不可能是载具名，标签与载具靠这个 <c>#</c> 区分。
     /// </para>
     /// <para>
+    /// 打入 <c>@</c> 则走**作者通道**：只认 <c>@ + 纯数字</c>，整段输入就是一个作者 id，
+    /// 给出一条 <c>用户:&lt;id&gt;</c>；此时不掺标签 / 载具候选（作者筛选独占）。
+    /// 反过来，**已经有作者胶囊时**也不再给标签 / 载具候选（见 <see cref="AppendUserChip"/>）。
+    /// </para>
+    /// <para>
     /// <paramref name="open"/> = 是否**顺便展开**：只有用户正在输入 / 点进搜索框 / 按上下键时才展开；
     /// 后台刷新（如切页后载具表加载完）只重算内容、**不展开**——否则搜索框里一有文字，
     /// 一进这一页就会平白弹出一个下拉框（见 <see cref="LoadVehicleOptionsAsync"/>）。
@@ -561,37 +651,60 @@ public partial class WtLiveViewModel : ObservableObject
         HighlightedSuggestion = null;
 
         var text = SearchText.Trim();
+        var authorId = WtLiveUser.Normalize(text); // 只认 "@ + 纯数字"（作者 id 是正整数）
 
-        if (text.Length > 0)
+        if (authorId.Length > 0)
         {
-            var token = WtLiveTag.FirstToken(text);
-            var tagged = text[0] == '#';
-
-            if (tagged || token.Length > 0)
+            // 作者通道（@id）：整段输入就是一个作者。站点按 user= 筛，昵称只是显示名、不能当查询值，
+            // 所以这一项没有"名字匹配"可言——给的就是那一个 id
+            Suggestions.Add(new WtLiveSearchSuggestion
             {
-                Suggestions.Add(new WtLiveSearchSuggestion
-                {
-                    Kind = WtLiveSearchKind.Tag,
-                    Display = WtLiveSearchChipCatalog.TagLabel(token),
-                    Value = token,
-                    Text = token,
-                    Icon = WtLiveSearchChipCatalog.TagIcon
-                });
-            }
-
-            if (!tagged)
+                Kind = WtLiveSearchKind.User,
+                Display = WtLiveSearchChipCatalog.UserLabel(authorId),
+                Detail = Loc["wtlive.search.userDetail"],
+                Value = authorId,
+                Text = authorId,
+                Icon = WtLiveSearchChipCatalog.UserIcon
+            });
+        }
+        else if (UserFilter == null && !text.StartsWith(WtLiveUser.Prefix))
+        {
+            // 载具 / 标签通道。两种情况这里都不给候选：
+            // ① **有作者胶囊**：作者筛选独占（见 AppendUserChip），这时下拉里只剩「显示全部涂装」，
+            //    先用退格或胶囊上的「×」把作者条件去掉再加别的；
+            // ② **以 @ 开头但后面不是数字**：那是用户正打到一半的作者 id（`@abc` 不可能是标签），
+            //    与其给一个搜不到的"标签:@abc"，不如什么都不给。
+            if (text.Length > 0)
             {
-                foreach (var vehicle in MatchVehicles(text).Take(MaxVehicleSuggestions))
+                var token = WtLiveTag.FirstToken(text);
+                var tagged = text[0] == '#';
+
+                if (tagged || token.Length > 0)
                 {
                     Suggestions.Add(new WtLiveSearchSuggestion
                     {
-                        Kind = WtLiveSearchKind.Vehicle,
-                        Display = WtLiveSearchChipCatalog.VehicleLabel(vehicle.DisplayName),
-                        Detail = vehicle.Id,
-                        Value = vehicle.Id,
-                        Text = vehicle.DisplayName,
-                        Icon = WtLiveSearchChipCatalog.VehicleIcon
+                        Kind = WtLiveSearchKind.Tag,
+                        Display = WtLiveSearchChipCatalog.TagLabel(token),
+                        Value = token,
+                        Text = token,
+                        Icon = WtLiveSearchChipCatalog.TagIcon
                     });
+                }
+
+                if (!tagged)
+                {
+                    foreach (var vehicle in MatchVehicles(text).Take(MaxVehicleSuggestions))
+                    {
+                        Suggestions.Add(new WtLiveSearchSuggestion
+                        {
+                            Kind = WtLiveSearchKind.Vehicle,
+                            Display = WtLiveSearchChipCatalog.VehicleLabel(vehicle.DisplayName),
+                            Detail = vehicle.Id,
+                            Value = vehicle.Id,
+                            Text = vehicle.DisplayName,
+                            Icon = WtLiveSearchChipCatalog.VehicleIcon
+                        });
+                    }
                 }
             }
         }
@@ -666,8 +779,10 @@ public partial class WtLiveViewModel : ObservableObject
         try
         {
             // 浏览请求都是短请求：不设取消（退出即进程结束；可取消的长任务在下载列表那边）
+            // 作者筛选独占：有它时 VehicleFilter / TagQuery 必然为空（见 AppendUserChip）
             var page = await WTLiveService.FetchFeedPageAsync(
-                _nextPage, VehicleFilter, TagQuery.Length > 0 ? TagQuery : null, SortId, CancellationToken.None);
+                _nextPage, VehicleFilter, TagQuery.Length > 0 ? TagQuery : null, SortId, UserFilter,
+                CancellationToken.None);
 
             foreach (var item in page.Items)
             {

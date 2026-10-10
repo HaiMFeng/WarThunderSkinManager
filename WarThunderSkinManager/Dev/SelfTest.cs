@@ -353,6 +353,42 @@ internal static class SelfTest
                          + $"，打入 #anim = [{string.Join(" / ", hashTyping)}]（应 [标签:anim]）"
                          + $"，裸词 = [{string.Join(" / ", plainWord)}]（应 [Tag:标签:anime]：站点没有全文搜索，裸词也只当标签）");
 
+            // ---- 作者通道（@作者id）：候选 → 胶囊，并且**完全排斥其他筛选形式** ----
+            // 站点按 user=<作者id> 筛（昵称只是显示名），所以这里只认 @ + 纯数字
+            var authorVm = new WtLiveViewModel();
+            authorVm.SearchText = "@147560834";
+            var authorSuggestions = authorVm.Suggestions.Select(x => $"{x.Kind}:{x.Display}").ToList();
+            authorVm.SearchText = "@abc";                    // 不是纯数字 → 连标签候选都不给
+            var authorBadId = authorVm.Suggestions.Count;
+
+            authorVm.SearchText = "";
+            authorVm.AppendTagChip("anime");
+            authorVm.AppendVehicleChip("f_15e", "F-15E");
+            authorVm.AppendUserChip("@147560834", "锅盖头");  // 加作者 = 清掉其余全部条件
+            var authorClearsOthers = authorVm.Chips.Count == 1
+                                     && authorVm.Chips[0].Kind == WtLiveChipKind.User
+                                     && authorVm.UserFilter == "147560834"
+                                     && authorVm.VehicleFilter == null
+                                     && authorVm.TagQuery.Length == 0;
+            authorVm.AppendTagChip("skin");                  // 有作者时：标签 / 载具一律加不进
+            authorVm.AppendVehicleChip("su_30mkk", "Su-30MKK");
+            var authorRejects = authorVm.Chips.Count == 1;
+
+            authorVm.SearchText = "#anime";                  // 有作者时：也不给标签 / 载具候选
+            var candidatelessWithAuthor = authorVm.Suggestions.All(x => x.Kind != WtLiveSearchKind.Tag
+                                                                     && x.Kind != WtLiveSearchKind.Vehicle);
+            authorVm.SearchText = "";
+
+            log.AppendLine($"作者搜索   : @147560834 候选 = [{string.Join(" / ", authorSuggestions)}]（应 [User:用户:147560834]）"
+                         + $"，@abc 不是纯数字 → 候选数 = {authorBadId}（应 0）"
+                         + $"，加作者即清空其余 = {authorClearsOthers}（应 True）"
+                         + $"，有作者时载具 / 标签加不进 = {authorRejects}（应 True）"
+                         + $"，有作者时不给载具 / 标签候选 = {candidatelessWithAuthor}（应 True）");
+            log.AppendLine($"作者胶囊   : {authorVm.Chips[0].Label}（应 用户:锅盖头）"
+                         + $"，摘要 = [{authorVm.ActiveFilterText}]（应 按作者筛选：锅盖头）"
+                         + $"，@0 不是作者 = {WtLiveUser.NormalizeId("0").Length == 0}（应 True：0 是接口的「不限作者」哨兵）"
+                         + $"，多写的 @ 也认 = {WtLiveUser.NormalizeId("@147560834") == "147560834"}（应 True）");
+
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
             // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;
@@ -730,6 +766,46 @@ internal static class SelfTest
 
                 // 瀑布流卡片的悬停动画（用同一个视图里的**真实卡片模板**查）
                 MasonrySelfTest.CheckCardHover(log, layoutView);
+
+                // ---- 详情信息区：左「作者头像（圆形）」与右「标题 / 作者 / 统计」两列**同高** ----
+                // 头像尺寸是 code-behind 跟着右列走的（不是写死 64），所以这里量的判据是
+                // "头像 == 右列高度"——右列因标题换行变高时，头像必须跟着长（见 DetailInfo_SizeChanged）
+                var detailVm = layoutVm.Detail;
+                detailVm.Title = "FHQ-11 Fire Rescue";
+                detailVm.Author = "锅盖头";
+                detailVm.StatsText = "1.5 MB";
+                detailVm.AuthorId = 147560834;
+                detailVm.IsOpen = true; // 只开显示开关：**不**走 OpenCommand（那会去拉帖子详情、发真请求）
+
+                var overlay = new WarThunderSkinManager.Views.WtLiveDetailOverlay
+                {
+                    DataContext = new { WtLive = layoutVm }
+                };
+                overlay.Width = 1000;
+                overlay.Height = 700;
+
+                // 这棵浮窗树**没接到窗口上**：样式里的 DataTrigger（WtLive.Detail.IsOpen → Visible）
+                // 在这种树上不生效，所以直接置本地 Visible（本地值优先级高于触发器，量出来才是真布局）
+                overlay.Visibility = System.Windows.Visibility.Visible;
+                overlay.Measure(new System.Windows.Size(1000, 700));
+                overlay.Arrange(new System.Windows.Rect(0, 0, 1000, 700));
+                overlay.UpdateLayout(); // 头像尺寸是在 SizeChanged 里定的，要再跑一轮才落定
+                overlay.UpdateLayout();
+
+                var avatarBox = (Border)overlay.FindName("AuthorAvatarBox");
+                var detailInfo = (FrameworkElement)overlay.FindName("DetailInfo");
+                var avatarSquare = Math.Abs(avatarBox.ActualWidth - avatarBox.ActualHeight) < 0.5;
+                var avatarMatchesInfo = avatarBox.ActualHeight > 0
+                                        && Math.Abs(avatarBox.ActualHeight - detailInfo.ActualHeight) < 0.5;
+                var avatarIsCircle = avatarBox.Clip is System.Windows.Media.EllipseGeometry ellipse
+                                     && Math.Abs(ellipse.RadiusX - avatarBox.ActualWidth / 2) < 0.5;
+
+                log.AppendLine($"详情信息区 : 头像 = {avatarBox.ActualWidth:0.##} × {avatarBox.ActualHeight:0.##}"
+                             + $"，正方形 = {avatarSquare}（应 True）"
+                             + $"，与右列同高 = {avatarMatchesInfo}（右列 {detailInfo.ActualHeight:0.##}，应相等）"
+                             + $"，圆形裁剪 = {avatarIsCircle}（应 True：Border 的圆角裁不到里面的 Image）");
+
+                detailVm.IsOpen = false;
             }
             catch (Exception ex)
             {
@@ -1856,7 +1932,8 @@ internal static class SelfTest
 
             // ---- 卡片右下角「下载」入口：预填给确认窗的链接必须能解析，否则一打开就报「链接无效」----
             static WTLiveFeedItem MakeFeedItem(long id, string? previewUrl, string fileLink) => new(
-                id, "锅盖头", "FHQ-11 Fire Rescue", "desc", previewUrl, 16d / 9d, 386,
+                id, "锅盖头", 147560834, "https://cdn-live.warthunder.com/avatar/147560834.jpg",
+                "FHQ-11 Fire Rescue", "desc", previewUrl, 16d / 9d, 386,
                 "template_cn_hq_11.zip", fileLink, 4930419, 6, 3, 30,
                 $"https://live.warthunder.com/post/{id}/en/",
                 new[] { "anime", "9dds" });
@@ -1869,6 +1946,12 @@ internal static class SelfTest
                          + $"有站内附件 → 显示按钮 = {cardWithFile.HasFile}（应 True），"
                          + $"无附件 → 隐藏按钮 = {!cardNoFile.HasFile}（应 True），"
                          + $"无预览图 → 占位图标 = {cardNoFile.ThumbnailState == WtLiveThumbnailState.Missing}（应 True）");
+
+            // ---- 卡片上的作者：名字做成超链接（点它 = 按作者搜索），副标题里只剩"体积 · 下载数" ----
+            log.AppendLine($"卡片作者   : 名字可点 = {cardWithFile.CanSearchAuthor}（应 True：接口给了作者 id）"
+                         + $"，这副标题 = [{cardWithFile.MetaSuffix}]"
+                         + $"，自带前导分隔符 = {cardWithFile.MetaSuffix.StartsWith(" · ")}（应 True：作者名是单独的 Run，拼在同一行里）"
+                         + $"，作者头像 URL = {cardWithFile.AuthorAvatarUrl.Length > 0}（应 True）");
 
             // ---- 详情浮窗轮播下标（WtLiveDetailViewModel.Step）：环绕算错是轮播最典型的 bug ----
             log.AppendLine($"详情轮播下标: 往后 = {WtLiveDetailViewModel.Step(0, 4, 1)}（应 1），"
@@ -1903,7 +1986,14 @@ internal static class SelfTest
                 (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.PreviousCommand)),
                 (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.RetryCommand)),
                 (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.ReloadImageCommand)),
+                // 详情信息区：左头像 + 右（标题 / 作者超链接 / 统计），作者名与头像都跳到按作者搜索
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.SearchAuthorCommand)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.AuthorAvatar)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.StatsText)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanReloadThumbnail)),
+                (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanSearchAuthor)),
+                (typeof(WtLiveCardItem), nameof(WtLiveCardItem.MetaSuffix)),
+                (typeof(WtLiveCardItem), nameof(WtLiveCardItem.AuthorAvatarUrl)),
                 (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.CanReload)),
                 (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.IsLoading)),
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.SourceUrl)),

@@ -593,10 +593,22 @@
                                              帖子链接已填好并自动读取（省掉"复制链接 → 粘贴 → 读取"三步）。
                                              没有站内附件的帖子不给按钮——那条路只会得到一句"没有可下载的文件" -->
                                         <Grid Margin="2,1,2,0">
-                                            <TextBlock Text="{Binding MetaText}" Margin="0,0,26,0"
+                                            <!-- 副标题 = 作者名（**超链接**，点它 = 搜这个作者的涂装）+ 体积 · 下载数。
+                                                 两者在同一个流式行里：作者名是 Hyperlink，后面那串自己带前导「 · 」。
+                                                 点链接不该顺带打开详情 → 见 Card_MouseLeftButtonUp 里的兜底判断 -->
+                                            <TextBlock Margin="0,0,26,0"
                                                        Style="{StaticResource PageSubtitle}"
                                                        TextTrimming="CharacterEllipsis"
-                                                       VerticalAlignment="Center"/>
+                                                       VerticalAlignment="Center">
+                                                <Hyperlink CommandParameter="{Binding}"
+                                                           Command="{Binding DataContext.WtLive.SearchUserByCardCommand,
+                                                                     RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           Foreground="{StaticResource BrushPrimary}"
+                                                           ToolTip="{loc:Loc wtlive.detail.searchAuthor}">
+                                                    <Run Text="{Binding Author, Mode=OneWay}"/>
+                                                </Hyperlink>
+                                                <Run Text="{Binding MetaSuffix, Mode=OneWay}"/>
+                                            </TextBlock>
                                             <Button Content="&#xF019;" HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
                                                     ToolTip="{loc:Loc wtlive.card.download}"

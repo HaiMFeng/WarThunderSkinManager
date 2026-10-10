@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media;
@@ -41,9 +42,15 @@ public partial class WtLiveDetailImage : ObservableObject
 /// <summary>
 /// 「WT Live 涂装详情」浮窗（点浏览页卡片打开）的状态：**所有预览图轮播 + 完整信息 + 下载入口**。
 /// <para>
-/// 数据来源分两层：列表卡片已有的字段（标题 / 作者 / 点赞 / 浏览）**先把浮窗填满、立刻可看**，
-/// 同时去拉帖子详情（<see cref="WTLiveService.FetchPostAsync"/>）补齐正文、附件信息与**全部**预览图
-/// （列表接口只给首张低清图）。拉取失败只影响补全，卡片那层信息照常显示，并给「重试」。
+/// 数据来源分两层：列表卡片已有的字段（标题 / 作者 / 作者 id / 头像 / 体积 / 点赞 / 浏览）
+/// **先把浮窗填满、立刻可看**，同时去拉帖子详情（<see cref="WTLiveService.FetchPostAsync"/>）
+/// 补齐正文、附件信息与**全部**预览图（列表接口只给首张低清图）。
+/// 拉取失败只影响补全，卡片那层信息照常显示，并给「重试」。
+/// </para>
+/// <para>
+/// 信息区的形状：**左「作者头像」（圆形），右「标题 / 作者（超链接）/ 一行统计」**，
+/// 作者名与头像都可点 —— 点一下跳到「按作者搜索」（见 <see cref="SearchAuthor"/> 与
+/// <see cref="Owner"/>）。头像解码与预览图同一套（缓存 + 后台解码），但失败不重试、只显示占位图标。
 /// </para>
 /// <para>
 /// 图片**按需加载**：只看当前这一张，顺带预取下一张；关窗即丢（一次只看一个帖子，
@@ -58,10 +65,25 @@ public partial class WtLiveDetailViewModel : ObservableObject
     /// </summary>
     private const int ImageDecodeWidth = 1280;
 
+    /// <summary>
+    /// 作者头像的解码宽度：头像在界面上跟右列同高（一般 60~100 DIP），200 设备像素足够，
+    /// 不必按账号原图大小解码。
+    /// </summary>
+    private const int AvatarDecodeWidth = 200;
+
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
     /// <summary>当前打开的帖子卡片；null = 没打开（或已关）。</summary>
     private WtLiveCardItem? _card;
+
+    /// <summary>作者头像那一趟下载的取消源（换帖 / 关窗即取消）。</summary>
+    private CancellationTokenSource? _avatarCancellation;
+
+    /// <summary>
+    /// 宿主浏览页：点作者名 / 头像时要跳回去做「按作者搜索」（见 <see cref="SearchAuthor"/>）。
+    /// 由 <see cref="WtLiveViewModel"/> 构造时接上；没有它时（自检）这一步只是不跳。
+    /// </summary>
+    public WtLiveViewModel? Owner { get; set; }
 
     /// <summary>浮窗里所有预览图（顺序 = 帖子内顺序）。</summary>
     public ObservableCollection<WtLiveDetailImage> Images { get; } = new();
@@ -85,9 +107,22 @@ public partial class WtLiveDetailViewModel : ObservableObject
     [ObservableProperty] private string _errorMessage = "";
 
     [ObservableProperty] private string _title = "";
+
+    /// <summary>作者昵称（信息区里做成超链接，点它 = 搜这个作者的涂装）。</summary>
     [ObservableProperty] private string _author = "";
-    [ObservableProperty] private string _fileText = "";
+
+    /// <summary>作者 id（按作者搜索的查询值；0 = 接口没给 → 点了也不跳）。</summary>
+    [ObservableProperty] private long _authorId;
+
+    /// <summary>已解码的作者头像（圆形）；null = 没有 / 还没下好 → 视图显示占位图标。</summary>
+    [ObservableProperty] private ImageSource? _authorAvatar;
+
+    /// <summary>
+    /// 一行统计：<c>大小 1.5 MB · 下载 10 · 赞 39 · 浏览 100</c>（缺项自动省略，不留空分隔符）。
+    /// 体积排在最前，与卡片副标题（体积 · 下载）同一口径。
+    /// </summary>
     [ObservableProperty] private string _statsText = "";
+
     [ObservableProperty] private string _description = "";
     [ObservableProperty] private string _postUrl = "";
 
@@ -139,14 +174,15 @@ public partial class WtLiveDetailViewModel : ObservableObject
 
         Title = card.Title;
         Author = card.Author;
+        AuthorId = card.AuthorId;
         PostUrl = card.PostUrl;
         Description = card.Description;
         SetTags(card.Tags);
-        FileText = "";
         HasFile = card.HasFile;
-        StatsText = BuildStats(card.Downloads, card.Likes, card.Views);
+        StatsText = BuildStats(card.FileSize, card.Downloads, card.Likes, card.Views);
 
         IsOpen = true;
+        _ = LoadAvatarAsync(card.AuthorAvatarUrl, card);
         _ = LoadPostAsync(card);
     }
 
@@ -157,6 +193,8 @@ public partial class WtLiveDetailViewModel : ObservableObject
         IsOpen = false;
         _card = null;
         CancelPendingImages();
+        CancelAvatar();
+        AuthorAvatar = null;
         Images.Clear();
         Tags.Clear();
         ErrorMessage = "";
@@ -301,11 +339,13 @@ public partial class WtLiveDetailViewModel : ObservableObject
 
         // 标签：详情接口的那份更全（列表接口的描述可能被截断）——空的话保住卡片那份
         if (post.Tags.Count > 0) SetTags(post.Tags);
-        if (post.File != null)
-            FileText = $"{post.File.Name}（{DataResetService.FormatSize(post.File.Size)}）";
 
         HasFile = post.File != null;
-        StatsText = BuildStats(post.Downloads > 0 ? post.Downloads : card.Downloads, card.Likes, card.Views);
+        StatsText = BuildStats(
+            post.File?.Size ?? card.FileSize,
+            post.Downloads > 0 ? post.Downloads : card.Downloads,
+            card.Likes,
+            card.Views);
         ErrorMessage = "";
         IsLoading = false;
 
@@ -362,10 +402,61 @@ public partial class WtLiveDetailViewModel : ObservableObject
         }
     }
 
-    private static string BuildStats(long downloads, long likes, long views)
+    /// <summary>
+    /// 点作者名 / 作者头像 = 按该作者搜索（交给宿主页：它要清条件、关浮窗、重拉列表）。
+    /// 接口没给作者 id 时什么都不做（点上去没有反应，好过跳到"搜索 0 条"）。
+    /// </summary>
+    [RelayCommand]
+    private void SearchAuthor()
     {
-        var parts = new List<string>(3);
+        if (AuthorId <= 0) return;
 
+        Owner?.SearchUser(AuthorId.ToString(CultureInfo.InvariantCulture), Author);
+    }
+
+    /// <summary>
+    /// 下载并解码作者头像（打开详情时一趟，关窗即丢）。
+    /// 失败就当没有头像——视图显示占位图标，为它再挂一个「重新加载」不值当（头像不是内容主体）。
+    /// </summary>
+    private async Task LoadAvatarAsync(string url, WtLiveCardItem card)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        CancelAvatar();
+        var cancellation = new CancellationTokenSource();
+        _avatarCancellation = cancellation;
+
+        try
+        {
+            var bytes = await WTLiveService.FetchImageCachedAsync(url, cancellation.Token);
+            var image = await Task.Run(() => Decode(bytes, AvatarDecodeWidth), cancellation.Token);
+
+            // 期间换了帖 / 关了窗 → 丢掉：别把上一个作者的头像贴到新帖上
+            if (_card == card && ReferenceEquals(_avatarCancellation, cancellation)) AuthorAvatar = image;
+        }
+        catch (OperationCanceledException)
+        {
+            // 换帖 / 关窗取消：新的一趟（或空窗）负责状态
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"WT Live 作者头像失败 {url}：{ex.Message}");
+        }
+    }
+
+    /// <summary>取消在途的头像下载（关窗 / 换帖）。</summary>
+    private void CancelAvatar()
+    {
+        _avatarCancellation?.Cancel();
+        _avatarCancellation?.Dispose();
+        _avatarCancellation = null;
+    }
+
+    private static string BuildStats(long size, long downloads, long likes, long views)
+    {
+        var parts = new List<string>(4);
+
+        if (size > 0) parts.Add(Loc.Format("wtlive.card.size", DataResetService.FormatSize(size)));
         if (downloads > 0) parts.Add(Loc.Format("wtlive.card.downloads", downloads));
         if (likes > 0) parts.Add(Loc.Format("wtlive.card.likes", likes));
         if (views > 0) parts.Add(Loc.Format("wtlive.card.views", views));

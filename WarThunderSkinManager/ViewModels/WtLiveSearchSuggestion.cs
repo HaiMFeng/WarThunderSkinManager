@@ -6,11 +6,16 @@ namespace WarThunderSkinManager.ViewModels;
 /// WT Live 搜索框下拉项的类型（功能设计 §3.15 搜索扩展）。
 /// <para>
 /// 站点**只做标签搜索**（<c>searchString=#tag</c>，实测裸词返回 0 条，见
-/// <see cref="Services.WtLiveTag"/>），因此搜索只有两个真正的维度：
-/// 「按载具筛选」（接口 <c>vehicle=</c>，§4）与「按标签筛选」（接口 <c>searchString=</c>），
-/// 外加一个「清除」。要新增维度（如按作者，<c>get_user</c>）时在此加一个类型、
+/// <see cref="Services.WtLiveTag"/>），因此搜索有三个真正的维度：
+/// 「按载具筛选」（接口 <c>vehicle=</c>，§4）、「按标签筛选」（接口 <c>searchString=</c>）
+/// 与「按作者筛选」（接口 <c>user=&lt;作者id&gt;</c>，输入 <c>@id</c>，见 <see cref="Services.WtLiveUser"/>），
+/// 外加一个「清除」。要再新增维度时在此加一个类型、
 /// 在 <see cref="WtLiveViewModel"/> 的建议构造与 <c>ApplySuggestion</c> 各加一支即可，
 /// **下拉 / 键盘 / 视图结构都不用动**。
+/// </para>
+/// <para>
+/// **作者筛选是独占的**：站点同时给 <c>user=</c> 与 <c>searchString=</c> / <c>vehicle=</c>
+/// 时结果语义不明，所以作者胶囊与载具 / 标签胶囊互斥（见 <see cref="WtLiveViewModel"/>）。
 /// </para>
 /// </summary>
 public enum WtLiveSearchKind
@@ -20,6 +25,9 @@ public enum WtLiveSearchKind
 
     /// <summary>按标签筛选：选中即拉带该标签的涂装（<c>#tag</c>）。</summary>
     Tag,
+
+    /// <summary>按作者筛选：选中即拉该作者的全部涂装（<c>user=</c>，输入 <c>@作者id</c>）。</summary>
+    User,
 
     /// <summary>清除全部条件与关键词，回到全部涂装。</summary>
     Clear

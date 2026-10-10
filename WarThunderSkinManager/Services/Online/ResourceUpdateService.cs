@@ -37,8 +37,8 @@ public sealed record ResourceCheckResult(
 /// <c>If-None-Match</c> 发送，远端未变更时返回 **304 空体**（零下载）；只有内容真的变了
 /// 才会拿到全文。ETag / 指纹缓存在 <c>&lt;配置目录&gt;/resource_cache.json</c>。
 /// 首次检查（无缓存）与"本地内容漂移"（程序更新换了内置表等）仍是全量下载。</para>
-/// <para><b>应用更新</b>：走 <see cref="DataTables.ApplyUpdatedTable"/>（用户表 + 基线同内容
-/// 写入，不影响既有的基线跟随机制）。</para>
+/// <para><b>应用更新</b>：走 <see cref="DataTables.ApplyUpdatedTable"/>——**只写用户表，基线不动**
+/// （若基线被写成下载内容，下次启动会被基线跟随机制误读为「程序发布了新表、用户没改过」→ 更新回滚）。</para>
 /// </remarks>
 public static class ResourceUpdateService
 {

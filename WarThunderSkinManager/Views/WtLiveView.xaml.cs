@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -101,12 +102,37 @@ public partial class WtLiveView : UserControl
 
     /// <summary>
     /// 点卡片 = 打开详情浮窗（预览图轮播 + 完整信息 + 下载）。
-    /// 卡片右下角的「下载」按钮自己处理点击（按钮已把鼠标事件标记为 handled），不会冒泡到这里。
+    /// <para>
+    /// 两种情况**不算**"点卡片"，这里都要挡掉：右下角「下载」按钮（按钮自己把事件标记为
+    /// handled，根本走不到这里），以及副标题里的**作者超链接**（<c>Hyperlink</c> 对
+    /// <c>MouseLeftButtonUp</c> 的处理各版本不一致，这里按命中元素再判一次——
+    /// 否则"点作者去搜他的涂装"会顺带把详情浮窗也打开）。
+    /// </para>
     /// </summary>
     private void Card_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsInsideHyperlink(e.OriginalSource)) return;
+
         if (sender is FrameworkElement { DataContext: WtLiveCardItem card })
             ViewModel?.Detail.OpenCommand.Execute(card);
+    }
+
+    /// <summary>
+    /// 命中元素是否落在某个 <see cref="Hyperlink"/> 里。
+    /// 链接文字是 <c>Run</c>（<see cref="FrameworkContentElement"/>，不在可视树上），
+    /// 所以只能沿**逻辑树**往上找；到既不是元素也不是内容元素的节点就停。
+    /// </summary>
+    private static bool IsInsideHyperlink(object? source)
+    {
+        var node = source as DependencyObject;
+
+        while (true)
+        {
+            if (node is Hyperlink) return true;
+            if (node is not (FrameworkElement or FrameworkContentElement)) return false;
+
+            node = LogicalTreeHelper.GetParent(node);
+        }
     }
 
     // ---------- 搜索框（下拉导航与开合在视图层，数据与筛选语义在 WtLiveViewModel）----------

@@ -46,7 +46,9 @@ public sealed record WTLivePost(
 /// （字段含义见 <c>docs/WTLive_涂装_API.md</c> §3.2）。
 /// </summary>
 /// <param name="LangGroup">帖子定位 id（跨语言唯一 → 列表去重主键，也用于拼帖子网址）</param>
-/// <param name="Author">作者昵称</param>
+/// <param name="Author">作者昵称（显示用）</param>
+/// <param name="AuthorId">作者 id（**查询用**：按作者筛选 <c>user=</c>、主页 <c>/user/&lt;id&gt;/</c>；0 = 接口没给）</param>
+/// <param name="AuthorAvatar">作者头像 URL（CDN）；空 = 没给，界面上显示占位图标</param>
 /// <param name="Title">卡片标题：描述首行（HTML 已剥离；为空时退回压缩包文件名 → <c>#帖子id</c>）</param>
 /// <param name="Description">描述纯文本（多行，供详情/预览使用）</param>
 /// <param name="Tags">描述里的标签（不含 <c>#</c>，去重、按出现顺序；见 <see cref="WtLiveTag"/>)</param>
@@ -64,6 +66,8 @@ public sealed record WTLivePost(
 public sealed record WTLiveFeedItem(
     long LangGroup,
     string Author,
+    long AuthorId,
+    string AuthorAvatar,
     string Title,
     string Description,
     string? PreviewUrl,
@@ -204,8 +208,13 @@ public static class WTLiveService
     /// <param name="sort">
     /// <c>created</c>（最近发布，时间倒序）/ <c>rating</c>（热门）/ <c>comments</c> / <c>downloads</c>（§5）。
     /// </param>
+    /// <param name="userId">
+    /// 作者 id（接口 <c>user=</c>，§3.1 / §3.5）；空 = 不限作者。
+    /// **与 <paramref name="vehicle"/> / <paramref name="searchString"/> 互斥**——
+    /// 界面上作者筛选独占（见 <see cref="WtLiveUser"/>），不会出现"作者 + 标签"的混合查询。
+    /// </param>
     public static async Task<WTLiveFeedPage> FetchFeedPageAsync(
-        int page, string? vehicle, string? searchString, string sort, CancellationToken ct)
+        int page, string? vehicle, string? searchString, string sort, string? userId, CancellationToken ct)
     {
         var form = new List<KeyValuePair<string, string>>
         {
@@ -215,7 +224,7 @@ public static class WTLiveService
             new("period", "0"),   // 0 = 不限时间范围
             new("subtype", "all"),
             new("searchString", searchString ?? ""),
-            new("user", "0"),     // 0 = 不限作者
+            new("user", string.IsNullOrWhiteSpace(userId) ? "0" : userId),   // 0 = 不限作者
         };
 
         // vehicle 是该接口**没有公开 UI** 但实际支持的参数：站点不传时为空，页面即全部涂装
@@ -252,6 +261,8 @@ public static class WTLiveService
             items.Add(new WTLiveFeedItem(
                 one.LangGroup,
                 one.Author?.Nickname ?? "",
+                one.Author?.Id ?? 0,
+                one.Author?.Avatar ?? "",
                 FeedTitle(description, fileName, one.LangGroup),
                 description,
                 previewUrl,
@@ -486,7 +497,9 @@ public static class WTLiveService
 
     private sealed class AuthorDto
     {
+        [JsonPropertyName("id")] public long Id { get; set; }
         [JsonPropertyName("nickname")] public string? Nickname { get; set; }
+        [JsonPropertyName("avatar")] public string? Avatar { get; set; }
     }
 
     private sealed class ImageDto
