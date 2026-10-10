@@ -132,13 +132,23 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 打开「从 WT Live 下载」窗口（网址输入 + 校验 + 信息确认）。
-    /// <paramref name="postUrl"/> 非空时**预填并自动读取**（WT Live 浏览页卡片右下角的下载按钮
+    /// <paramref name="postUrl"/> 非空时**预填并自动读取**（WT Live 浏览页卡片 / 详情浮窗的下载按钮
     /// 把该帖子的链接传进来），为空则空白等用户粘贴 / 输入（涂装管理页的入口，两者共用一个命令）。
+    /// <para>
+    /// 「已下载」提醒的**时机**：入口给了链接（卡片 / 详情浮窗）时，**开窗之前**就先问
+    /// ——已经下过的帖子没必要再让人走一遍确认窗；链接要等窗口读出来才知道的空白入口
+    /// （涂装管理页）则在窗内点「开始下载」之后补问，两处**只问一次**。
+    /// </para>
     /// </summary>
     [RelayCommand]
     private async Task OpenWtLiveImport(string? postUrl)
     {
         if (!EnsureResourceDir()) return;
+
+        // 帖子 id 从链接里就能取到（链接本来就是 <see cref="WtLiveLink.PostUrl"/> 拼的）
+        // → 先查「已下载」再决定要不要弹确认窗
+        var entryPostId = WtLiveLink.PostIdOf(postUrl);
+        if (entryPostId != null && !await ConfirmNotDownloaded(entryPostId.Value)) return;
 
         var window = string.IsNullOrWhiteSpace(postUrl)
             ? new WTLiveImportWindow()
@@ -147,20 +157,33 @@ public partial class SkinsViewModel : ObservableObject
         window.Owner = Application.Current?.MainWindow;
         if (window.ShowDialog() != true || window.Post == null) return;
 
-        // 该帖的链接已挂在某个包里（= 已下载过）→ 提醒并询问是否再次下载（§3.16）
-        if (!await ConfirmNotDownloaded(window.Post)) return;
+        if (entryPostId == null)
+        {
+            // 空白入口：帖子 id 要等窗口读出来才知道，到这一步才问得了
+            var post = window.Post;
+            var display = post.DisplayName.Length > 0
+                ? post.DisplayName
+                : post.File != null ? Path.GetFileNameWithoutExtension(post.File.Name) : "";
+
+            if (!await ConfirmNotDownloaded(post.LangGroup, display)) return;
+        }
 
         StartWtLiveDownload(window.Post);
     }
 
     /// <summary>
-    /// 下载前查「链接表」：该帖链接已挂在某个涂装包上（<see cref="PackageMeta.SourceUrl"/>）即视为
-    /// **已下载过** → 提醒并询问是否再次下载（§3.16）。返回是否继续下载。
+    /// 下载前查「链接表」：该帖链接已挂在某个涂装包上（<see cref="PackageMeta.SourceUrl"/> /
+    /// 导入清单，见 <see cref="PackageLinkService"/>）即视为**已下载过** → 提醒并询问是否再次下载
+    /// （§3.16）。返回是否继续下载。
+    /// <para>
+    /// 只要帖子 id 就查得了（比对链接由它拼出来），因此**入口知道链接时可以在开确认窗之前就问**；
+    /// <paramref name="displayName"/> 供入口还没有帖子信息时兜底（空 → 显示 <c>#帖子id</c>）。
+    /// </para>
     /// 查全库 meta 可能扫库（无内存快照时）→ 放后台并给「处理中」反馈。
     /// </summary>
-    private async Task<bool> ConfirmNotDownloaded(WTLivePost post)
+    private async Task<bool> ConfirmNotDownloaded(long postId, string? displayName = null)
     {
-        var url = WtLiveLink.PostUrl(post.LangGroup);
+        var url = WtLiveLink.PostUrl(postId);
         var resourceDir = _config.ResourceDirectory;
         var configDir = _config.ConfigDirectory;
 
@@ -172,10 +195,8 @@ public partial class SkinsViewModel : ObservableObject
 
         if (matches.Count == 0) return true;
 
-        // 展示名：优先帖子显示名，缺失时退回压缩包名去扩展名 / 帖子 id
-        var display = post.DisplayName.Length > 0
-            ? post.DisplayName
-            : post.File != null ? Path.GetFileNameWithoutExtension(post.File.Name) : $"#{post.LangGroup}";
+        // 展示名：优先入口给的帖子显示名（压缩包名去扩展名），没有就退回帖子 id
+        var display = displayName is { Length: > 0 } ? displayName : $"#{postId}";
 
         // 列前几个包名，其余折叠成「等 N 个」
         var names = string.Join("、", matches.Take(3).Select(m => m.Name));
