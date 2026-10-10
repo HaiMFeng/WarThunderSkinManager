@@ -733,11 +733,18 @@ internal static class SelfTest
                 var tailIsInputAtEmpty = chipList.Items.Count > 0
                     && ReferenceEquals(chipList.Items[chipList.Items.Count - 1], chipBox);
 
-                // 输入文字的真实起点（Padding 不是同一个量：内容宿主还有固有内缩）
+                // 输入文字的真实起点（Padding 不是同一个量：内容宿主还有固有内缩）。
+                // **写文字后、跑布局前必须先把下拉收掉**：输入即展开（WtLiveViewModel.OnSearchTextChanged），
+                // 而 Popup 是独立顶层窗口 —— 这里连真窗口都没有，它照样会自己建一个并跑到桌面左上角；
+                // 只要中间不跑布局 / 渲染那一趟，它就永远不会被画出来（顺序：写文字 → 收起 → 布局）
                 layoutVm.SearchText = "M";
+                layoutVm.CloseSuggestions();
                 layoutHost.UpdateLayout();
                 var textOriginX = chipBox.GetRectFromCharacterIndex(0).X;
+
+                // 清空文字同样会重算候选（有胶囊时"显示全部涂装"仍是一条）→ 一样先收掉再往下走
                 layoutVm.SearchText = "";
+                layoutVm.CloseSuggestions();
 
                 // 「点搜索框里哪儿都能输入」的判据（**不依赖任何事件转发**，全靠布局）：
                 // ① 输入框被 TagInputPanel 拉满本行剩余宽度 → 框里那片空白**就是 TextBox 本身**，
@@ -793,19 +800,21 @@ internal static class SelfTest
 
                     // ③ 判定纯函数：按在滚动条上不抢；按在「×」（按钮）上要抢。
                     //    路由不用自检——「×」就在外壳子树里，隧道一定先过外壳（④ 断言这层从属关系）。
+                    // 这一步**故意不给 SearchText 赋值**：那会触发"输入即展开"，把搜索下拉弹出来，
+                    // 而 Popup 是**独立顶层窗口** —— 测试窗口停在屏幕外也挡不住它，会在桌面左上角闪一下。
+                    // 「×」出现只要求 HasSearchInput（有文字**或**有胶囊），胶囊就够了；
+                    // 下拉的开合另有「搜索下拉」用例在 VM 层钉着（初始收起 / 输入即展开 / 可收起 / 清空后收起）。
                     winVm.AppendTagChip("cm11");
-                    winVm.SearchText = "x";                       // 让「×」出现，并撑出框内滚动条
                     for (var i = 0; i < 6; i++) winVm.AppendTagChip("very_long_tag_" + i);
-                    win.UpdateLayout();
 
-                    // 立刻收掉搜索下拉：**输入即展开**（见 WtLiveViewModel.OnSearchTextChanged），
-                    // 而 Popup 是**独立的顶层窗口** —— 窗口停在屏幕外也没用，WPF 会把它钳回屏幕内，
-                    // 于是它跑到桌面左上角去了（自检跑起来时那里会闪一个候选框，就是这么来的）。
-                    // 下面这条断言把"别把下拉留在屏幕上"钉住：以后谁再在这里打开它而忘了关，自检先报出来
+                    // 兜底 + 护栏：万一以后有人又在这里把下拉点开了，**先看、再关、最后才跑布局**
+                    // （Popup 只要跑过一轮布局 / 渲染就会在屏幕上亮一下，顺序反了就白防）；
+                    // 看出来的结果报成异常，免得"闪到了用户"这种失败悄无声息
                     var leakedPopup = winView.FindName("SearchPopup") as Popup;
+                    var popupOpened = leakedPopup?.IsOpen == true;
                     winVm.CloseSuggestions();
                     win.UpdateLayout();
-                    var popupClosed = leakedPopup == null || !leakedPopup.IsOpen;
+                    var popupStayedClosed = leakedPopup == null || !leakedPopup.IsOpen;
 
                     var bar = FindDescendant<ScrollBar>(wScroll);
                     var isPressOnScrollBar = typeof(WarThunderSkinManager.Views.WtLiveView)
@@ -828,11 +837,11 @@ internal static class SelfTest
                                  + $"落在「×」= {(clearDecision?.ToString() ?? "跳过")}（应 False：照常聚焦，点掉再接着打字），"
                                  + $"「×」在外壳子树里 = {clearInsideShell}（应 True）、滚动条在外壳子树里 = "
                                  + $"{(barInsideShell?.ToString() ?? "跳过")}（应 True：隧道必过外壳）");
-                    log.AppendLine($"搜索下拉残留: 用完即收 = {popupClosed}"
-                                 + "（应 True：Popup 是独立顶层窗口，窗口停在屏幕外也挡不住它跑到桌面左上角）");
+                    log.AppendLine($"搜索下拉残留: 这一步没弹下拉 = {!popupOpened}、跑完布局也没开 = {popupStayedClosed}"
+                                 + "（应 True/True：Popup 是独立顶层窗口，测试窗口停在屏幕外也挡不住它闪到桌面左上角）");
 
-                    if (!popupClosed)
-                        log.AppendLine("自检异常：搜索下拉用完没收（自检会把候选框留在桌面上，闪到人）");
+                    if (popupOpened || !popupStayedClosed)
+                        log.AppendLine("自检异常：自检把搜索下拉弹了出来（会在用户屏幕上闪一下）");
 
                     // ⑤ 换搜索条件 / 排序（VM 把列表清空重拉）→ 瀑布流必须**回到顶部**。
                     //    停在原来的位置等于开局就看不见第一条（列表内容全变了，位置却还按旧内容算）
@@ -880,12 +889,15 @@ internal static class SelfTest
                     var lastWindow = (KeepFirst: -1, KeepLast: -2, PreloadFirst: -1, PreloadLast: -2);
                     if (probePanel != null) probePanel.WindowChanged += (_, window) => lastWindow = window;
 
-                    for (var i = 0; i < 120; i++) probeVm.Items.Add(Card(i));
+                    // 两组的**条数差**就是自变量，别的必须一样：都要够滚满 40 步（40 × 200 = 8000 px 内容）。
+                    // 小样本若不够长，后程会被钳在底部、不再换卡片 —— 那一截"少做的活"会把差值凭空抬高，
+                    // 断言就变成量探针而非量面板（400 张 ≈ 15.8k px，够滚满全程）
+                    for (var i = 0; i < 400; i++) probeVm.Items.Add(Card(i));
                     probeWin.UpdateLayout();
                     Pump(probeWin.Dispatcher);
                     var smallStep = ScrollSteps(probeScroll, probeWin, 40);
 
-                    for (var i = 120; i < 1320; i++) probeVm.Items.Add(Card(i));
+                    for (var i = 400; i < 1320; i++) probeVm.Items.Add(Card(i));
                     probeWin.UpdateLayout();
                     Pump(probeWin.Dispatcher);
                     var largeStep = ScrollSteps(probeScroll, probeWin, 40);
@@ -905,12 +917,12 @@ internal static class SelfTest
                                                && lastWindow.KeepLast == realizedRange.Item2;
                     var childrenOrdered = probePanel?.ChildrenInItemOrder() ?? false;
 
-                    log.AppendLine($"滚动成本   : 120 张 → 每步 滚 {smallStep.Scroll:0.##} + 布局 {smallStep.Layout:0.##} ms；"
+                    log.AppendLine($"滚动成本   : 400 张 → 每步 滚 {smallStep.Scroll:0.##} + 布局 {smallStep.Layout:0.##} ms；"
                                  + $"1320 张 → 每步 滚 {largeStep.Scroll:0.##} + 布局 {largeStep.Layout:0.##} ms"
-                                 + $"（每步 = 滚 200px + 走完一轮布局，UI 线程侧）");
+                                 + $"（每步 = 滚 200px + 走完一轮布局，UI 线程侧；两组都滚满 40 步）");
                     log.AppendLine($"滚动分配   : 每步分配 {largeStep.AllocKb:0} KB"
                                  + $"，40 步 GC 次数 = Gen0 {largeStep.Gen0} / Gen1 {largeStep.Gen1} / Gen2 {largeStep.Gen2}"
-                                 + (smallStep.AllocKb > 0 ? $"（120 张时每步 {smallStep.AllocKb:0} KB）" : ""));
+                                 + (smallStep.AllocKb > 0 ? $"（400 张时每步 {smallStep.AllocKb:0} KB）" : ""));
                     log.AppendLine($"虚拟化面板 : 1320 张里实体化 = {realized} 张（范围 [{realizedRange.Item1},{realizedRange.Item2}]）"
                                  + $"，内容高 {contentHeight:0} px，标定文字块高 = {(chrome.HasValue ? chrome.Value.ToString("0.#") : "未标定")}");
                     log.AppendLine($"面板窗口   : Keep [{lastWindow.KeepFirst},{lastWindow.KeepLast}]、"
@@ -934,7 +946,7 @@ internal static class SelfTest
                         log.AppendLine("自检异常：面板子项没有按项下标升序（渲染顺序 = 子项顺序，错序会让相邻卡片互相压住）");
                     else if (largeStep.Layout > smallStep.Layout + 4)
                         log.AppendLine($"自检异常：滚动每一步的布局成本仍随卡片总数增长"
-                                     + $"（120 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
+                                     + $"（400 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
 
                     probeWin.Content = null;
                     probeWin.Close();
