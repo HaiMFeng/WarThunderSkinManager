@@ -388,6 +388,11 @@
                  Esc / ← → 由 MainWindow 的键盘闸门转成 VM 命令。 -->
             <views:WtLiveDetailOverlay Grid.Row="1" Panel.ZIndex="40"/>
 
+            <!-- 「收藏的作者」浮窗（WtLive 页工具栏星标按钮打开）：头像 / 昵称 / 取消收藏，
+                 拖动排序，点一行按作者搜索。同样只盖内容区；层级压在详情浮窗之上（两者本不会同时开，
+                 这里只是给个确定的次序）。Esc 由 MainWindow 的键盘闸门转成 CloseCommand。 -->
+            <views:WtLiveFavoritesOverlay Grid.Row="1" Panel.ZIndex="41"/>
+
             <!-- 拖入导入提示（把涂装文件夹 / 压缩包拖到窗口任意位置，§3.1） -->
             <Border x:Name="DropHint" Grid.Row="0" Grid.RowSpan="2" Margin="10"
                     Background="{StaticResource BrushBackground}" Opacity="0.94"

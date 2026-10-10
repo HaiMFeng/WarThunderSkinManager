@@ -248,14 +248,40 @@
                         <StackPanel x:Name="DetailInfo" SizeChanged="DetailInfo_SizeChanged">
                             <TextBlock Text="{Binding WtLive.Detail.Title}" FontSize="15" FontWeight="SemiBold"
                                        TextWrapping="Wrap"/>
-                            <TextBlock Style="{StaticResource AuthorLine}">
-                                <Hyperlink Command="{Binding WtLive.Detail.SearchAuthorCommand}"
-                                           Foreground="{StaticResource BrushPrimary}"
-                                           TextDecorations="Underline"
-                                           ToolTip="{loc:Loc wtlive.detail.searchAuthor}">
-                                    <Run Text="{Binding WtLive.Detail.Author, Mode=OneWay}"/>
-                                </Hyperlink>
-                            </TextBlock>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource AuthorLine}" VerticalAlignment="Center">
+                                    <Hyperlink Command="{Binding WtLive.Detail.SearchAuthorCommand}"
+                                               Foreground="{StaticResource BrushPrimary}"
+                                               TextDecorations="Underline"
+                                               ToolTip="{loc:Loc wtlive.detail.searchAuthor}">
+                                        <Run Text="{Binding WtLive.Detail.Author, Mode=OneWay}"/>
+                                    </Hyperlink>
+                                </TextBlock>
+
+                                <!-- 收藏作者：作者名右侧的行内星标，**小型无框**（IconButton 本就无底无框，
+                                     这里再收小一圈：20×20 / 11px）。已收藏 = 强调色，未收藏 = 次要色；
+                                     作者 id 为 0（接口没给）时点了没反应（那帖也没法按作者搜索） -->
+                                <Button Content="&#xF005;" Margin="6,4,0,0" VerticalAlignment="Center"
+                                        Command="{Binding WtLive.Detail.ToggleFavoriteAuthorCommand}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                            <Setter Property="Width" Value="20"/>
+                                            <Setter Property="Height" Value="20"/>
+                                            <Setter Property="FontSize" Value="11"/>
+                                            <Setter Property="ToolTip" Value="{loc:Loc wtlive.detail.favorite}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WtLive.Detail.IsAuthorFavorite}"
+                                                             Value="True">
+                                                    <Setter Property="Foreground"
+                                                            Value="{StaticResource BrushPrimary}"/>
+                                                    <Setter Property="ToolTip"
+                                                            Value="{loc:Loc wtlive.detail.favorited}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </StackPanel>
                             <TextBlock Text="{Binding WtLive.Detail.StatsText}" Style="{StaticResource InfoLine}"/>
                         </StackPanel>
 

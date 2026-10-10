@@ -41,6 +41,9 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>卡片详情浮窗（点卡片打开：预览图轮播 + 完整信息 + 下载入口）。</summary>
     public WtLiveDetailViewModel Detail { get; } = new();
 
+    /// <summary>收藏的作者（工具栏星标按钮打开的浮窗；详情浮窗的星标也读它）。</summary>
+    public WtLiveFavoritesViewModel Favorites { get; } = new();
+
     /// <summary>正在拉取中（页脚显示加载圈，同时挡住重复触发）。</summary>
     [ObservableProperty] private bool _isLoading;
 
@@ -178,6 +181,7 @@ public partial class WtLiveViewModel : ObservableObject
     public WtLiveViewModel()
     {
         Detail.Owner = this; // 详情浮窗里点作者名 / 头像要跳回本页做「按作者搜索」
+        Favorites.Owner = this; // 收藏浮窗里点一行同样跳回本页做「按作者搜索」
 
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
         Chips.CollectionChanged += (_, _) =>
@@ -230,6 +234,7 @@ public partial class WtLiveViewModel : ObservableObject
         BuildSortOptions();
 
         foreach (var chip in Chips) chip.RefreshTexts();
+        Favorites.ApplyLanguageChange();               // 收藏浮窗的「共 N 位」
         OnPropertyChanged(nameof(ActiveFilterText));   // 空态的「所有涂装」也要跟着换语言
     }
 
@@ -928,23 +933,9 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 按 <paramref name="decodeWidth"/> 解码，OnLoad + Freeze：不占文件句柄、可跨线程传递。
     /// 高清档位下下载的是原图（常 900~1500px 宽、1 MB 上下），这里**只解到卡片需要的宽度**，
-    /// 全尺寸位图不进内存（位图内存 ≈ 解码宽 × 高 × 4 字节，差一档就是几倍）。
+    /// 全尺寸位图不进内存（OnLoad + Freeze 见 <see cref="WtLiveImages"/>）。
     /// </summary>
     private static ImageSource DecodeThumbnail(byte[] bytes, int decodeWidth)
-    {
-        using var stream = new MemoryStream(bytes);
-
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.StreamSource = stream;
-        bitmap.DecodePixelWidth = decodeWidth;
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.CreateOptions = BitmapCreateOptions.None;
-        bitmap.EndInit();
-        bitmap.Freeze();
-
-        return bitmap;
-    }
+        => WtLiveImages.Decode(bytes, decodeWidth);
 }

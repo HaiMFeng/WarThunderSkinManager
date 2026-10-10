@@ -299,6 +299,12 @@ https://live.warthunder.com/dl/d6eee2eadd3b943b7f4de841ceda651f79010b31/
 9. **显示名来源**：优先 `file.name` 去扩展名（涂装模板包常带载具前缀，与游戏内命名习惯一致），其次帖子标题；
    `description` 首行多为宣传语，**不建议**用来命名（正文还需剥 HTML 标签，见 §3.6.1）。
 10. **不做轮询、不带 Cookie**：浏览级使用单次交互单请求即可满足；不要携带用户 Cookie（隐私 + 规避站点风控）。
+11. **收藏作者**（`WtLiveFavoriteAuthors` + `WtLiveFavoritesViewModel`，WtLive 页工具栏星标按钮）：
+   站点的作者主页是 `/user/<作者id>/`（`get_user`，§3.5），所以收藏**记的是作者 id**（唯一键），
+   昵称与头像 URL 是收藏那一刻站点给的值（站点改名不会自动跟着变——只用于列表展示与跳转）。
+   存 `<配置目录>/wtlive/favorite_authors.json`，**数组顺序即列表顺序**（拖动排序改它）；
+   详情浮窗里作者名右侧的星标负责收藏 / 取消，浮窗里逐行取消，点一行 = 按该作者搜索
+   （即 `user=<作者id>`，与卡片上点作者名同一条路径）。
 
 ### 8.1 C# 调用示例（HttpClient）
 

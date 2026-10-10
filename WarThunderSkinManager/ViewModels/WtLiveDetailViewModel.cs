@@ -176,6 +176,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         Author = card.Author;
         AuthorId = card.AuthorId;
         PostUrl = card.PostUrl;
+        OnPropertyChanged(nameof(IsAuthorFavorite)); // 换了作者 → 星标按新作者的收藏态重算
         Description = card.Description;
         SetTags(card.Tags);
         HasFile = card.HasFile;
@@ -415,6 +416,25 @@ public partial class WtLiveDetailViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 当前作者收藏了没有（作者名右侧星标的亮 / 不亮）。作者 id 为 0（接口没给）时恒为 false
+    /// ——那种帖子收藏了也没法按作者搜索。
+    /// </summary>
+    public bool IsAuthorFavorite => AuthorId > 0 && Owner?.Favorites.IsFavorite(AuthorId) is true;
+
+    /// <summary>
+    /// 收藏 / 取消收藏当前作者。收藏记下**此刻站点给的昵称与头像 URL**：
+    /// 收藏列表里因此不用打开详情也能显示头像（见 <see cref="WtLiveFavoritesViewModel"/>）。
+    /// </summary>
+    [RelayCommand]
+    private void ToggleFavoriteAuthor()
+    {
+        if (AuthorId <= 0 || Owner == null) return;
+
+        Owner.Favorites.Toggle(AuthorId, Author, _card?.AuthorAvatarUrl ?? "");
+        OnPropertyChanged(nameof(IsAuthorFavorite));
+    }
+
+    /// <summary>
     /// 下载并解码作者头像（打开详情时一趟，关窗即丢）。
     /// 失败就当没有头像——视图显示占位图标，为它再挂一个「重新加载」不值当（头像不是内容主体）。
     /// </summary>
@@ -464,22 +484,8 @@ public partial class WtLiveDetailViewModel : ObservableObject
         return string.Join(" · ", parts);
     }
 
-    /// <summary>OnLoad + Freeze：不占文件句柄、可跨线程传递；只解到浮窗需要的宽度，全尺寸位图不进内存。</summary>
-    private static ImageSource Decode(byte[] bytes, int decodeWidth)
-    {
-        using var stream = new System.IO.MemoryStream(bytes);
-
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.StreamSource = stream;
-        bitmap.DecodePixelWidth = decodeWidth;
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.CreateOptions = BitmapCreateOptions.None;
-        bitmap.EndInit();
-        bitmap.Freeze();
-
-        return bitmap;
-    }
+    /// <summary>只解到浮窗需要的宽度，全尺寸位图不进内存（OnLoad + Freeze 见 <see cref="WtLiveImages"/>）。</summary>
+    private static ImageSource Decode(byte[] bytes, int decodeWidth) => WtLiveImages.Decode(bytes, decodeWidth);
 
     partial void OnErrorMessageChanged(string value) => OnPropertyChanged(nameof(HasError));
 

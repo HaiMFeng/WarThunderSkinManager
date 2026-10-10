@@ -321,13 +321,18 @@ public partial class MainViewModel : ObservableObject
         Skins = new SkinsViewModel(config);
         Vehicles = new VehiclesViewModel(config);
         PartReuse = new PartReuseViewModel(config);
-        WtLive = new WtLiveViewModel(); // 无本地状态：数据全部来自站点，进页面才拉（首屏懒加载）
+        WtLive = new WtLiveViewModel(); // 列表数据全部来自站点，进页面才拉（首屏懒加载）
         WtLive.SetQuality(config.WtLiveImageQuality); // 卡片缩略图清晰度档位（设置页可改）
 
         // 预览图磁盘缓存：目录跟随配置目录，上限来自设置（启动时按上限回收一次，
         // 上次调小过上限、或手工往目录里塞过文件，这里就归位）
         WtLivePreviewCache.Configure(config.ConfigDirectory);
         ApplyPreviewCacheLimit();
+
+        // 收藏的作者（§3.16）：唯一的本地数据，存配置目录 → 先注入目录再载入。
+        // 放在缓存配置**之后**：载入时就开始取头像（走那份图片缓存），顺序反了会白白少缓存一轮
+        WtLiveFavoriteAuthors.Configure(config.ConfigDirectory);
+        WtLive.Favorites.Reload();
 
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
         Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();
@@ -982,6 +987,9 @@ public partial class MainViewModel : ObservableObject
                 PartExclusionService.Configure(Config.ConfigDirectory);
                 DataTables.Configure(Config.ConfigDirectory); // 译名 / 武器表跟随配置目录（§3.6 / §3.7）
                 WtLivePreviewCache.Configure(Config.ConfigDirectory); // 预览图缓存也跟着走（§5.7.1）
+                // 收藏的作者也在配置目录里 → 换目录要换成新目录那份（旧目录的文件原样留着）
+                WtLiveFavoriteAuthors.Configure(Config.ConfigDirectory);
+                WtLive.Favorites.Reload();
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 OnPropertyChanged(nameof(ResourceBlockEnabled)); // 「更新资源」卡随目录就绪启停（§3.15）
                 break;

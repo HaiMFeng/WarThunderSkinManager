@@ -2205,6 +2205,75 @@ internal static class SelfTest
                          + $"，非帖子链接 = {hitNotPost.Count}（应 0）");
             log.AppendLine($"已下载补认: 老包（无 sourceUrl）命中 = {hitSamePost.Any(m => m.PackageId == "pkg_old")}（应 True：靠导入清单里的帖子 id 认回来）");
 
+            // ---- WT Live 收藏的作者（§3.16）：顺序 + 去重落盘、详情星标 ----
+            // 顺序就是文件里的数组顺序（拖动排序改的就是它）；同一作者重复出现只留最先那条；
+            // 没有 id 的条目直接丢弃（id 是唯一键，也是按作者搜索的查询值）
+            var favDir = Path.Combine(workDir, "favcfg");
+            var starDir = Path.Combine(workDir, "favcfg-star");
+
+            WtLiveFavoriteAuthors.Save(favDir, new[]
+            {
+                new WtLiveFavoriteAuthor { Id = "2", Name = " 二号作者 " },
+                new WtLiveFavoriteAuthor { Id = "1", Name = "一号作者", AvatarUrl = "https://x/a.png" },
+                new WtLiveFavoriteAuthor { Id = "2", Name = "重复" },
+                new WtLiveFavoriteAuthor { Id = "  ", Name = "没有 id" }
+            });
+
+            var favRaw = WtLiveFavoriteAuthors.Load(favDir);
+            var favOrder = string.Join(",", favRaw.Select(a => a.Id));
+            var favTrimmed = favRaw.First(a => a.Id == "2").Name == "二号作者";
+            var favFile = File.Exists(WtLiveFavoriteAuthors.FilePath(favDir));
+
+            WtLiveFavoriteAuthors.Configure(favDir);
+            var favorites = new WtLiveFavoritesViewModel();
+            favorites.Reload(); // 文件里是 [2,1] → 载入 2 条（顺序不变）
+
+            var favLoaded = favorites.Items.Count;
+            var favBeforeToggle = favorites.IsFavorite(9);
+            var favToggled = favorites.Toggle(9, "九号作者", "");
+            var favUntoggled = favorites.Toggle(9, "九号作者", "");
+            favorites.Move(favorites.Items[0], favorites.Items[1]); // [2,1] → [1,2]
+            var favMoved = string.Join(",", favorites.Items.Select(i => i.Id)) == "1,2";
+            var favPersisted = string.Join(",", WtLiveFavoriteAuthors.Load(favDir).Select(a => a.Id)) == "1,2";
+
+            favorites.RemoveCommand.Execute(favorites.Items.First(i => i.Id == "2"));
+            var favRemoved = favorites.Items.Count == 1 && favorites.Items[0].Id == "1";
+
+            // 详情浮窗的星标：宿主接上后收藏态跟着这份列表走（点了立刻亮，列表里删掉即灭）
+            WtLiveFavoriteAuthors.Configure(starDir);
+            var starVm = new WtLiveViewModel();
+            starVm.Favorites.Reload(); // 该目录还没文件 → 空
+            starVm.Detail.Author = "三号作者";
+            starVm.Detail.AuthorId = 3;
+
+            var starBefore = starVm.Detail.IsAuthorFavorite;
+            starVm.Detail.ToggleFavoriteAuthorCommand.Execute(null);
+            var starAfter = starVm.Detail.IsAuthorFavorite;
+            var starAdded = starVm.Favorites.Items.Count == 1 && starVm.Favorites.Items[0].Name == "三号作者";
+
+            starVm.Favorites.RemoveCommand.Execute(starVm.Favorites.Items[0]);
+            var starCleared = !starVm.Detail.IsAuthorFavorite;
+
+            // 文件损坏 → 当没收藏过（下次保存重建），不能让界面崩
+            File.WriteAllText(WtLiveFavoriteAuthors.FilePath(favDir), "{ not json", new UTF8Encoding(false));
+            var favCorrupt = WtLiveFavoriteAuthors.Load(favDir).Count == 0;
+
+            log.AppendLine($"收藏作者存取: 顺序保留 = [{favOrder}]（应 2,1）"
+                         + $"，昵称去空白 = {favTrimmed}（应 True）"
+                         + $"，重复 id 只留一条 + 空 id 丢弃 = {favRaw.Count}（应 2）"
+                         + $"，已落盘 = {favFile}（应 True）"
+                         + $"，损坏文件当空 = {favCorrupt}（应 True）");
+            log.AppendLine($"收藏作者列表: 载入 = {favLoaded}（应 2）"
+                         + $"，收藏前 = {favBeforeToggle}（应 False）"
+                         + $"，收藏 = {favToggled}（应 True）、再点取消 = {favUntoggled}（应 False）"
+                         + $"，拖动换位 = {favMoved}（应 True）、顺序即时落盘 = {favPersisted}（应 True）"
+                         + $"，行尾「×」删除 = {favRemoved}（应 True）"
+                         + $"，条数文案 = [{favorites.CountText}]");
+            log.AppendLine($"详情星标   : 收藏前不亮 = {starBefore}（应 False）"
+                         + $"，点一下亮起 = {starAfter}（应 True）、列表里新增 = {starAdded}（应 True）"
+                         + $"，列表里删掉即灭 = {starCleared}（应 True）"
+                         + $"，空列表提示 = {new WtLiveFavoritesViewModel().IsEmpty}（应 True）");
+
             // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
             //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----
             var bindingPaths = new (Type Owner, string Name)[]
@@ -2227,6 +2296,19 @@ internal static class SelfTest
                 (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.SearchAuthorCommand)),
                 (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.AuthorAvatar)),
                 (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.StatsText)),
+                // 收藏作者：详情里的星标（作者名右侧）+ 工具栏按钮打开的收藏浮窗
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.IsAuthorFavorite)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.ToggleFavoriteAuthorCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Favorites)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.IsOpen)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.Items)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.IsEmpty)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.CountText)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.OpenCommand)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.CloseCommand)),
+                (typeof(WtLiveFavoritesViewModel), nameof(WtLiveFavoritesViewModel.RemoveCommand)),
+                (typeof(WtLiveFavoriteAuthorItem), nameof(WtLiveFavoriteAuthorItem.Name)),
+                (typeof(WtLiveFavoriteAuthorItem), nameof(WtLiveFavoriteAuthorItem.Avatar)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanReloadThumbnail)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanSearchAuthor)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.MetaSuffix)),

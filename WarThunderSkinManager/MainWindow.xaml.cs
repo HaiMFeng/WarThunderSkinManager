@@ -122,6 +122,15 @@ public partial class MainWindow : Window
             }
         }
 
+        // 「收藏的作者」浮窗开着时：Esc 关窗（其余按键放行，同详情浮窗）
+        if ((DataContext as MainViewModel)?.WtLive.Favorites is { IsOpen: true } favorites
+            && e.Key == Key.Escape)
+        {
+            favorites.CloseCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         base.OnPreviewKeyDown(e);
     }
 
