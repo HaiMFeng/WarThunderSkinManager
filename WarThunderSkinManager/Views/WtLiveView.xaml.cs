@@ -22,9 +22,14 @@ public partial class WtLiveView : UserControl
 
     private MasonryPanel? _panel;
 
+    /// <summary>已经订阅过胶囊集合的那个 VM（换了 VM 要重新订阅，且不能重复订阅）。</summary>
+    private WtLiveViewModel? _chipAutoScrollSource;
+
     public WtLiveView()
     {
         InitializeComponent();
+
+        DataContextChanged += (_, _) => HookChipAutoScroll();
 
         // 首屏懒加载：本页不在启动路径上（多数用户不会进），进来才发请求。
         // 切页只是 Visibility 变化，所以用 IsVisibleChanged 而不是 Loaded（后者一辈子只触发一次）
@@ -43,6 +48,23 @@ public partial class WtLiveView : UserControl
     }
 
     private WtLiveViewModel? ViewModel => (DataContext as MainViewModel)?.WtLive;
+
+    /// <summary>
+    /// 搜索框长到两行就封顶、改成**框内纵向滚动**（见 WtLiveView.xaml 的 MaxHeight / ChipScroll）。
+    /// 新胶囊是插在末尾输入框**前面**的，一旦换行就会把输入框顶到看不见的那行去，
+    /// 所以胶囊一多变把末尾滚进视野（否则用户打字时看不见自己打的是什么）。
+    /// </summary>
+    private void HookChipAutoScroll()
+    {
+        if (ViewModel is not { } viewModel || ReferenceEquals(viewModel, _chipAutoScrollSource)) return;
+
+        _chipAutoScrollSource = viewModel;
+        viewModel.Chips.CollectionChanged += (_, _) => ScrollChipsToEnd();
+    }
+
+    /// <summary>等这一轮布局跑完再滚：此刻 WrapPanel 还没把新行排出来，立刻滚会停在上一次的高度。</summary>
+    private void ScrollChipsToEnd()
+        => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => ChipScroll.ScrollToEnd()));
 
     /// <summary>
     /// 盯住面板的实际列宽，连同屏幕缩放一起转给 VM（缩略图按**设备像素宽**解码）。

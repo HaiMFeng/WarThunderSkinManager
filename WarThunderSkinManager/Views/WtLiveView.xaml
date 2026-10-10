@@ -21,7 +21,8 @@
              左列两行 —— ① 标题；② 搜索提示（默认「所有涂装」，有筛选时写成人话）。
              右列 —— 排序 / 搜索 / 刷新这些工具，**向下对齐**：底边与页头底边齐平，
              于是整排按钮正好停在下面的瀑布流上方。
-             提示**始终占位**（不再收起），所以页头高度与有没有筛选无关。 -->
+             页头高度是**定值**：提示始终占位（不再收起），右列又固定成两行搜索框那么高（60）——
+             胶囊再多也撑不高页头，只在搜索框内部滚动。 -->
         <Grid x:Name="Header" Grid.Row="0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -64,9 +65,12 @@
                  搜索框**不只用来选载具**：输入即给下拉——载具、标签、清除三条通道；
                  选中的候选不写回输入框，而是变成**胶囊**（载具最多一个、标签可叠多个），
                  退格一次删一个（见 WtLiveViewModel / WtLiveSearchChip）。
-                 **向下对齐**（Bottom）：底边贴着页头底边 → 整排工具停在瀑布流上方 -->
-            <StackPanel x:Name="Toolbar" Grid.Column="1" VerticalAlignment="Bottom" Margin="16,0,0,0">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                 **MinHeight = 60 = 两行搜索框（34 + 26 × 2）**：这一列的高度因此是**定值**，
+                 搜索框长到两行就"占满工具栏"、再多改成框内滚动（见 SearchShell 的 MaxHeight），
+                 页头高度不受胶囊多少影响。
+                 内部再**向下对齐**（Bottom）：底边贴着页头底边 → 整排工具停在瀑布流上方 -->
+            <Grid x:Name="Toolbar" Grid.Column="1" Margin="16,0,0,0" MinHeight="60">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
                     <!-- 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）。
                          排在搜索框**左侧**：它是"整份列表怎么排"，先于搜索框这个"要哪些"的入口；
                          选择即从第一页重新拉取（VM 里 OnSelectedSortOptionChanged → Refresh），
@@ -93,10 +97,12 @@
                          ① **外框是容器、输入框是它的后代** —— 悬停 / 聚焦状态才算得上整个框
                             （WPF 的 IsMouseOver / IsKeyboardFocusWithin 都覆盖可视子树，等于 CSS 的 :hover / :focus-within；
                             以前外框是"压在输入框背后的兄弟"，指针移进框中间就会丢掉悬停反馈）；
-                         ② 输入框与胶囊**同一个流式容器**，放不下就整体换行、框随内容长高
+                         ② 输入框与胶囊**同一个流式容器**，放不下就整体换行
                             （Fluent 原文：tags wrap and will make the height grow to fit the content）；
-                         ③ 描边只有外框画一次，输入框自身不带描边，不套框 -->
-                    <Border x:Name="SearchShell" Width="300" MinHeight="34" CornerRadius="6"
+                         ③ 描边只有外框画一次，输入框自身不带描边，不套框；
+                         ④ **长到两行就封顶**（MaxHeight = 60 = 34 + 26 × 2）：再多也不撑高工具栏，
+                            改成框内纵向滚动（见下面的 ChipScroll）→ 页头高度恒等于左列「标题 + 提示」 -->
+                    <Border x:Name="SearchShell" Width="300" MinHeight="34" MaxHeight="60" CornerRadius="6"
                             SnapsToDevicePixels="True" Background="{StaticResource BrushBackground}"
                             BorderThickness="1" MouseLeftButtonDown="SearchShell_MouseLeftButtonDown">
                         <Border.Style>
@@ -164,7 +170,13 @@
                                 = 22（胶囊高 = 输入框高）+ 上下各 2 外边距（**胶囊与输入框都给 2，对称**）；
                                 再各留 3 → 内容 32、外壳 34，与空态**完全一致**；
                                 之后每多一个胶囊只要不换行就不再变高，换行才整行 +26 -->
-                            <ItemsControl x:Name="ChipList" Margin="28,3,28,3">
+                            <!-- 溢出在这里滚：外壳 MaxHeight 一卡住（两行），它就自动出现那条 10 宽的
+                                 扁平滚动条，工具栏不再被撑高。左右 28 / 上下 3 与原来一致，
+                                 滚动条落在右侧那条 28 的槽里，不会压到清空「×」 -->
+                            <ScrollViewer x:Name="ChipScroll" Margin="28,3,28,3"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="ChipList">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel/>
@@ -247,6 +259,7 @@
                                     </CompositeCollection>
                                 </ItemsControl.ItemsSource>
                             </ItemsControl>
+                            </ScrollViewer>
 
                         <!-- 占位文案（框里空着才显示）：**水平居中**。
                              它与输入文字是两个各自独立的元素，因此提示居中、输入仍左对齐互不影响；
@@ -365,7 +378,7 @@
                             FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.refresh}"
                             Command="{Binding WtLive.RefreshCommand}"/>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,16,0,0">

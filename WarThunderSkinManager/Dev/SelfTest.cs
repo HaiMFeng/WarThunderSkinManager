@@ -602,13 +602,15 @@ internal static class SelfTest
                 // （CompositeCollection = 胶囊集合 + 末尾那个 TextBox）→ 输入框永远跟在最后一个胶囊后面。
                 // ① 空态高 34 = 排序下拉 / 刷新按钮（同一行不能高低不一）；
                 // ② 输入框是那个流式容器的**最后一项**（与胶囊同处一层，而不是被挤到另一整行）；
-                // ③ 胶囊多了必须**换行**（外框跟着长高），不能横向撑出框外；
+                // ③ 胶囊多了必须**换行**（不能横向撑出框外），且**最多两行**：再满就封顶 60 高
+                //    （= 34 + 26 × 2）、改成框内纵向滚动，**不再把工具栏撑高**；
                 // ④ 加**第一个**胶囊不能让框变高（空态 == 只有一个胶囊）：胶囊竖直外边距要**对称**、
                 //    并与输入框同一行高；首行胶囊 / 输入框的中线还要落在框的中轴（否则看着"偏上"）。
                 // ⑤ 页头 = 上方的**工具栏**，本身分左右两列：
                 //    左列两行（标题 + 搜索提示，提示默认「所有涂装」），右列是各工具、**向下对齐**
                 //    （底边与页头底边齐平 → 整排工具正好停在瀑布流上方）。
-                //    提示**始终占位**（不再收起），所以有没有筛选，页头（进而整页）高度都一样。
+                //    提示**始终占位**（不再收起），右列又固定成两行搜索框那么高（MinHeight 60）→
+                //    页头高度是**定值**：不管有没有筛选、有多少胶囊都一样。
                 var layoutVm = new WtLiveViewModel();
                 var layoutView = new WarThunderSkinManager.Views.WtLiveView
                 {
@@ -622,9 +624,11 @@ internal static class SelfTest
                 layoutHost.UpdateLayout();
 
                 var chipShell = (Border)layoutView.FindName("SearchShell");
+                var chipScroll = (ScrollViewer)layoutView.FindName("ChipScroll");
                 var chipList = (ItemsControl)layoutView.FindName("ChipList");
                 var chipBox = (TextBox)layoutView.FindName("SearchBox");
                 var shellAtEmpty = chipShell.ActualHeight;
+                var shellMaxHeight = chipShell.MaxHeight;
 
                 // ⑤ 页头结构：左列（标题 + 搜索提示）与右列工具条；页头高度不随筛选变化
                 var header = (FrameworkElement)layoutView.FindName("Header");
@@ -675,7 +679,7 @@ internal static class SelfTest
                     : firstChip.TransformToAncestor(chipShell)
                         .Transform(new System.Windows.Point(0, 0)).Y + firstChip.ActualHeight / 2;
 
-                // ③ 再叠几个长标签，逼出换行（框跟着长高，而不是横向溢出）
+                // ③ 再叠几个长标签，逼出换行、直到**封顶**（两行以上改成框内滚动，而不是继续撑高）
                 layoutVm.AppendTagChip("wuthering_waves");
                 layoutVm.AppendTagChip("girls_frontline");
                 layoutVm.AppendTagChip("shorekeeper_wuthering_waves");
@@ -688,14 +692,23 @@ internal static class SelfTest
                 var boxLeft = chipBox.TransformToAncestor(chipShell)
                     .Transform(new System.Windows.Point(0, 0)).X;
 
+                // ③ 的封顶判据：外壳卡在 MaxHeight（两行 60），且**真能滚**（内容比视口高）
+                var shellOverflow = chipShell.ActualHeight;
+                var scrollableViewport = chipScroll.ViewportHeight;
+                var scrollableExtent = chipScroll.ScrollableHeight;
+                var scrollBarMode = chipScroll.VerticalScrollBarVisibility;
+
                 log.AppendLine($"搜索框布局 : 空态高 = {shellAtEmpty:0.##}（应 34 = 排序下拉 / 刷新按钮）"
                              + $"，加第一个胶囊后 = {shellAtOneChip:0.##}（应 == 空态高：加胶囊不跳高度）"
                              + $"，输入框是流式容器最后一项 = {tailIsInputAtEmpty && tailIsInputWithChips}（应 True：胶囊与输入同处一层）"
-                             + $"，有胶囊后撑高到 = {chipShell.ActualHeight:0.##}（应 > 34，框跟着长高）"
                              + $"，四个标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）"
                              + $"，首行竖直居中 = 输入框中线 {boxCenterY:0.##} / 胶囊中线 {firstChipCenterY:0.##}"
                              + $"（都应 == {shellAtEmpty / 2:0.##}）"
                              + $"，输入文字起点 = {textOriginX:0.##}、输入框左边缘 = {boxLeft:0.##}（应仍在框内、跟随胶囊）");
+                log.AppendLine($"搜索框封顶 : 高度上限 = {shellMaxHeight:0.##}（应 60 = 两行：34 + 26 × 2）"
+                             + $"，四个标签时外壳高 = {shellOverflow:0.##}（应 == 上限：不再撑高工具栏）"
+                             + $"，框内纵向可滚 = {scrollableExtent:0.##}（应 > 0；视口 {scrollableViewport:0.##} <= 上限）"
+                             + $"，滚动条 = {scrollBarMode}（应 Auto：装不下才出现）");
                 log.AppendLine($"页头结构   : 左列 = 标题 + 搜索提示两行、右列 = 工具条 → "
                              + $"标题底 / 提示顶 = {titleBottom:0.##} / {summaryTop:0.##}（应 标题底 ≤ 提示顶：标题在上）"
                              + $"，工具条底边 = {toolbarBottom:0.##}（应 == 页头高 {headerAtEmpty:0.##}：向下对齐、停在瀑布流上方）"
