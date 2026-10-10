@@ -22,19 +22,17 @@ namespace WarThunderSkinManager.Controls;
 /// </para>
 /// </summary>
 /// <remarks>
-/// 本面板**不做真正的 UI 虚拟化**（<see cref="Panel"/>，非 <c>VirtualizingPanel</c>）：
-/// 卡片高度依赖真实测量，而未实体化的子项量不出高度。改用一条**不改变布局的"窗口裁剪"**：
-/// 由视图告知"当前保留实体的下标范围"（<see cref="SetRealizedRange"/>），窗口外的子项被**收起**
-/// （<c>Visibility.Collapsed</c>，不再参与测量 / 渲染 / 命中测试），但**位置与高度照缓存走**，
-/// 所以滚动范围与卡片位置一字不变（不会跳）。实测的规模收益见
-/// <c>Dev/MasonrySelfTest.MeasureThroughput</c>。
+/// 本面板是**非虚拟化**的那个（<see cref="Panel"/>，非 <c>VirtualizingPanel</c>）：每个数据项都会有一个
+/// 真实子项，因此只适合小列表 / 参考实现（自检里的落位断言也用它）。**上千张卡片的浏览列表请用
+/// <see cref="VirtualizingMasonryPanel"/>**（只实体化视口附近，落位算法与本面板共用
+/// <see cref="MasonryLayout"/>，结果一字不差）。
 /// <para>
-/// 这条机制能成立的前提是**卡片高度只随列宽变**（图片高度 = 列宽 ÷ 宽高比，其余内容固定）：
-/// 因此高度缓存以"列宽"为有效期，列宽一变（窗口缩放）全部作废，并把收起的子项**唤醒**重测
-/// （收起状态下量不出高度，必须让它们先回到可见）。
+/// 它还留着一条"窗口裁剪"（<see cref="SetRealizedRange"/>）：窗口外的子项**收起**但不改变位置与高度，
+/// 于是滚动范围不动。这是"不换面板"前提下能做的缓解手段 —— 实测**不足以**解决"卡片上千后滚动变卡"
+/// （成本随面板子项数增长，收起并不减少子项数），所以大列表一律走虚拟化面板。
 /// </para>
 /// </remarks>
-public class MasonryPanel : Panel
+public class MasonryPanel : Panel, IMasonryPanel
 {
     /// <summary>目标卡片宽：决定列数（越小列越多）。</summary>
     public static readonly DependencyProperty TargetItemWidthProperty = DependencyProperty.Register(
@@ -210,33 +208,7 @@ public class MasonryPanel : Panel
             WindowChanged?.Invoke(this, (realize.First, realize.Last, preload.First, preload.Last));
     }
 
-    /// <summary>
-    /// 诊断开关（自检用）：开着时统计测量 / 排列的调用次数与耗时（见 <see cref="MeasureCalls"/> 等）。
-    /// 默认关——生产路径上只剩一次布尔判断。排查"滚动卡顿花在哪一层"时很有用。
-    /// </summary>
-    internal static bool Profiling;
-
-    /// <summary><see cref="Profiling"/> 期间的测量 / 排列调用次数与累计耗时（毫秒）。</summary>
-    internal static int MeasureCalls;
-    internal static int ArrangeCalls;
-    internal static double MeasureMs;
-    internal static double ArrangeMs;
-
     protected override Size MeasureOverride(Size availableSize)
-    {
-        if (!Profiling) return MeasureLayout(availableSize);
-
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        var size = MeasureLayout(availableSize);
-        watch.Stop();
-
-        MeasureCalls++;
-        MeasureMs += watch.Elapsed.TotalMilliseconds;
-
-        return size;
-    }
-
-    private Size MeasureLayout(Size availableSize)
     {
         var children = InternalChildren;
         if (children.Count == 0)
@@ -306,20 +278,6 @@ public class MasonryPanel : Panel
     }
 
     protected override Size ArrangeOverride(Size finalSize)
-    {
-        if (!Profiling) return ArrangeLayout(finalSize);
-
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        var size = ArrangeLayout(finalSize);
-        watch.Stop();
-
-        ArrangeCalls++;
-        ArrangeMs += watch.Elapsed.TotalMilliseconds;
-
-        return size;
-    }
-
-    private Size ArrangeLayout(Size finalSize)
     {
         var children = InternalChildren;
         if (children.Count == 0)
@@ -477,39 +435,16 @@ public class MasonryPanel : Panel
     private bool IsCollapsedWithHeight(UIElement child, int index)
         => child.Visibility == Visibility.Collapsed && ReferenceEquals(OwnerOf(index), child);
 
-    /// <summary>按可用宽度定列数与列宽（策略与涂装管理页的卡片网格一致：目标宽决定列数 → 封顶 → 超宽再加列）。</summary>
+    /// <summary>
+    /// 按可用宽度定列数与列宽。**算法在 <see cref="MasonryLayout"/> 里**，与虚拟化面板共用：
+    /// 两个面板的落位结果必须一字不差，所以这里只做转发。
+    /// </summary>
     private (int Columns, double ItemWidth) ResolveColumns(double available)
-    {
-        var gap = ItemGap;
-        var target = Math.Max(1, TargetItemWidth);
-        var min = Math.Max(1, MinItemWidth);
-        var max = Math.Max(min, MaxItemWidth);
-
-        var columns = Math.Max(1, (int)Math.Floor((available + gap) / (target + gap)));
-        columns = Math.Min(columns, Math.Max(1, MaxColumns));
-
-        var width = (available - (columns - 1) * gap) / columns;
-
-        // 超宽屏下避免卡片过大：宁可继续加列（12 列封顶，与既有网格一致）
-        while (width > max && columns < 12)
-        {
-            columns++;
-            width = (available - (columns - 1) * gap) / columns;
-        }
-
-        return (columns, Math.Max(min, width));
-    }
+        => MasonryLayout.ResolveColumns(available, TargetItemWidth, MinItemWidth, MaxItemWidth, MaxColumns, ItemGap);
 
     private static double ColumnsWidth(int columns, double itemWidth, double gap)
-        => columns * itemWidth + (columns - 1) * gap;
+        => MasonryLayout.ColumnsWidth(columns, itemWidth, gap);
 
-    /// <summary>最短列（**相同高度取最左列**，落位顺序稳定、重排可预期）。</summary>
-    private static int ShortestColumn(double[] columnHeights)
-    {
-        var column = 0;
-        for (var c = 1; c < columnHeights.Length; c++)
-            if (columnHeights[c] < columnHeights[column]) column = c;
-
-        return column;
-    }
+    /// <summary>最短列（**相同高度取最左列**）——同样转发到共用算法。</summary>
+    private static int ShortestColumn(double[] columnHeights) => MasonryLayout.NextColumn(columnHeights);
 }

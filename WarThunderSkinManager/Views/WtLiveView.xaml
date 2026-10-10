@@ -410,18 +410,34 @@
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,16,0,0">
+            <!-- **像素滚动**（不设 CanContentScroll，保持默认 False）：滚动条长度、滚轮步长、以及页里的
+                 "接近底部预取下一页"（ListScroll_ScrollChanged）都按像素走，与改造前完全一致。
+                 虚拟化面板**不实现 IScrollInfo**（列表外套 StackPanel —— 页脚要跟着内容滚 —— 面板又随
+                 ItemsControl 模板后生成，ScrollViewer 不会把它认成滚动实现），而是自己从祖先 ScrollViewer
+                 读 VerticalOffset / ViewportHeight 决定实体化窗口，子项按绝对位置排列，位移仍由这里施加。
+                 **不能设成 True**：那会让 VerticalOffset / ViewportHeight 变成"逻辑项数"而非像素，
+                 面板按像素算窗口就会永远钉在第 0 项那几张（实测只有 4 张且不随滚动移动）。 -->
             <ScrollViewer x:Name="ListScroll" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           ScrollChanged="ListScroll_ScrollChanged"
                           PreviewMouseDown="ListScroll_PreviewMouseDown">
                 <StackPanel>
+                    <!-- VirtualizationMode=Recycling：滚出视口的卡片容器**回收复用**（面板自己在窗口外
+                         调 Recycle）—— 首次实例化一张卡片模板约 4 ms，复用只换 DataContext，
+                         不做这一步，快速滚动时每滚一屏就是十几处 4 ms 的卡顿 -->
                     <!-- 上方留 4：卡片悬停会抬升 3px（渲染层，不改布局），第一排贴着视口顶边的话
                          抬起的那几像素会被滚动视口裁掉 —— 这 4px 余量就是给它的 -->
-                    <ItemsControl x:Name="CardList" Margin="0,4,0,0" ItemsSource="{Binding WtLive.Items}">
+                    <ItemsControl x:Name="CardList" Margin="0,4,0,0" ItemsSource="{Binding WtLive.Items}"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <ctrl:MasonryPanel TargetItemWidth="240" MinItemWidth="170"
-                                                   MaxItemWidth="360" MaxColumns="5" ItemGap="16"/>
+                                <!-- **虚拟化**瀑布流：只实体化视口附近的卡片（见 VirtualizingMasonryPanel）。
+                                     落位算法与 MasonryPanel 共用，结果一致；ChromeGuess 只做首帧兜底，
+                                     之后由第一张实测卡片标定文字块高度 -->
+                                <ctrl:VirtualizingMasonryPanel TargetItemWidth="240" MinItemWidth="170"
+                                                               MaxItemWidth="360" MaxColumns="5" ItemGap="16"
+                                                               ChromeGuess="64"/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
 
@@ -596,8 +612,11 @@
                                                          用列宽会把图片左右各裁掉十几像素（见 AspectRatioHeightConverter） -->
                                                     <Image.Height>
                                                         <MultiBinding Converter="{StaticResource AspectRatioHeight}">
+                                                            <!-- 找**接口**而不是具体面板：本页用虚拟化的
+                                                                 VirtualizingMasonryPanel，自检里也可能是 MasonryPanel，
+                                                                 两者都实现 IMasonryPanel，绑接口才两边都认得到列宽 -->
                                                             <Binding Path="ColumnWidth"
-                                                                     RelativeSource="{RelativeSource AncestorType={x:Type ctrl:MasonryPanel}}"/>
+                                                                     RelativeSource="{RelativeSource AncestorType={x:Type ctrl:IMasonryPanel}}"/>
                                                             <Binding Path="Ratio"/>
                                                             <Binding Path="ActualWidth" ElementName="Thumb"/>
                                                         </MultiBinding>

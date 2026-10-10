@@ -61,6 +61,28 @@ internal static class MasonrySelfTest
 
             if (!ok)
                 log.AppendLine("自检异常：瀑布流落位/高度不符（应 2 列 240 宽、第 3 块回最左列、末排不留间距）");
+
+            // ---- 共用落位算法（MasonryLayout）必须与真实面板的落位**逐块一致** ----
+            // 虚拟化面板（VirtualizingMasonryPanel）用的是同一套算法，这条因此同时是它的落位保证：
+            // 两个面板只是"实体化多少"不同，落位结果必须一字不差（否则切面板会看到列表整体错位）
+            var (mathColumns, mathWidth) = MasonryLayout.ResolveColumns(500, 240, 240, 240, 2, Gap);
+            var mathHeights = new double[mathColumns];
+            var mathOk = mathColumns == 2 && Math.Abs(mathWidth - 240) < 0.01;
+
+            for (var i = 0; mathOk && i < expected.Length; i++)
+            {
+                var column = MasonryLayout.NextColumn(mathHeights);
+                var rect = new Rect(column * (mathWidth + Gap) + 0, mathHeights[column], mathWidth, BlockHeight);
+
+                mathOk = Same(rect, expected[i]) && Same(rect, slots[i]);
+                mathHeights[column] += BlockHeight + Gap;
+            }
+
+            log.AppendLine($"瀑布流算法: 共用算法落位与面板一致 = {mathOk}（应 True："
+                         + $"{mathColumns} 列 / 列宽 {mathWidth:0.#}，虚拟化面板用同一套）");
+
+            if (!mathOk)
+                log.AppendLine("自检异常：共用落位算法（MasonryLayout）与面板实际落位不一致（两个面板会错位）");
         }
         catch (Exception ex)
         {

@@ -56,8 +56,26 @@ public sealed class AspectRatioHeightConverter : IMultiValueConverter
             ? actualWidth
             : Math.Max(1, columnWidth - ChromeWidth);
 
+        return ImageHeight(imageWidth, ratio);
+    }
+
+    /// <summary>
+    /// 图片高度 = 图片宽 / 宽高比（比例走**同一套护栏**）。做成静态是给虚拟化面板用的：
+    /// 未实体化的卡片也要能算出高度，而算出来的必须是**同一个数**，否则两种面板的落位会不一致。
+    /// </summary>
+    public static double ImageHeight(double imageWidth, double ratio)
+    {
+        if (imageWidth <= 0) return 0;
+        if (ratio <= 0) ratio = FallbackRatio;
+
         return imageWidth / Math.Clamp(ratio, MinRatio, MaxRatio);
     }
+
+    /// <summary>
+    /// 卡片横向为图片让出的宽度（与 <see cref="ChromeWidth"/> 的默认值同一口径）：
+    /// 虚拟化面板要按"列宽 - 这个值"算图片宽，两处必须一致。
+    /// </summary>
+    public const double DefaultChromeWidth = 26;
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
         => throw new NotSupportedException("图片高度是只读投影，不需要写回。");

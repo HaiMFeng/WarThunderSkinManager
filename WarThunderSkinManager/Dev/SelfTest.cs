@@ -838,9 +838,10 @@ internal static class SelfTest
                         ? $"列表回顶部 : 清空重拉后位置 = {listScroll.VerticalOffset:0.##}（应 0），回顶 = {backToTop}（应 True）"
                         : "列表回顶部 : 跳过（列表没撑出可滚动高度）");
 
-                    // ⑥ 滚动成本探针（真窗口 + 真卡片模板 + 真 ScrollViewer）：
-                    //    ① 窗口裁剪到底有没有生效（面板收起了多少张实体）；② 每步滚动成本是否仍随卡片数增长。
-                    //    只在有窗口时测得了：滚动事件 → 视图算窗口 → 面板收起 → 布局，这一串全在 UI 线程上。
+                    // ⑥ 滚动成本探针（真窗口 + 真卡片模板 + 真 ScrollViewer + **虚拟化面板**）：
+                    //    ① 面板是不是真的只实体化"视口那几张"（虚拟化有没有生效）；
+                    //    ② 每步滚动成本是否还与卡片总数相关（这正是"滚多了就卡"的判据）；
+                    //    ③ 实体化出来的卡片是不是落在当前视口附近（偏移没有重复叠加 / 没有整体错位）。
                     var probeVm = new WtLiveViewModel();
                     var probeView = new WarThunderSkinManager.Views.WtLiveView { DataContext = new { WtLive = probeVm } };
                     var probeWin = new Window
@@ -859,7 +860,7 @@ internal static class SelfTest
                     probeWin.UpdateLayout();
 
                     var probeScroll = (ScrollViewer)probeView.FindName("ListScroll");
-                    var probePanel = FindDescendant<WarThunderSkinManager.Controls.MasonryPanel>(probeView);
+                    var probePanel = FindDescendant<WarThunderSkinManager.Controls.VirtualizingMasonryPanel>(probeView);
 
                     for (var i = 0; i < 120; i++) probeVm.Items.Add(Card(i));
                     probeWin.UpdateLayout();
@@ -869,38 +870,31 @@ internal static class SelfTest
                     for (var i = 120; i < 1320; i++) probeVm.Items.Add(Card(i));
                     probeWin.UpdateLayout();
                     Pump(probeWin.Dispatcher);
-
-                    // 打开面板自带的计时（只统计调用次数与耗时，不改行为）
-                    WarThunderSkinManager.Controls.MasonryPanel.Profiling = true;
-                    WarThunderSkinManager.Controls.MasonryPanel.MeasureCalls = 0;
-                    WarThunderSkinManager.Controls.MasonryPanel.ArrangeCalls = 0;
-                    WarThunderSkinManager.Controls.MasonryPanel.MeasureMs = 0;
-                    WarThunderSkinManager.Controls.MasonryPanel.ArrangeMs = 0;
-
                     var largeStep = ScrollSteps(probeScroll, probeWin, 40);
-                    var calls = (WarThunderSkinManager.Controls.MasonryPanel.MeasureCalls,
-                                 WarThunderSkinManager.Controls.MasonryPanel.ArrangeCalls);
-                    var ownMs = (WarThunderSkinManager.Controls.MasonryPanel.MeasureMs,
-                                 WarThunderSkinManager.Controls.MasonryPanel.ArrangeMs);
-                    WarThunderSkinManager.Controls.MasonryPanel.Profiling = false;
 
-                    var materialized = probePanel?.Children.Count ?? -1;
-                    var collapsed = probePanel?.CollapsedCount ?? -1;
+                    var realized = probePanel?.RealizedItemCount ?? -1;
+                    var realizedRange = probePanel?.RealizedRange ?? (-1, -1);
+                    var contentHeight = probePanel?.ContentHeight ?? 0;
+                    var chrome = probePanel?.MeasuredChrome;
 
                     log.AppendLine($"滚动成本   : 120 张 → 每步 滚 {smallStep.Scroll:0.##} + 布局 {smallStep.Layout:0.##} ms；"
-                                 + $"1200 张 → 每步 滚 {largeStep.Scroll:0.##} + 布局 {largeStep.Layout:0.##} ms"
+                                 + $"1320 张 → 每步 滚 {largeStep.Scroll:0.##} + 布局 {largeStep.Layout:0.##} ms"
                                  + $"（每步 = 滚 200px + 走完一轮布局，UI 线程侧）");
-                    log.AppendLine($"滚动耗时归属: 40 步里面板 Measure {calls.Item1} 次 / {ownMs.Item1:0.##} ms、"
-                                 + $"Arrange {calls.Item2} 次 / {ownMs.Item2:0.##} ms"
-                                 + $"（面板外的部分 = 布局 {largeStep.Layout * 40 - ownMs.Item1 - ownMs.Item2:0.##} ms）");
                     log.AppendLine($"滚动分配   : 每步分配 {largeStep.AllocKb:0} KB"
                                  + $"，40 步 GC 次数 = Gen0 {largeStep.Gen0} / Gen1 {largeStep.Gen1} / Gen2 {largeStep.Gen2}"
                                  + (smallStep.AllocKb > 0 ? $"（120 张时每步 {smallStep.AllocKb:0} KB）" : ""));
-                    log.AppendLine($"滚动窗口   : 面板子项 = {materialized}，已收起 = {collapsed}"
-                                 + $"（收起应为「子项数 − 视口附近那几张」，若为 0 说明窗口裁剪没生效）");
+                    log.AppendLine($"虚拟化面板 : 1320 张里实体化 = {realized} 张（范围 [{realizedRange.Item1},{realizedRange.Item2}]）"
+                                 + $"，内容高 {contentHeight:0} px，标定文字块高 = {(chrome.HasValue ? chrome.Value.ToString("0.#") : "未标定")}");
 
-                    if (probePanel != null && collapsed <= 0)
-                        log.AppendLine("自检异常：滚动窗口裁剪没生效（面板一张都没收起）");
+                    if (probePanel == null)
+                        log.AppendLine("自检异常：滚动探针找不到虚拟化面板（浏览页没换成 VirtualizingMasonryPanel？）");
+                    else if (realized <= 0 || realized > 300)
+                        log.AppendLine($"自检异常：虚拟化面板实体化数量异常（{realized} 张，应远小于 1320）");
+                    else if (realizedRange.Item1 > probeVm.Items.Count || realizedRange.Item2 < 0)
+                        log.AppendLine($"自检异常：虚拟化面板实体化范围异常（[{realizedRange.Item1},{realizedRange.Item2}]）");
+                    else if (largeStep.Layout > smallStep.Layout + 4)
+                        log.AppendLine($"自检异常：滚动每一步的布局成本仍随卡片总数增长"
+                                     + $"（120 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
 
                     probeWin.Content = null;
                     probeWin.Close();

@@ -23,7 +23,8 @@ public partial class WtLiveView : UserControl
     /// <summary>距底部这么远就预取下一页：等真滚到底再请求，用户会看到明显的空档。</summary>
     private const double PrefetchDistance = 400;
 
-    private MasonryPanel? _panel;
+    /// <summary>瀑布流面板（浏览页用虚拟化的那个；两种面板都实现 <see cref="IMasonryPanel"/>）。</summary>
+    private IMasonryPanel? _panel;
 
     /// <summary>已经订阅过胶囊集合的那个 VM（换了 VM 要重新订阅，且不能重复订阅）。</summary>
     private WtLiveViewModel? _chipAutoScrollSource;
@@ -116,11 +117,18 @@ public partial class WtLiveView : UserControl
             _panel = FindPanel(CardList);
             if (_panel == null) return;
 
+            // 虚拟化面板要给**未实体化**的卡片算高度：图片高 = 列宽 ÷ 宽高比（数据里的 Ratio），
+            // 公式与卡片模板的绑定共用，两处必须是同一个数
+            if (_panel is VirtualizingMasonryPanel virtualizing)
+            {
+                virtualizing.ItemImageHeight = (item, imageWidth) => AspectRatioHeightConverter.ImageHeight(
+                    imageWidth, item is WtLiveCardItem card ? card.Ratio : 0);
+            }
+
             _panel.ColumnWidthChanged += (_, _) => PushThumbnailWidth();
 
-            // 窗口裁剪与"保留哪些缩略图"都问面板：它自己读祖先 ScrollViewer 的滚动位置，
-            // 顺手把"保留实体"的范围收好（见 MasonryPanel.ApplyWindow）；这里只把**更大的一圈**
-            // （保留位图的范围）转给 VM。视图不做判断，也就不会出现"某一环漏挂 → 整条静默失效"
+            // "保留哪些缩略图"问面板：它自己知道当前实体化了哪些项（虚拟化面板里窗口外根本没有容器），
+            // 这里只把**更大的一圈**（保留位图的范围）转给 VM，于是滚回来时图已经在磁盘缓存里
             _panel.WindowChanged += (_, window) =>
                 ViewModel?.SetVisibleWindow(window.PreloadFirst, window.PreloadLast);
 
@@ -134,9 +142,9 @@ public partial class WtLiveView : UserControl
     /// <summary>把「缩略图要占多少设备像素」下发给 VM = 面板列宽（DIP）× 当前屏幕缩放。</summary>
     private void PushThumbnailWidth()
     {
-        if (_panel == null) return;
+        if (_panel is not Visual visual) return; // 两种面板都是 Panel，必然是 Visual
 
-        var dpi = VisualTreeHelper.GetDpi(_panel);
+        var dpi = VisualTreeHelper.GetDpi(visual);
         ViewModel?.SetDisplayWidth(_panel.ColumnWidth, dpi.DpiScaleX);
     }
 
@@ -278,15 +286,18 @@ public partial class WtLiveView : UserControl
     private void ListScroll_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         => ViewModel?.CloseSuggestions();
 
-    /// <summary>深度优先找瀑布流面板（面板本身没有 x:Name，只能在可视化树里找）。</summary>
-    private static MasonryPanel? FindPanel(DependencyObject? root)
+    /// <summary>
+    /// 深度优先找瀑布流面板（面板本身没有 x:Name，只能在可视化树里找；两种面板都认：
+    /// 浏览页用的是虚拟化的那个，自检里可能用非虚拟化的那个）。
+    /// </summary>
+    private static IMasonryPanel? FindPanel(DependencyObject? root)
     {
         if (root == null) return null;
 
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
         {
             var child = VisualTreeHelper.GetChild(root, i);
-            if (child is MasonryPanel panel) return panel;
+            if (child is IMasonryPanel panel) return panel;
             if (FindPanel(child) is { } found) return found;
         }
 
@@ -299,7 +310,7 @@ public partial class WtLiveView : UserControl
     /// 首屏内容不足一屏时，列表撑高会再次触发它，直到铺满或到底）。
     /// <para>
     /// 保留实体 / 释放缩略图那一套**不在这里**：面板自己订阅了同一个 ScrollChanged（见
-    /// <see cref="MasonryPanel"/>），窗口算完再通知 VM —— 视图少转一手，就少一处可能静默失效的环节。
+    /// <see cref="VirtualizingMasonryPanel"/>），窗口算完再通知 VM —— 视图少转一手，就少一处可能静默失效的环节。
     /// </para>
     /// </summary>
     private void ListScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
