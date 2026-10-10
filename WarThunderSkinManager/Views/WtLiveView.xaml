@@ -395,7 +395,9 @@
                           ScrollChanged="ListScroll_ScrollChanged"
                           PreviewMouseDown="ListScroll_PreviewMouseDown">
                 <StackPanel>
-                    <ItemsControl x:Name="CardList" ItemsSource="{Binding WtLive.Items}">
+                    <!-- 上方留 4：卡片悬停会抬升 3px（渲染层，不改布局），第一排贴着视口顶边的话
+                         抬起的那几像素会被滚动视口裁掉 —— 这 4px 余量就是给它的 -->
+                    <ItemsControl x:Name="CardList" Margin="0,4,0,0" ItemsSource="{Binding WtLive.Items}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ctrl:MasonryPanel TargetItemWidth="240" MinItemWidth="170"
@@ -407,11 +409,51 @@
                             <DataTemplate>
                                 <!-- 卡片：白底 + 1px 描边 + 圆角 12。不用 Card 样式（它带阴影：
                                      瀑布流一屏几十张，逐张阴影的开销不值当，改用描边分层）。
-                                     整张卡片可点 → 打开详情浮窗（右下角「下载」按钮自己处理点击，不冒泡到这里） -->
-                                <Border Background="{StaticResource BrushBackground}"
-                                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                                     整张卡片可点 → 打开详情浮窗（右下角「下载」按钮自己处理点击，不冒泡到这里）。
+                                     悬停：整张卡抬升 3px + 描边转强调色。**只动 RenderTransform（渲染层）**——
+                                     瀑布流是按"测量出来的高度"排的，动画 Height / Margin / Padding
+                                     会让整列重新测量、卡片乱跳；抬升量里那 4px 余量见下面 ItemsControl 的 margin -->
+                                <Border BorderThickness="1"
                                         CornerRadius="12" Padding="12" SnapsToDevicePixels="True"
                                         Cursor="Hand" MouseLeftButtonUp="Card_MouseLeftButtonUp">
+                                    <Border.RenderTransform>
+                                        <TranslateTransform Y="0"/>
+                                    </Border.RenderTransform>
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{StaticResource BrushBackground}"/>
+                                            <Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation To="-3" Duration="0:0:0.12"
+                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation To="0" Duration="0:0:0.16"
+                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.ExitActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <StackPanel>
                                         <!-- 缩略图：圆角裁剪在 code-behind 做（ClipToBounds 不认 CornerRadius） -->
                                         <Border x:Name="Thumb" Background="{StaticResource BrushSurface}" CornerRadius="10"
@@ -478,7 +520,58 @@
                                                 </TextBlock>
 
                                                 <Image Source="{Binding PreviewImage}" Stretch="UniformToFill"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       RenderTransformOrigin="0.5,0.5">
+                                                    <!-- 悬停：图片在缩略图框里轻微放大。同样是**渲染层**缩放，
+                                                         而且贴着 Thumb 的圆角裁剪跑 —— 不会溢出卡片、也不会触发重排。
+                                                         触发器挂在图片自己身上：这张帖子没有预览图时就什么都不动 -->
+                                                    <Image.RenderTransform>
+                                                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                    </Image.RenderTransform>
+                                                    <Image.Style>
+                                                        <Style TargetType="Image">
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Trigger.EnterActions>
+                                                                        <BeginStoryboard>
+                                                                            <Storyboard>
+                                                                                <DoubleAnimation To="1.05" Duration="0:0:0.18"
+                                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)">
+                                                                                    <DoubleAnimation.EasingFunction>
+                                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                                    </DoubleAnimation.EasingFunction>
+                                                                                </DoubleAnimation>
+                                                                                <DoubleAnimation To="1.05" Duration="0:0:0.18"
+                                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)">
+                                                                                    <DoubleAnimation.EasingFunction>
+                                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                                    </DoubleAnimation.EasingFunction>
+                                                                                </DoubleAnimation>
+                                                                            </Storyboard>
+                                                                        </BeginStoryboard>
+                                                                    </Trigger.EnterActions>
+                                                                    <Trigger.ExitActions>
+                                                                        <BeginStoryboard>
+                                                                            <Storyboard>
+                                                                                <DoubleAnimation To="1" Duration="0:0:0.16"
+                                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)">
+                                                                                    <DoubleAnimation.EasingFunction>
+                                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                                    </DoubleAnimation.EasingFunction>
+                                                                                </DoubleAnimation>
+                                                                                <DoubleAnimation To="1" Duration="0:0:0.16"
+                                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)">
+                                                                                    <DoubleAnimation.EasingFunction>
+                                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                                    </DoubleAnimation.EasingFunction>
+                                                                                </DoubleAnimation>
+                                                                            </Storyboard>
+                                                                        </BeginStoryboard>
+                                                                    </Trigger.ExitActions>
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
                                                     <!-- 占位高度按**图片实际可用宽度**算：列宽比它宽（差卡片内边距 + 描边），
                                                          用列宽会把图片左右各裁掉十几像素（见 AspectRatioHeightConverter） -->
                                                     <Image.Height>

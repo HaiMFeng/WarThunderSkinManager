@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives; // LayoutInformation
 using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using WarThunderSkinManager.Controls;
 
 namespace WarThunderSkinManager.Dev;
@@ -139,6 +142,74 @@ internal static class MasonrySelfTest
             log.AppendLine($"自检异常：卡片缩略图比例自检抛错 → {ex}");
         }
     }
+
+    /// <summary>
+    /// 卡片悬停动画的回归断言（取 <c>WtLiveView</c> 里**真正的卡片模板**来查）。
+    /// <para>
+    /// 核心一条：动画**必须只落 <c>RenderTransform</c>（渲染层）**。瀑布流是"按测量出来的高度"
+    /// 排位的（<see cref="MasonryPanel"/> 每次测量都重算列高），动画一旦碰 Height / Margin / Padding /
+    /// Width，每帧都会触发重新测量与排列 → 整列卡片跟着乱跳。另外两条：静止时不许有位移（否则卡片
+    /// 一进视野就是抬起状态）、松手必须复位（否则抬起后就再也放不下）。
+    /// </para>
+    /// 需要调用方已经合并好主题字典（模板里的 StaticResource 靠它解析）。
+    /// </summary>
+    public static void CheckCardHover(StringBuilder log, FrameworkElement view)
+    {
+        try
+        {
+            var cardList = (ItemsControl)view.FindName("CardList");
+            var card = (Border)cardList.ItemTemplate.LoadContent();
+
+            var hover = card.Style?.Triggers.OfType<Trigger>()
+                .FirstOrDefault(t => t.Property == UIElement.IsMouseOverProperty);
+
+            var enter = Animations(hover?.EnterActions);
+            var exit = Animations(hover?.ExitActions);
+            var animated = enter.Concat(exit).ToList();
+
+            // PropertyPath 会把 "(UIElement.RenderTransform).(TranslateTransform.Y)" 解析成 "(0).(1)" +
+            // 一张**参数表**：路径字符串本身看不出动的是哪个属性，得看参数里的 DependencyProperty
+            var targets = animated
+                .Select(a => a.GetValue(Storyboard.TargetPropertyProperty))
+                .OfType<PropertyPath>()
+                .SelectMany(p => p.PathParameters ?? Enumerable.Empty<object>())
+                .OfType<DependencyProperty>()
+                .ToList();
+
+            var renderOnly = animated.Count > 0
+                          && targets.Count > 0
+                          && targets.All(dp => dp == UIElement.RenderTransformProperty
+                                            || dp == TranslateTransform.YProperty
+                                            || dp == ScaleTransform.ScaleXProperty
+                                            || dp == ScaleTransform.ScaleYProperty);
+            var restOffset = (card.RenderTransform as TranslateTransform)?.Y ?? double.NaN;
+            var exitResets = exit.Count > 0 && exit.All(a => a.To is 0d);
+
+            log.AppendLine($"卡片悬停   : 悬停动画 = {animated.Count} 条，目标属性 = "
+                         + $"{string.Join(" / ", targets.Select(dp => dp.Name).Distinct())}"
+                         + $"，全在渲染层 = {renderOnly}"
+                         + $"（应 True：碰 Height / Margin / Padding 会让整个瀑布流重排、卡片乱跳）"
+                         + $"，静止时位移 = {restOffset:0.##}（应 0）、松手复位 = {exitResets}（应 True）");
+
+            if (!renderOnly)
+                log.AppendLine("自检异常：卡片悬停动画动了布局属性（只允许 RenderTransform）");
+            else if (Math.Abs(restOffset) > 0.001)
+                log.AppendLine($"自检异常：卡片悬停动画的渲染变换初始值非 0（{restOffset:0.##}）");
+            else if (!exitResets)
+                log.AppendLine("自检异常：卡片悬停动画松手后未复位（ExitActions 未回到 0）");
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine($"自检异常：卡片悬停动画自检抛错 → {ex.Message}");
+        }
+    }
+
+    private static List<DoubleAnimation> Animations(TriggerActionCollection? actions)
+        => actions == null
+            ? new List<DoubleAnimation>()
+            : actions.OfType<BeginStoryboard>()
+                .SelectMany(b => b.Storyboard.Children.OfType<DoubleAnimation>())
+                .ToList();
 
     /// <summary>
     /// 规模探针：量瀑布流在"滚了很多页"之后的**一次完整布局**成本。

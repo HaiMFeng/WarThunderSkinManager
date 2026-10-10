@@ -728,6 +728,8 @@ internal static class SelfTest
                              + $"双层就成了「框里还有一个框」）"
                              + $"，外壳描边 = {chipShell.BorderThickness.Left:0.##}（应 1）");
 
+                // 瀑布流卡片的悬停动画（用同一个视图里的**真实卡片模板**查）
+                MasonrySelfTest.CheckCardHover(log, layoutView);
             }
             catch (Exception ex)
             {
