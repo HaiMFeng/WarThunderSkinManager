@@ -467,7 +467,7 @@ public partial class WtLiveViewModel : ObservableObject
     /// 叠在旧条件上只会得到语义不明的查询（见 <see cref="AppendUserChip"/>）。
     /// </para>
     /// </summary>
-    /// <param name="userId">作者 id（接口 <c>user=</c> 的取值；不是数字则什么都不做）</param>
+    /// <param name="userId">作者 id（作者主页 <c>/user/&lt;id&gt;/</c> 里的数字；不是数字则什么都不做）</param>
     /// <param name="displayName">作者昵称（胶囊上显示它；没有就显示 id）</param>
     public void SearchUser(string? userId, string? displayName)
     {

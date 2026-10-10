@@ -42,8 +42,8 @@ public sealed record WTLivePost(
     int Downloads);
 
 /// <summary>
-/// 涂装列表页（浏览用）的一件涂装，取自 <c>get_regular</c> 的 <c>data.list[]</c>
-/// （字段含义见 <c>docs/WTLive_涂装_API.md</c> §3.2）。
+/// 涂装列表页（浏览用）的一件涂装，取自列表接口 <c>get_regular</c> / <c>get_user</c> 的
+/// <c>data.list[]</c>（两者结构逐字段一致，字段含义见 <c>docs/WTLive_涂装_API.md</c> §3.2 / §3.5）。
 /// </summary>
 /// <param name="LangGroup">帖子定位 id（跨语言唯一 → 列表去重主键，也用于拼帖子网址）</param>
 /// <param name="Author">作者昵称（显示用）</param>
@@ -194,9 +194,28 @@ public static class WTLiveService
     public const int FeedPageSize = 25;
 
     /// <summary>
+    /// 列表端点二选一（§3.1 / §3.5）：**按作者**（<c>/user/&lt;id&gt;/</c>）走 <c>get_user</c>，
+    /// 其余走 <c>get_regular</c>。
+    /// </summary>
+    /// <remarks>
+    /// 站点把"作者主页的作品流"交给**另一个端点**：把 <c>user=</c> 发给 <c>get_regular</c>
+    /// 会被**无视**（2026-10-10 实测：仍返回各作者混合的常规流）——这正是"按作者筛选不生效"的成因，
+    /// 所以端点选择单独抽出来，便于自检断言。
+    /// </remarks>
+    internal static string FeedEndpointFor(string? userId)
+        => string.IsNullOrWhiteSpace(userId)
+            ? "https://live.warthunder.com/api/feed/get_regular/"
+            : "https://live.warthunder.com/api/feed/get_user/";
+
+    /// <summary>
     /// 拉取一页涂装列表（**浏览用**，匿名，§3）。列表 / 筛选 / 预览全部免登录，
     /// 因此本产品不做登录与订阅（§14）。
     /// </summary>
+    /// <remarks>
+    /// **按作者浏览是另一个端点**：站点把"某个作者主页"（<c>/user/&lt;id&gt;/</c>）的列表交给
+    /// <c>POST /api/feed/get_user/</c>（<c>Feed.type='profile'</c>，§3.5）——把 <c>user=</c> 发给
+    /// <c>get_regular</c> 会被**无视**（实测仍返回各作者混合的常规流），所以这里按有无作者 id 选端点。
+    /// </remarks>
     /// <param name="page">页码，从 0 起</param>
     /// <param name="vehicle">
     /// 载具裸 id（<c>units.csv</c> 首列去前缀去 <c>_N</c> 后缀，如 <c>cn_m1a2t</c>，§4.2）；
@@ -209,13 +228,15 @@ public static class WTLiveService
     /// <c>created</c>（最近发布，时间倒序）/ <c>rating</c>（热门）/ <c>comments</c> / <c>downloads</c>（§5）。
     /// </param>
     /// <param name="userId">
-    /// 作者 id（接口 <c>user=</c>，§3.1 / §3.5）；空 = 不限作者。
+    /// 作者 id（作者主页 URL <c>/user/&lt;id&gt;/</c> 里的数字，§3.5）；空 = 不限作者。
     /// **与 <paramref name="vehicle"/> / <paramref name="searchString"/> 互斥**——
     /// 界面上作者筛选独占（见 <see cref="WtLiveUser"/>），不会出现"作者 + 标签"的混合查询。
     /// </param>
     public static async Task<WTLiveFeedPage> FetchFeedPageAsync(
         int page, string? vehicle, string? searchString, string sort, string? userId, CancellationToken ct)
     {
+        var isAuthor = !string.IsNullOrWhiteSpace(userId);
+
         var form = new List<KeyValuePair<string, string>>
         {
             new("content", "camouflage"),
@@ -224,14 +245,14 @@ public static class WTLiveService
             new("period", "0"),   // 0 = 不限时间范围
             new("subtype", "all"),
             new("searchString", searchString ?? ""),
-            new("user", string.IsNullOrWhiteSpace(userId) ? "0" : userId),   // 0 = 不限作者
+            new("user", isAuthor ? userId! : "0"),   // 0 = 不限作者
         };
 
-        // vehicle 是该接口**没有公开 UI** 但实际支持的参数：站点不传时为空，页面即全部涂装
-        if (!string.IsNullOrWhiteSpace(vehicle)) form.Add(new("vehicle", vehicle));
+        // vehicle 是 get_regular **没有公开 UI** 但实际支持的参数（§3.1）：站点不传时为空，页面即全部涂装。
+        // 作者维度独占（见 WtLiveUser / AppendUserChip）→ 走 get_user 时不再拼 vehicle
+        if (!isAuthor && !string.IsNullOrWhiteSpace(vehicle)) form.Add(new("vehicle", vehicle));
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post, "https://live.warthunder.com/api/feed/get_regular/");
+        using var request = new HttpRequestMessage(HttpMethod.Post, FeedEndpointFor(userId));
         request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
         request.Headers.Referrer = new Uri("https://live.warthunder.com/feed/camouflages/");
         request.Version = HttpVersion.Version11; // 站点经 Cloudflare，H2 握手偶发失败 → 强制 1.1
@@ -520,7 +541,7 @@ public static class WTLiveService
         [JsonPropertyName("size")] public long Size { get; set; }
     }
 
-    // ---- 列表页（get_regular）DTO（2026-10-09 实测核对）----
+    // ---- 列表页（get_regular / get_user，结构一致）DTO（2026-10-09 实测核对）----
 
     private sealed class FeedResponse
     {

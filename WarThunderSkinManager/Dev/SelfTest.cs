@@ -354,7 +354,8 @@ internal static class SelfTest
                          + $"，裸词 = [{string.Join(" / ", plainWord)}]（应 [Tag:标签:anime]：站点没有全文搜索，裸词也只当标签）");
 
             // ---- 作者通道（@作者id）：候选 → 胶囊，并且**完全排斥其他筛选形式** ----
-            // 站点按 user=<作者id> 筛（昵称只是显示名），所以这里只认 @ + 纯数字
+            // 站点按作者主页 /user/<作者id>/ 的作品流取（get_user 端点的 user=<作者id>，§3.5），
+            // 昵称只是显示名 —— 所以这里只认 @ + 纯数字
             var authorVm = new WtLiveViewModel();
             authorVm.SearchText = "@147560834";
             var authorSuggestions = authorVm.Suggestions.Select(x => $"{x.Kind}:{x.Display}").ToList();
@@ -384,6 +385,15 @@ internal static class SelfTest
                          + $"，加作者即清空其余 = {authorClearsOthers}（应 True）"
                          + $"，有作者时载具 / 标签加不进 = {authorRejects}（应 True）"
                          + $"，有作者时不给载具 / 标签候选 = {candidatelessWithAuthor}（应 True）");
+
+            // 端点选择（§3.5）：**按作者必须走 get_user**——发给 get_regular 会被无视（2026-10-10 实测），
+            // 这正是"按作者筛选不生效"的成因，所以把路由单独钉住
+            var authorEndpoint = WTLiveService.FeedEndpointFor("132424191");
+            var regularEndpoint = WTLiveService.FeedEndpointFor(null);
+            var blankEndpoint = WTLiveService.FeedEndpointFor("   ");
+            log.AppendLine($"作者端点   : user=132424191 → …{authorEndpoint[(authorEndpoint.LastIndexOf("/api", StringComparison.Ordinal))..]}（应 …/api/feed/get_user/）"
+                         + $"，无作者 = {regularEndpoint.EndsWith("/api/feed/get_regular/", StringComparison.Ordinal)}（应 True）"
+                         + $"，空白作者 = {blankEndpoint.EndsWith("/api/feed/get_regular/", StringComparison.Ordinal)}（应 True）");
             log.AppendLine($"作者胶囊   : {authorVm.Chips[0].Label}（应 用户:锅盖头）"
                          + $"，摘要 = [{authorVm.ActiveFilterText}]（应 按作者筛选：锅盖头）"
                          + $"，@0 不是作者 = {WtLiveUser.NormalizeId("0").Length == 0}（应 True：0 是接口的「不限作者」哨兵）"
