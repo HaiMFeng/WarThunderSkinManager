@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Common;
@@ -698,6 +699,13 @@ internal static class SelfTest
                 var scrollableExtent = chipScroll.ScrollableHeight;
                 var scrollBarMode = chipScroll.VerticalScrollBarVisibility;
 
+                // 下拉的锚点必须是**外壳**：挂在外壳上才恒定贴在搜索框下方；挂在末尾输入框上会
+                // 随胶囊增减"跟着光标位置"横 / 纵向飘。宽度也跟外壳一致 → 左边缘对齐。
+                var searchPopup = (Popup)layoutView.FindName("SearchPopup");
+                var popupTargetIsShell = ReferenceEquals(searchPopup.PlacementTarget, chipShell);
+                var popupWidth = (searchPopup.Child as FrameworkElement)?.Width ?? double.NaN;
+                var shellWidth = chipShell.ActualWidth;
+
                 log.AppendLine($"搜索框布局 : 空态高 = {shellAtEmpty:0.##}（应 34 = 排序下拉 / 刷新按钮）"
                              + $"，加第一个胶囊后 = {shellAtOneChip:0.##}（应 == 空态高：加胶囊不跳高度）"
                              + $"，输入框是流式容器最后一项 = {tailIsInputAtEmpty && tailIsInputWithChips}（应 True：胶囊与输入同处一层）"
@@ -709,6 +717,8 @@ internal static class SelfTest
                              + $"，四个标签时外壳高 = {shellOverflow:0.##}（应 == 上限：不再撑高工具栏）"
                              + $"，框内纵向可滚 = {scrollableExtent:0.##}（应 > 0；视口 {scrollableViewport:0.##} <= 上限）"
                              + $"，滚动条 = {scrollBarMode}（应 Auto：装不下才出现）");
+                log.AppendLine($"搜索下拉   : 锚点 = 外壳 {popupTargetIsShell}（应 True：不跟着输入框 / 光标跑）"
+                             + $"，宽 = {popupWidth:0.##}（应 == 搜索框宽 {shellWidth:0.##}：左边缘对齐）");
                 log.AppendLine($"页头结构   : 左列 = 标题 + 搜索提示两行、右列 = 工具条 → "
                              + $"标题底 / 提示顶 = {titleBottom:0.##} / {summaryTop:0.##}（应 标题底 ≤ 提示顶：标题在上）"
                              + $"，工具条底边 = {toolbarBottom:0.##}（应 == 页头高 {headerAtEmpty:0.##}：向下对齐、停在瀑布流上方）"

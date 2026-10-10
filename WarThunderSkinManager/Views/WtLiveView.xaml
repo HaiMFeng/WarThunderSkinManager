@@ -301,15 +301,23 @@
                         </Button>
 
                         <!-- 搜索下拉。StaysOpen=True + 手动开合：项是**不可聚焦**的按钮，
-                             点它不会让输入框失焦，因此不会出现"点不下去"（见 code-behind 的失焦处理） -->
-                        <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}"
+                             点它不会让输入框失焦，因此不会出现"点不下去"（见 code-behind 的失焦处理）。
+                             **锚点是外壳（SearchShell）而不是那个输入框**：输入框是流式容器的最后一项，
+                             胶囊一多、一换行它就往后 / 往下跑 —— 挂在它身上，下拉就会"跟着光标位置"飘。
+                             钉在外壳上则恒定**左上角对齐地贴在整个搜索框下方**。
+                             （不用 x:Reference / ElementName 指外壳：那会构成循环依赖，
+                              见上面 CompositeCollection 的说明；RelativeSource 是**运行时**解析，没这个问题。
+                              外壳是这里唯一的 Border 祖先 —— 聚焦内圈那圈 Border 是它的**兄弟**，不是祖先。） -->
+                        <Popup x:Name="SearchPopup"
+                               PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Border}}"
                                Placement="Bottom" VerticalOffset="4"
                                StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade"
                                IsOpen="{Binding WtLive.IsSuggestionsOpen}">
-                            <!-- 与主题 ComboBox 下拉同一套外观（底 + 描边 + 圆角 8 + 投影） -->
+                            <!-- 与主题 ComboBox 下拉同一套外观（底 + 描边 + 圆角 8 + 投影）。
+                                 宽度跟搜索框**一样**（400）→ 左边缘对齐后整个下拉正好压在外壳下面 -->
                             <Border Background="{StaticResource BrushBackground}"
                                     BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                                    CornerRadius="8" Padding="4" MinWidth="300" MaxWidth="460"
+                                    CornerRadius="8" Padding="4" Width="400"
                                     SnapsToDevicePixels="True">
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270"
