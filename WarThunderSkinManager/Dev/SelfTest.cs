@@ -601,7 +601,9 @@ internal static class SelfTest
                 // （CompositeCollection = 胶囊集合 + 末尾那个 TextBox）→ 输入框永远跟在最后一个胶囊后面。
                 // ① 空态高 34 = 排序下拉 / 刷新按钮（同一行不能高低不一）；
                 // ② 输入框是那个流式容器的**最后一项**（与胶囊同处一层，而不是被挤到另一整行）；
-                // ③ 胶囊多了必须**换行**（外框跟着长高），不能横向撑出框外。
+                // ③ 胶囊多了必须**换行**（外框跟着长高），不能横向撑出框外；
+                // ④ 加**第一个**胶囊不能让框变高（空态 == 只有一个胶囊）：胶囊竖直外边距要**对称**、
+                //    并与输入框同一行高；首行胶囊 / 输入框的中线还要落在框的中轴（否则看着"偏上"）。
                 var layoutVm = new WtLiveViewModel();
                 var layoutView = new WarThunderSkinManager.Views.WtLiveView
                 {
@@ -618,6 +620,10 @@ internal static class SelfTest
                 var chipList = (ItemsControl)layoutView.FindName("ChipList");
                 var chipBox = (TextBox)layoutView.FindName("SearchBox");
                 var shellAtEmpty = chipShell.ActualHeight;
+
+                // ④ 的判据：空态时输入框中线应落在框的中轴上（曾经竖直外边距不对称 → 整体偏上 2px）
+                var boxCenterY = chipBox.TransformToAncestor(chipShell)
+                    .Transform(new System.Windows.Point(0, 0)).Y + chipBox.ActualHeight / 2;
 
                 // ② 的判据：那个 WrapPanel 的**最后一项**必须是输入框本身
                 var tailIsInputAtEmpty = chipList.Items.Count > 0
@@ -636,13 +642,20 @@ internal static class SelfTest
                 var innerFrame = chipBox.Template.Triggers.OfType<Trigger>()
                     .Any(t => t.Setters.OfType<Setter>().Any(s => s.Property == Border.BorderThicknessProperty));
 
-                layoutVm.AppendTagChip("shorekeeper_wuthering_waves");
+                // ④ 先用一个**短**标签（能和输入框同处一行）：「加第一个胶囊不跳高」
+                layoutVm.AppendTagChip("cm11");
                 layoutHost.UpdateLayout();
+                var shellAtOneChip = chipShell.ActualHeight;   // 应 == shellAtEmpty
                 var listOfOneRow = chipList.ActualHeight;
+                var firstChip = chipList.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+                var firstChipCenterY = firstChip == null ? double.NaN
+                    : firstChip.TransformToAncestor(chipShell)
+                        .Transform(new System.Windows.Point(0, 0)).Y + firstChip.ActualHeight / 2;
 
+                // ③ 再叠几个长标签，逼出换行（框跟着长高，而不是横向溢出）
                 layoutVm.AppendTagChip("wuthering_waves");
                 layoutVm.AppendTagChip("girls_frontline");
-                layoutVm.AppendTagChip("cm11");
+                layoutVm.AppendTagChip("shorekeeper_wuthering_waves");
                 layoutHost.UpdateLayout();
 
                 // 有胶囊后：输入框必须仍在**同一层**（那个 WrapPanel 的最后一项），
@@ -653,9 +666,12 @@ internal static class SelfTest
                     .Transform(new System.Windows.Point(0, 0)).X;
 
                 log.AppendLine($"搜索框布局 : 空态高 = {shellAtEmpty:0.##}（应 34 = 排序下拉 / 刷新按钮）"
+                             + $"，加第一个胶囊后 = {shellAtOneChip:0.##}（应 == 空态高：加胶囊不跳高度）"
                              + $"，输入框是流式容器最后一项 = {tailIsInputAtEmpty && tailIsInputWithChips}（应 True：胶囊与输入同处一层）"
                              + $"，有胶囊后撑高到 = {chipShell.ActualHeight:0.##}（应 > 34，框跟着长高）"
-                             + $"，四个长标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）"
+                             + $"，四个标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）"
+                             + $"，首行竖直居中 = 输入框中线 {boxCenterY:0.##} / 胶囊中线 {firstChipCenterY:0.##}"
+                             + $"（都应 == {shellAtEmpty / 2:0.##}）"
                              + $"，输入文字起点 = {textOriginX:0.##}、输入框左边缘 = {boxLeft:0.##}（应仍在框内、跟随胶囊）");
                 log.AppendLine($"搜索框描边 : 输入框模板会自己加粗描边 = {innerFrame}（应 False：描边只由外壳画，"
                              + $"双层就成了「框里还有一个框」）"

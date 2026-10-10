@@ -76,22 +76,47 @@
                                     <!-- 聚焦优先级更高（鼠标还停在框上也该按聚焦色画）。
                                          IsKeyboardFocusWithin 覆盖整棵子树 = CSS 的 :focus-within，
                                          因此不再需要按名字去盯那个输入框。
-                                         描边加粗到 1.5 是**替代** BaseTextBox 聚焦时的那一下加粗
-                                         （它的 1.5 画在输入框自己的内框上，会变双层描边） -->
+                                         **描边粗细恒定 1**：以前聚焦时改成 1.5，整框外层会随聚焦 / 失焦
+                                         长高、变宽 1px（点进框里就抖一下），和相邻的排序下拉也对不齐。
+                                         "加粗"的观感改由下面那圈内侧描边给 -->
                                     <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                         <Setter Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
-                                        <Setter Property="BorderThickness" Value="1.5"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
 
                         <Grid>
-                            <!-- 前导放大镜：浮在左边那条 28 的槽里（纯装饰，不挡点击） -->
-                            <TextBlock Text="&#xF002;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                       HorizontalAlignment="Left" VerticalAlignment="Top"
-                                       Margin="9,9,0,0" Foreground="{StaticResource BrushTextMuted}"
-                                       IsHitTestVisible="False"/>
+                            <!-- 聚焦内圈：贴着外侧描边再画一圈（1+1 = 聚焦时看着像 2px 强调），
+                                 **不参与布局**（只是无填充的描边，期望尺寸才 2×2），
+                                 所以聚焦 / 失焦时框的尺寸纹丝不动，只换描边颜色 + 多这圈 -->
+                            <Border CornerRadius="5" BorderThickness="1" Margin="0"
+                                    SnapsToDevicePixels="True"
+                                    BorderBrush="{StaticResource BrushBorderFocus}"
+                                    IsHitTestVisible="False">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Value="True"
+                                                         Binding="{Binding IsKeyboardFocusWithin,
+                                                                   RelativeSource={RelativeSource AncestorType=Border}}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+
+                            <!-- 前导放大镜：浮在左边那条 28 的槽里（纯装饰，不挡点击）。
+                                 **用固定高的格子把字形居中**（Height 22 + 顶边距 5 = 第一行内容的
+                                 y 范围 5..27），而不是拿 Margin 去凑字体高度——换字体、换字号都不会再偏 -->
+                            <Grid HorizontalAlignment="Left" VerticalAlignment="Top"
+                                  Height="22" Margin="9,5,0,0" IsHitTestVisible="False">
+                                <TextBlock Text="&#xF002;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{StaticResource BrushTextMuted}"/>
+                            </Grid>
 
                             <!-- 胶囊 + 输入框：**同一个 WrapPanel**，输入框是最后一项 →
                                  光标永远跟在最后一个胶囊后面，放不下就换行、框跟着长高。
@@ -101,8 +126,12 @@
                                  社区同款坑：① 不能再设 ItemTemplate —— 它会连输入框一起套上胶囊模板，
                                  得改成 ItemsControl.Resources 里的**隐式 DataTemplate**（按 DataType 匹配，
                                  末尾那个 TextBox 是 UIElement，会被原样呈现）；
-                                 ② 输入框要给 MinWidth / MaxWidth，否则没字时缩成一条线、字一长又把框撑爆 -->
-                            <ItemsControl x:Name="ChipList" Margin="28,5,28,5">
+                                 ② 输入框要给 MinWidth / MaxWidth，否则没字时缩成一条线、字一长又把框撑爆。
+                                **高度预算**（治"加第一个胶囊就跳一下高"）：这一行恒为 26 高
+                                = 22（胶囊高 = 输入框高）+ 上下各 2 外边距（**胶囊与输入框都给 2，对称**）；
+                                再各留 3 → 内容 32、外壳 34，与空态**完全一致**；
+                                之后每多一个胶囊只要不换行就不再变高，换行才整行 +26 -->
+                            <ItemsControl x:Name="ChipList" Margin="28,3,28,3">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel/>
@@ -110,10 +139,13 @@
                                 </ItemsControl.ItemsPanel>
 
                                 <ItemsControl.Resources>
-                                    <!-- 胶囊（只匹配 WtLiveSearchChip） -->
+                                    <!-- 胶囊（只匹配 WtLiveSearchChip）。
+                                         竖直外边距**对称**（2 / 2，曾经是只有下边 2+2），行高才与只有输入框时一致——
+                                         否则空态 34、加第一个胶囊 38（那 4px 还全在下边，把胶囊顶得"偏上"）。
+                                         左右 4 是胶囊之间的间距 -->
                                     <DataTemplate DataType="{x:Type vm:WtLiveSearchChip}">
                                         <Border Background="{StaticResource BrushSurface2}" CornerRadius="10"
-                                                Padding="8,2,4,2" Margin="0,0,4,4" SnapsToDevicePixels="True">
+                                                Padding="8,2,4,2" Margin="0,2,4,2" SnapsToDevicePixels="True">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource IconFont}"
                                                            FontSize="11" VerticalAlignment="Center"
@@ -158,10 +190,11 @@
                                             Collection="{Binding DataContext.WtLive.Chips,
                                                          Source={x:Reference SearchPopup}}"/>
 
-                                        <!-- 末尾的输入框：高 22 = 胶囊高，两者的文字中线才落在同一水平线上 -->
+                                        <!-- 末尾的输入框：高 22 = 胶囊高，两者文字中线才在同一水平线上；
+                                             上下也给 2 外边距 → 与胶囊**行高一致**（见上「高度预算」） -->
                                         <TextBox x:Name="SearchBox" Style="{StaticResource BaseTextBox}"
                                                  Height="22" MinWidth="80" MaxWidth="240" Padding="2,0,0,0"
-                                                 VerticalAlignment="Top"
+                                                 Margin="0,2,0,2" VerticalAlignment="Top"
                                                  Text="{Binding WtLive.SearchText, UpdateSourceTrigger=PropertyChanged}"
                                                  PreviewKeyDown="SearchBox_PreviewKeyDown"
                                                  PreviewMouseLeftButtonDown="SearchBox_PreviewMouseLeftButtonDown"
@@ -203,10 +236,11 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <!-- 清空（有文字或有胶囊才出现）：一次清掉条件与输入 -->
+                        <!-- 清空（有文字或有胶囊才出现）：一次清掉条件与输入。
+                             顶边距 4 → 24 高的按钮中线落在 16，与第一行胶囊 / 输入框同一中轴 -->
                         <Button Content="&#xF00D;"
                                 HorizontalAlignment="Right" VerticalAlignment="Top"
-                                Margin="0,5,4,0" ToolTip="{loc:Loc wtlive.search.clear}"
+                                Margin="0,4,4,0" ToolTip="{loc:Loc wtlive.search.clear}"
                                 Command="{Binding WtLive.ClearSearchCommand}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
