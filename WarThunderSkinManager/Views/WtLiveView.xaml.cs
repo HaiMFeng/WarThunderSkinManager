@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -27,11 +28,19 @@ public partial class WtLiveView : UserControl
     /// <summary>已经订阅过胶囊集合的那个 VM（换了 VM 要重新订阅，且不能重复订阅）。</summary>
     private WtLiveViewModel? _chipAutoScrollSource;
 
+    /// <summary>列表重开的监听是否已挂上（挂一次就够，<see cref="HookListReset"/>）。</summary>
+    private bool _listResetHooked;
+
     public WtLiveView()
     {
         InitializeComponent();
 
         DataContextChanged += (_, _) => HookChipAutoScroll();
+
+        // 列表重开（换搜索条件 / 排序 / 手动刷新）→ 滚回顶部。
+        // 挂 Loaded 而不是 DataContextChanged：这条挂的是**控件自己的条目集**（见 HookListReset），
+        // 与 DataContext 是否就位无关
+        Loaded += (_, _) => HookListReset();
 
         // 首屏懒加载：本页不在启动路径上（多数用户不会进），进来才发请求。
         // 切页只是 Visibility 变化，所以用 IsVisibleChanged 而不是 Loaded（后者一辈子只触发一次）
@@ -67,6 +76,30 @@ public partial class WtLiveView : UserControl
     /// <summary>等这一轮布局跑完再滚：此刻流式面板还没把新行排出来，立刻滚会停在上一次的高度。</summary>
     private void ScrollChipsToEnd()
         => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => ChipScroll.ScrollToEnd()));
+
+    /// <summary>
+    /// 列表**重开一轮**（换搜索条件 / 排序 / 手动刷新，<see cref="WtLiveViewModel.Refresh"/> 把
+    /// <c>Items</c> 清空重拉）→ 瀑布流**滚回顶部**。
+    /// <para>
+    /// 不清会保持在原来的滚动位置：新一轮结果与旧列表毫无关系，停在半途等于开局就看不见第一条
+    /// （列表自己的内容变了，滚动位置却还是按旧内容的高度算的）。
+    /// </para>
+    /// <para>
+    /// 挂在 <c>CardList.Items</c>（它转发所绑定数据源的变更）而不是订阅 VM 的某个信号：
+    /// "清空"这件事在哪儿发生都算数，追加下一页（<c>Add</c>）也不会被误伤——
+    /// 滚动到底继续看下一屏时不该被弹回顶部。
+    /// </para>
+    /// </summary>
+    private void HookListReset()
+    {
+        if (_listResetHooked) return;
+        _listResetHooked = true;
+
+        ((INotifyCollectionChanged)CardList.Items).CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset) ListScroll.ScrollToTop();
+        };
+    }
 
     /// <summary>
     /// 盯住面板的实际列宽，连同屏幕缩放一起转给 VM（缩略图按**设备像素宽**解码）。

@@ -57,6 +57,19 @@ public static class ArchiveService
         => Path.Combine(ImportService.ImportsDirectory(resourceDir), "extract");
 
     /// <summary>
+    /// **WT Live 下载**的暂存目录：下好的压缩包与预览图放这里（解构完就删）。
+    /// <para>
+    /// 压缩包名是我们自己拼的 <c>&lt;帖子id&gt;-&lt;随机8位&gt;-&lt;原文件名&gt;</c>（见
+    /// <c>SkinsViewModel.DownloadAndImportAsync</c>）——**第一段就是帖子 id**，而导入清单
+    /// （<c>imports/import_*.json</c>）把当时的压缩包路径记下来了。于是"早期版本下载的包
+    /// 没把来源链接写进 meta"这件事可以由此补认（见 <see cref="PackageLinkService"/>）：
+    /// 这个目录与命名规则因此是**两个模块共用的口径**，只能在这里定义，避免哪天改了名字两边对不上。
+    /// </para>
+    /// </summary>
+    public static string WtLiveStagingDirectory(string resourceDir)
+        => Path.Combine(StagingRoot(resourceDir), "wtlive");
+
+    /// <summary>
     /// 解压压缩包到暂存区，返回**本次解压的根目录**（形如 <c>imports/extract/1a2b3c4d</c>）。
     /// 受密码保护且未给密码 / 密码不对时抛 <see cref="ArchivePasswordException"/>。
     /// 解压中途失败会清掉半成品，避免留下残缺目录。

@@ -819,6 +819,24 @@ internal static class SelfTest
                                  + $"「×」在外壳子树里 = {clearInsideShell}（应 True）、滚动条在外壳子树里 = "
                                  + $"{(barInsideShell?.ToString() ?? "跳过")}（应 True：隧道必过外壳）");
 
+                    // ⑤ 换搜索条件 / 排序（VM 把列表清空重拉）→ 瀑布流必须**回到顶部**。
+                    //    停在原来的位置等于开局就看不见第一条（列表内容全变了，位置却还按旧内容算）
+                    var listScroll = (ScrollViewer)winView.FindName("ListScroll");
+                    for (var i = 0; i < 40; i++) winVm.Items.Add(Card(i));
+                    win.UpdateLayout();
+
+                    listScroll.ScrollToVerticalOffset(400);
+                    win.UpdateLayout();
+                    var wasScrollable = listScroll.VerticalOffset > 0;
+
+                    winVm.Items.Clear(); // = Refresh()（换筛选条件 / 排序 / 手动刷新）里那一下
+                    win.UpdateLayout();
+                    var backToTop = listScroll.VerticalOffset == 0;
+
+                    log.AppendLine(wasScrollable
+                        ? $"列表回顶部 : 清空重拉后位置 = {listScroll.VerticalOffset:0.##}（应 0），回顶 = {backToTop}（应 True）"
+                        : "列表回顶部 : 跳过（列表没撑出可滚动高度）");
+
                     win.Content = null;
                     win.Close();
                 }
@@ -854,6 +872,13 @@ internal static class SelfTest
 
                     return null;
                 }
+
+                // 造一张卡片撑出列表高度（没有预览图 URL → 缩略图走"缺图"占位，**不发网络请求**）：
+                // 用来验「列表清空重拉 → 瀑布流回到顶部」
+                static WtLiveCardItem Card(int index) => new(new WTLiveFeedItem(
+                    index, "作者", 0, "", $"标题 {index}", "描述", null, 1.5, 0,
+                    "skin.zip", "", 1024, 1, 2, 3,
+                    $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()));
 
                 // 输入框**自带描边**是"框里还有一个框"的根源：BaseTextBox 的模板聚焦时把内框硬改成
                 // 1.5px 蓝色（ControlTemplate.Triggers 里的 Setter，外面设 BorderThickness=0 也压不住），
@@ -2134,6 +2159,51 @@ internal static class SelfTest
                          + $"空链接 = {WtLiveLink.Matches("", "https://live.warthunder.com/post/1189546/")}（应 False），"
                          + $"非帖子链接规范化比对 = {WtLiveLink.Matches("https://example.com/a/", "https://example.com/A")}（应 True），"
                          + $"取帖子 id = {WtLiveLink.PostIdOf("https://live.warthunder.com/post/1189546/en/")}（应 1189546）");
+
+            // ---- 「已下载」判定的**两个来源**（§3.16）：包自己的来源链接 + 早期下载的包「补认」 ----
+            // 早期版本下载的包没有 sourceUrl（那时还没这个字段），只能靠导入清单里那次下载的暂存压缩包名
+            // （`<帖子id>-<随机8位>-<原名>.zip`）把帖子 id 认回来——**少了这一路，提醒对老包永不生效**
+            // （用户库里 38 次 WT Live 下载只有 1 次带着链接，其余全是老包）。
+            var linkDir = Path.Combine(workDir, "linklib");
+            var linkCfg = Path.Combine(workDir, "linkcfg");
+            var staging = ArchiveService.WtLiveStagingDirectory(linkDir);
+
+            PackageStore.SaveMeta(linkDir, new PackageMeta
+                { Id = "pkg_link", VehicleId = "f_15e", Name = "带链接", SourceUrl = WtLiveLink.PostUrl(1190414) });
+            PackageStore.SaveMeta(linkDir, new PackageMeta
+                { Id = "pkg_old", VehicleId = "su_30mkk", Name = "老包（无链接）" });
+            PackageStore.SaveMeta(linkDir, new PackageMeta
+                { Id = "pkg_out", VehicleId = "su_30mkk", Name = "同名但不在暂存区" });
+
+            Directory.CreateDirectory(ImportService.ImportsDirectory(linkDir));
+
+            void WriteRecord(string id, string sourcePath, params string[] packageIds)
+                => File.WriteAllText(
+                    Path.Combine(ImportService.ImportsDirectory(linkDir), $"import_{id}.json"),
+                    JsonSerializer.Serialize(new ImportManifest
+                    {
+                        Record = new ImportRecord
+                        {
+                            Id = id, SourceType = ImportSourceType.Archive, SourcePath = sourcePath
+                        },
+                        PackageIds = packageIds.ToList()
+                    }), new UTF8Encoding(false));
+
+            WriteRecord("r1", Path.Combine(staging, "1190414-1add4d05-skin.zip"), "pkg_old");       // 该帖的老下载
+            WriteRecord("r2", Path.Combine(staging, "1190414-1add4d05-gone.zip"), "pkg_gone");      // 那个包已被删除
+            WriteRecord("r3", Path.Combine(workDir, "1190414-1add4d05-notstaging.zip"), "pkg_out"); // 路径不在暂存区 → 不算
+
+            var hitSamePost = PackageLinkService.Find(linkDir, linkCfg, WtLiveLink.PostUrl(1190414));
+            var hitOtherPost = PackageLinkService.Find(linkDir, linkCfg, WtLiveLink.PostUrl(1190415));
+            var hitNotPost = PackageLinkService.Find(linkDir, linkCfg, "https://example.com/skin.zip");
+
+            log.AppendLine($"已下载判定: 同一帖命中 = {hitSamePost.Count}（应 2：带链接的包 + 老包按导入清单补认）"
+                         + $"，命中 = [{string.Join(" / ", hitSamePost.Select(m => m.Name))}]"
+                         + $"，删掉的包不算 = {hitSamePost.All(m => m.PackageId != "pkg_gone")}（应 True）"
+                         + $"，不在暂存区的不算 = {hitSamePost.All(m => m.PackageId != "pkg_out")}（应 True）"
+                         + $"，别的帖 = {hitOtherPost.Count}（应 0）"
+                         + $"，非帖子链接 = {hitNotPost.Count}（应 0）");
+            log.AppendLine($"已下载补认: 老包（无 sourceUrl）命中 = {hitSamePost.Any(m => m.PackageId == "pkg_old")}（应 True：靠导入清单里的帖子 id 认回来）");
 
             // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
             //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----

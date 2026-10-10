@@ -303,7 +303,9 @@ public partial class SkinsViewModel : ObservableObject
         var runToken = run.Token;
 
         var resourceDir = _config.ResourceDirectory;
-        var wtliveDir = Path.Combine(ArchiveService.StagingRoot(resourceDir), "wtlive");
+        // 暂存目录 / 压缩包命名对**「已下载」判定**也是口径（导入清单只留下这个路径）：
+        // 统一从 ArchiveService 取，别在这里另拼一份（见 ArchiveService.WtLiveStagingDirectory）
+        var wtliveDir = ArchiveService.WtLiveStagingDirectory(resourceDir);
         var hasPreview = !string.IsNullOrWhiteSpace(item.PreviewUrl);
 
         zipPath = Path.Combine(wtliveDir,

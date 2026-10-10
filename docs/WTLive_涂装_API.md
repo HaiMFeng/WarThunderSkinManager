@@ -285,6 +285,10 @@ https://live.warthunder.com/dl/d6eee2eadd3b943b7f4de841ceda651f79010b31/
 3. **时间线浏览**：`sort=created` + 逐页 `page++` 直到 `<25`，实现无限滚动。
 4. **预览**：用 `images.src`（CDN 缩略图），`file.name`/`file.size` 展示文件信息。
 5. **下载**：用 `file.link` 作为下载地址；**但下载动作需先验证匿名是否可取到文件**，若被限登录，则下载器需携带会话 Cookie（引导用户登录一次或复用浏览器 Cookie）。
+   - **重复下载提醒**（`Services/Packages/PackageLinkService`）：按帖子 id 比对（URL 里的 `<id>` 就是 `lang_group`；`api/posts/get` 的 `id` 是**语言版本内部 id**，拿它当 `lang_group` 会 `status=ERR`），
+     语言段 / 尾斜杠 / 大小写差异视为同一帖。两个来源：① 包自己的 `meta.sourceUrl`；② **老包补认**——
+     早期版本下载的包没写过链接，但导入清单 `imports/import_*.json` 的 `sourcePath` 指向
+     `<资源目录>/imports/extract/wtlive/<帖子id>-<随机8位>-<原文件名>.zip`，帖子 id 就在包名第一段里。
 6. **去重/缓存**：以 `lang_group` 为主键，跨 `sort`/翻页去重；可做本地缓存减少请求。
 7. **限流**：实测翻页间加 ~1s 间隔、断连重试即可稳定；建议客户端做简单节流，避免触发风控。
 8. **成败判定与类型过滤**：一律先看响应体 `status`（HTTP 恒 200，参数错误也返回 200，**不可靠**）；
