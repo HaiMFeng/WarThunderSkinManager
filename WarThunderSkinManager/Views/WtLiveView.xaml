@@ -17,52 +17,55 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 页头两行：① 标题独占一行；② 左边「当前查询摘要」+ 右边「排序 / 搜索 / 刷新」。
-             摘要与搜索框因此**同排同高**（同在第二行、都竖直居中）；
-             而第二行恒被 34 高的工具条撑着 → 摘要出现 / 消失都不改变标题区高度
-             （搜索框自己随胶囊换行长高是另一回事）。 -->
+        <!-- 页头 = 上方的**工具栏**，本身分左右两列：
+             左列两行 —— ① 标题；② 搜索提示（默认「所有涂装」，有筛选时写成人话）。
+             右列 —— 排序 / 搜索 / 刷新这些工具，**向下对齐**：底边与页头底边齐平，
+             于是整排按钮正好停在下面的瀑布流上方。
+             提示**始终占位**（不再收起），所以页头高度与有没有筛选无关。 -->
         <Grid x:Name="Header" Grid.Row="0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>   <!-- 标题 -->
-                <RowDefinition Height="Auto"/>   <!-- 摘要（左）+ 工具条（右） -->
-            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.ColumnSpan="2" HorizontalAlignment="Left"
-                       Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+            <!-- 左列：标题 + 搜索提示，两行 -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>   <!-- 标题 -->
+                    <RowDefinition Height="Auto"/>   <!-- 搜索提示 -->
+                </Grid.RowDefinitions>
 
-            <!-- 第二行左：当前查询摘要——胶囊在界面上是一块块，这行把它写成人话，
-                 也点明走的是哪条通道（按载具 / 按标签）；取代了原来那行页面描述。
-                 要点：① 与右边工具条**同排且都竖直居中** → 正好落在搜索框的文字中线上；
-                      ② 单行 + 省略号，标签再多也不换行；
-                      ③ 没有筛选时直接收起：这一行有工具条撑着，收起不会让页头变矮 -->
-            <TextBlock x:Name="FilterSummary" Grid.Row="1" Grid.Column="0" Margin="0,4,0,0"
-                       VerticalAlignment="Center" HorizontalAlignment="Left"
-                       MaxWidth="420" FontSize="12"
-                       Text="{Binding WtLive.ActiveFilterText}"
-                       Foreground="{StaticResource BrushPrimary}"
-                       TextTrimming="CharacterEllipsis">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+                <TextBlock x:Name="HeaderTitle" Grid.Row="0" HorizontalAlignment="Left"
+                           Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
 
-            <!-- 第二行右：排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
+                <!-- 搜索提示——胶囊在界面上是一块块，这行把它写成人话，也点明走的是哪条通道
+                     （按载具 / 按标签）；没有筛选时就是默认的「所有涂装」。
+                     要点：① 单行 + 省略号，标签再多也不换行；
+                          ② 空态用弱化色、有筛选时转主色 → 一眼能区分"提示"与"当前条件" -->
+                <TextBlock x:Name="FilterSummary" Grid.Row="1" Margin="0,4,0,0"
+                           HorizontalAlignment="Left"
+                           MaxWidth="420" FontSize="12"
+                           Text="{Binding WtLive.ActiveFilterText}"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextMuted}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+
+            <!-- 右列：排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
                  搜索框**不只用来选载具**：输入即给下拉——载具、标签、清除三条通道；
                  选中的候选不写回输入框，而是变成**胶囊**（载具最多一个、标签可叠多个），
                  退格一次删一个（见 WtLiveViewModel / WtLiveSearchChip）。
-                 顶边距与左边摘要一致（都是 4），两者竖直居中后中线才对齐 -->
-            <StackPanel Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="16,4,0,0">
+                 **向下对齐**（Bottom）：底边贴着页头底边 → 整排工具停在瀑布流上方 -->
+            <StackPanel x:Name="Toolbar" Grid.Column="1" VerticalAlignment="Bottom" Margin="16,0,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <!-- 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）。
                          排在搜索框**左侧**：它是"整份列表怎么排"，先于搜索框这个"要哪些"的入口；

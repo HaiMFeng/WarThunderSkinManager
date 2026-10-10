@@ -554,6 +554,7 @@
   "wtlive.search.clear": "显示全部涂装",
   "wtlive.search.byVehicle": "按载具筛选：{0}",
   "wtlive.search.byTag": "按标签筛选：{0}",
+  "wtlive.search.all": "所有涂装",
   "wtlive.chip.vehicle": "载具:{0}",
   "wtlive.chip.tag": "标签:{0}",
   "wtlive.sort.label": "排序方式",

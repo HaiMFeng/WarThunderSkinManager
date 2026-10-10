@@ -105,8 +105,9 @@ public partial class WtLiveViewModel : ObservableObject
         Chips.Where(c => c.Kind == WtLiveChipKind.Tag).Select(c => c.Value));
 
     /// <summary>
-    /// 当前查询的摘要（空 = 全部涂装）：胶囊在界面上是"一块块"，这行把它写成人话，
-    /// 也点明走的是哪条通道（按载具 / 按标签）。
+    /// 当前查询的摘要（**没有筛选时 = "所有涂装"**）：胶囊在界面上是"一块块"，这行把它写成人话，
+    /// 也点明走的是哪条通道（按载具 / 按标签）。页头左列第二行**始终**显示它（不像以前那样收起），
+    /// 所以空态也得有文案，就是那句默认的「所有涂装」。
     /// </summary>
     public string ActiveFilterText
     {
@@ -122,7 +123,7 @@ public partial class WtLiveViewModel : ObservableObject
                 .Select(c => WtLiveTag.ToQueryToken(c.Value)).ToList();
             if (tags.Count > 0) parts.Add(Loc.Format("wtlive.search.byTag", string.Join(' ', tags)));
 
-            return string.Join(" · ", parts);
+            return parts.Count == 0 ? Loc["wtlive.search.all"] : string.Join(" · ", parts);
         }
     }
 
@@ -208,7 +209,7 @@ public partial class WtLiveViewModel : ObservableObject
         BuildSortOptions();
 
         foreach (var chip in Chips) chip.RefreshTexts();
-        if (HasFilter) OnPropertyChanged(nameof(ActiveFilterText));
+        OnPropertyChanged(nameof(ActiveFilterText));   // 空态的「所有涂装」也要跟着换语言
     }
 
     /// <summary>

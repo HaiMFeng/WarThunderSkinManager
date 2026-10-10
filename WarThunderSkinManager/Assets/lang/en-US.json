@@ -554,6 +554,7 @@
   "wtlive.search.clear": "Show all camouflages",
   "wtlive.search.byVehicle": "Filtered by vehicle: {0}",
   "wtlive.search.byTag": "Filtered by tag: {0}",
+  "wtlive.search.all": "All camouflages",
   "wtlive.chip.vehicle": "vehicle:{0}",
   "wtlive.chip.tag": "tag:{0}",
   "wtlive.sort.label": "Sort by",
