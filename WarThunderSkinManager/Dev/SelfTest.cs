@@ -266,6 +266,43 @@ internal static class SelfTest
                          + $"，排除场景道具 = {!vehicleIds.Contains("dummy_airfield")}（应 True）"
                          + $"，按显示名排序 = {vehicleOptions.Select(v => v.DisplayName).SequenceEqual(vehicleOptions.Select(v => v.DisplayName).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase))}（应 True）");
 
+            // ---- WT Live 载具搜索的模糊匹配（§4.1）：归一化 → su30 命中 su_30 ----
+            // 归一化抹平**分隔符 / 大小写 / 译名里的国旗占位符**，"照着 id 打但少了下划线"也能命中；
+            // 分档顺序钉住：完全相同 → 前缀 → 包含 → 子序列（档内候选越短越前）。
+            // 另钉住「**刻意不做**编辑距离容错」：载具 id 里数字变体遍地都是（m1a1/m1a2、t-72a/t-72b），
+            // 允许打错一个字符会把同族不同型号互相误认 —— 在这种表上误报比漏报更糟。
+            var vehicleIndex = new VehicleSearchIndex(vehicleOptions);
+            List<string> IdHits(string query, int limit = 6)
+                => vehicleIndex.Search(query, limit).Select(v => v.Id).ToList();
+
+            var noSeparator = IdHits("su30").Contains("su_30mkk");      // 少了下划线照样命中
+            var caseAndSpace = IdHits("Su 30").Contains("su_30mkk");    // 大小写 + 空格不影响
+            var chinese = IdHits("苏30").Contains("su_30mkk");          // 汉字保留（中文译名）
+            var scattered = IdHits("su30venezuela").Contains("su_30mk2v_venezuela"); // 子序列档（跳字输入）
+            var noFalsePositive = IdHits("zzzzzzzz").Count == 0;        // 不做编辑距离容错 → 乱码零命中
+
+            // 分档顺序用**合成索引**钉（真实表里同族变体多，逐条断言不稳）
+            var tierIndex = new VehicleSearchIndex(new[]
+            {
+                new VehicleNameTable.VehicleOption("zz_holder", "Holder Su-30"),      // 包含档
+                new VehicleNameTable.VehicleOption("su30_long", "Su-30 Variant"),     // 前缀档（更长 → 排后）
+                new VehicleNameTable.VehicleOption("su_30", "Su-30"),                 // 完全相同档
+                new VehicleNameTable.VehicleOption("su30x", "Su-30 X"),               // 前缀档（更短 → 排前）
+                new VehicleNameTable.VehicleOption("scattered", "Solo Ufo 30 Zero")   // 子序列档
+            });
+            var tiers = tierIndex.Search("su30", 6).Select(v => v.Id).ToList();
+
+            log.AppendLine($"载具模糊匹配: su30 含 su_30mkk = {noSeparator}（应 True）"
+                         + $"，Su 30 同样命中 = {caseAndSpace}（应 True）"
+                         + $"，苏30 命中 = {chinese}（应 True）"
+                         + $"，su30venezuela 含 su_30mk2v_venezuela = {scattered}（应 True：子序列）"
+                         + $"，乱码零命中 = {noFalsePositive}（应 True）"
+                         + $"，纯分隔符候选数 = {vehicleIndex.Search("_-#", 6).Count}（应 0）");
+            log.AppendLine($"载具分档   : [{string.Join(" / ", tiers)}]（应 su_30 / su30x / su30_long / zz_holder / scattered）");
+            log.AppendLine($"载具归一化 : Su-30MKK → {VehicleSearchIndex.Normalize("Su-30MKK")}（应 su30mkk）"
+                         + $"，苏-30 → {VehicleSearchIndex.Normalize("苏-30")}（应 苏30）"
+                         + $"，空 → [{VehicleSearchIndex.Normalize(null)}]（应 []）");
+
             // ---- WT Live 搜索下拉的开合（只动纯状态，不发网络请求）----
             // 钉住语义：下拉只由**用户主动交互**展开（输入 / 点搜索框 / 按上下键），
             // 后台重算（如切页后载具表加载完，见 LoadVehicleOptionsAsync）只重算内容、**不得顺手展开**——

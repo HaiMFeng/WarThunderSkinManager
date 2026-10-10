@@ -154,8 +154,11 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>下拉里最多列出的载具条数（其余靠继续输入收敛；键盘上下也够用）。</summary>
     private const int MaxVehicleSuggestions = 6;
 
-    /// <summary><c>units.csv</c> 的全部可玩载具（后台加载，供搜索下拉用）。</summary>
-    private List<VehicleNameTable.VehicleOption> _vehicleOptions = new();
+    /// <summary>
+    /// 搜索下拉用的载具**模糊匹配索引**（<c>units.csv</c> 的全部可玩载具 + 归一化，后台加载；
+    /// 见 <see cref="VehicleSearchIndex"/>）。
+    /// </summary>
+    private VehicleSearchIndex _vehicleIndex = VehicleSearchIndex.Empty;
 
     /// <summary>载具表是否正在加载（防重入；页面每次显示都会调 <see cref="EnsureVehicleOptions"/>）。</summary>
     private bool _loadingVehicleOptions;
@@ -693,7 +696,7 @@ public partial class WtLiveViewModel : ObservableObject
 
                 if (!tagged)
                 {
-                    foreach (var vehicle in MatchVehicles(text).Take(MaxVehicleSuggestions))
+                    foreach (var vehicle in MatchVehicles(text))
                     {
                         Suggestions.Add(new WtLiveSearchSuggestion
                         {
@@ -727,13 +730,13 @@ public partial class WtLiveViewModel : ObservableObject
         else if (Suggestions.Count == 0) IsSuggestionsOpen = false;
     }
 
-    /// <summary>按**显示名或裸 id**匹配载具（不区分大小写；前缀命中排前面）。</summary>
+    /// <summary>
+    /// 按**显示名或裸 id**模糊匹配载具，取前 <see cref="MaxVehicleSuggestions"/> 条
+    /// （分隔符 / 大小写 / 国旗占位符都不影响：输入 <c>su30</c> 也能命中 <c>su_30</c> / <c>Su-30</c>；
+    /// 打法与排序见 <see cref="VehicleSearchIndex"/>）。
+    /// </summary>
     private IEnumerable<VehicleNameTable.VehicleOption> MatchVehicles(string text)
-        => _vehicleOptions
-            .Where(v => v.DisplayName.Contains(text, StringComparison.CurrentCultureIgnoreCase)
-                        || v.Id.Contains(text, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(v => v.DisplayName.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) ? 0 : 1)
-            .ThenBy(v => v.DisplayName, StringComparer.CurrentCultureIgnoreCase);
+        => _vehicleIndex.Search(text, MaxVehicleSuggestions);
 
     /// <summary>
     /// 页面每次显示都调：**后台**重载搜索用的载具表。
@@ -756,14 +759,15 @@ public partial class WtLiveViewModel : ObservableObject
     {
         try
         {
-            _vehicleOptions = await Task.Run(() => VehicleNameTable.AllVehicles());
+            // 建索引（归一化 3900 × 2 个字段）一并放后台线程
+            _vehicleIndex = await Task.Run(() => new VehicleSearchIndex(VehicleNameTable.AllVehicles()));
             // 只重算内容、**不展开**：这一步可能在"刚切到本页"时完成，
             // 顺手展开会平白弹出一个下拉框（await 续体回到 UI 线程）
             if (HasSearchText) UpdateSuggestions(open: false);
         }
         catch
         {
-            _vehicleOptions = new List<VehicleNameTable.VehicleOption>(); // 表不可用：只剩关键词通道
+            _vehicleIndex = VehicleSearchIndex.Empty; // 表不可用：只剩关键词通道
         }
         finally
         {
