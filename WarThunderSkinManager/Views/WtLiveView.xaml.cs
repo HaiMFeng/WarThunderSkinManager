@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -193,16 +194,39 @@ public partial class WtLiveView : UserControl
     }
 
     /// <summary>
-    /// 点搜索框的**空白处**（胶囊右边、输入行留白）= 点进输入框：聚焦并把下拉打开。
-    /// 外壳 Border 不是 TextBox，这些位置的点击不会落到输入框上；而下拉项在独立的 Popup 里，
-    /// 它们的点击不会冒泡到这里（Popup 有自己的可视树）。
+    /// 点搜索框的**空白处**（两侧槽位、胶囊之间、输入行留白）= 点进输入框：聚焦并把下拉打开。
+    /// <para>
+    /// **必须用 Preview（隧道）**，不能用冒泡的 <c>MouseLeftButtonDown</c>：外壳中段（左右各 28 的
+    /// 槽之外）被 <c>ChipScroll</c> 这个 ScrollViewer 盖着，鼠标按下的命中元素是**它**而不是外壳
+    /// Border——冒泡事件因此根本不以外壳为起点往上传，外壳的冒泡处理器只在两侧那两条槽上响应，
+    /// 表现就是"只有输入框那一小块能点进来"。隧道阶段从根往下走，先经过外壳，子元素截不住。
+    /// </para>
+    /// <para>
+    /// **落在按钮 / 滚动条上的按下不抢**：胶囊上的「×」、右侧「清空」、框内滚动条都有自己的交互
+    /// （抢过来会顺带把下拉弹出来）。输入框则正常走：这里先聚焦，它再按这次按下放光标。
+    /// 下拉项在独立的 Popup 里（有自己的可视树），它们的点击不会走到这里。
+    /// </para>
     /// </summary>
-    private void SearchShell_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void SearchShell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsPressOnOwnControl(e.OriginalSource as DependencyObject)) return;
         if (SearchBox.IsKeyboardFocusWithin) return;
 
         SearchBox.Focus();
         ViewModel?.FocusSearch();
+    }
+
+    /// <summary>
+    /// 这次按下的落点是不是外壳自己的交互控件（按钮 / 滚动条，往上找到外壳为止）。
+    /// </summary>
+    private bool IsPressOnOwnControl(DependencyObject? source)
+    {
+        for (var node = source; node != null && !ReferenceEquals(node, SearchShell); node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is ButtonBase or ScrollBar) return true;
+        }
+
+        return false;
     }
 
     /// <summary>点列表区域即收起搜索下拉（点击不可聚焦的卡片不会让搜索框失焦）。</summary>

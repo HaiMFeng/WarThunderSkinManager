@@ -102,9 +102,13 @@
                          ③ 描边只有外框画一次，输入框自身不带描边，不套框；
                          ④ **长到两行就封顶**（MaxHeight = 60 = 34 + 26 × 2）：再多也不撑高工具栏，
                             改成框内纵向滚动（见下面的 ChipScroll）→ 页头高度恒等于左列「标题 + 提示」 -->
+                    <!-- 点框内任意处 = 点进输入框：挂 **Preview（隧道）**而不是冒泡的 MouseLeftButtonDown——
+                         中段被 ChipScroll 盖着，命中的是那个 ScrollViewer，它会把冒泡的按下吃掉，
+                         于是外壳的冒泡处理器只在两侧 28 的槽上响应（表现："只有输入框那一小块能点进来"）。
+                         隧道从根往下走、先经过外壳，子元素截不住（见 code-behind 的处理器）。 -->
                     <Border x:Name="SearchShell" Width="400" MinHeight="34" MaxHeight="60" CornerRadius="6"
                             SnapsToDevicePixels="True" Background="{StaticResource BrushBackground}"
-                            BorderThickness="1" MouseLeftButtonDown="SearchShell_MouseLeftButtonDown">
+                            BorderThickness="1" PreviewMouseLeftButtonDown="SearchShell_PreviewMouseLeftButtonDown">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="BorderBrush" Value="{StaticResource BrushBorderStrong}"/>

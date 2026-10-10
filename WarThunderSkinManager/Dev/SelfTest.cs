@@ -700,6 +700,24 @@ internal static class SelfTest
                 var textOriginX = chipBox.GetRectFromCharacterIndex(0).X;
                 layoutVm.SearchText = "";
 
+                // 「点搜索框空白处 = 点进输入框」：外壳中段（两侧 28 的槽之外）**不是**外壳 Border 的命中面——
+                // ChipScroll（ScrollViewer）盖在那里，鼠标按下的命中元素是它。冒泡的 MouseLeftButtonDown
+                // 因此不以外壳为起点往上传 → 挂冒泡时就只有两侧那两条槽响应（表现："只有输入框那一小块
+                // 能点进来"）。所以这条交互挂在**外壳的 Preview（隧道）**上：隧道从根往下走，子元素截不住。
+                // 这里钉住它的前提——中段的命中元素是外壳的**后代**（不是外壳自己）。
+                var midPoint = new Point(chipShell.ActualWidth / 2, chipShell.ActualHeight / 2);
+                var midHit = System.Windows.Media.VisualTreeHelper.HitTest(chipShell, midPoint)?.VisualHit;
+                var midIsDescendant = false;
+                for (var n = midHit; n != null; n = System.Windows.Media.VisualTreeHelper.GetParent(n))
+                {
+                    if (ReferenceEquals(n, chipShell)) { midIsDescendant = true; break; }
+                }
+
+                var midIsShell = ReferenceEquals(midHit, chipShell);
+                log.AppendLine($"搜索框可点 : 中段命中元素 = {midHit?.GetType().Name ?? "null"}，是外壳的后代 = {midIsDescendant}"
+                             + $"（应 True）、就是外壳自己 = {midIsShell}（应 False：中段被 ChipScroll 盖着 →"
+                             + $" 冒泡的按下到不了外壳的处理器，点空白处聚焦输入框必须挂 Preview 隧道）");
+
                 // 输入框**自带描边**是"框里还有一个框"的根源：BaseTextBox 的模板聚焦时把内框硬改成
                 // 1.5px 蓝色（ControlTemplate.Triggers 里的 Setter，外面设 BorderThickness=0 也压不住），
                 // 所以这里用了只含内容宿主的模板。聚焦态在自检里测不了（没有窗口拿不到键盘焦点），
