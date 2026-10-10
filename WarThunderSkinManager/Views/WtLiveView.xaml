@@ -37,7 +37,7 @@
                                  Padding="28,0,28,0"
                                  Text="{Binding WtLive.SearchText, UpdateSourceTrigger=PropertyChanged}"
                                  PreviewKeyDown="SearchBox_PreviewKeyDown"
-                                 GotKeyboardFocus="SearchBox_GotKeyboardFocus"
+                                 PreviewMouseLeftButtonDown="SearchBox_PreviewMouseLeftButtonDown"
                                  LostKeyboardFocus="SearchBox_LostKeyboardFocus"/>
 
                         <!-- 前置放大镜（纯装饰，不挡点击） -->

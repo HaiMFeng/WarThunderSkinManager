@@ -89,8 +89,12 @@ public partial class WtLiveView : UserControl
 
     // ---------- 搜索框（下拉导航与开合在视图层，数据与筛选语义在 WtLiveViewModel）----------
 
-    /// <summary>点/焦点回到搜索框：重开下拉（文本非空时）。</summary>
-    private void SearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    /// <summary>
+    /// 用户**点**搜索框才展开下拉（文本非空时）。
+    /// 特意不用 GotKeyboardFocus：切页 / 布局等**程序性**焦点变化也会触发它，
+    /// 会把下拉平白弹出来（从涂装管理页跳过来时就被报过）。
+    /// </summary>
+    private void SearchBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         => ViewModel?.FocusSearch();
 
     /// <summary>

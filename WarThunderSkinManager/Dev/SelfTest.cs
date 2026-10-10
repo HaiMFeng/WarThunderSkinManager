@@ -265,6 +265,23 @@ internal static class SelfTest
                          + $"，排除场景道具 = {!vehicleIds.Contains("dummy_airfield")}（应 True）"
                          + $"，按显示名排序 = {vehicleOptions.Select(v => v.DisplayName).SequenceEqual(vehicleOptions.Select(v => v.DisplayName).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase))}（应 True）");
 
+            // ---- WT Live 搜索下拉的开合（只动纯状态，不发网络请求）----
+            // 钉住语义：下拉只由**用户主动交互**展开（输入 / 点搜索框 / 按上下键），
+            // 后台重算（如切页后载具表加载完，见 LoadVehicleOptionsAsync）只重算内容、**不得顺手展开**——
+            // 否则从涂装管理页跳过来时，搜索框里一有文字就会平白弹出一个下拉框。
+            var searchVm = new WtLiveViewModel();
+            var dropdownClosedAtStart = !searchVm.IsSuggestionsOpen;       // 初始收起
+            searchVm.SearchText = "f-15";                                   // 输入即展开
+            var openedOnTyping = searchVm.IsSuggestionsOpen;
+            searchVm.CloseSuggestions();                                    // Escape / 失焦 / 切页
+            var closedByClose = !searchVm.IsSuggestionsOpen;
+            searchVm.ClearSearchCommand.Execute(null);                      // 未筛选 → 只清文本，不发请求
+            var clearedAndClosed = !searchVm.IsSuggestionsOpen && searchVm.SearchText.Length == 0;
+            log.AppendLine($"搜索下拉   : 初始收起 = {dropdownClosedAtStart}（应 True）"
+                         + $"，输入即展开 = {openedOnTyping}（应 True）"
+                         + $"，可收起 = {closedByClose}（应 True）"
+                         + $"，清空后收起且文本为空 = {clearedAndClosed}（应 True）");
+
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
             // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;

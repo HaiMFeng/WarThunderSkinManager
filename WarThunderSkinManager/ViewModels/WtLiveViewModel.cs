@@ -214,8 +214,11 @@ public partial class WtLiveViewModel : ObservableObject
     // 下拉项按 WtLiveSearchKind 分流：载具 / 关键词 / 清除，三者共用同一套下拉、键盘与视图结构；
     // 要再加搜索维度（如按作者）时加一个 Kind + UpdateSuggestions / ApplySuggestion 各一支即可。
 
-    /// <summary>搜索框获得焦点时重开下拉（文本非空时）。</summary>
-    public void FocusSearch() => UpdateSuggestions();
+    /// <summary>
+    /// **用户主动**点进搜索框 / 按上下键时展开下拉（文本非空时）。
+    /// 注意：不能用「获得键盘焦点」驱动——切页等程序性焦点变化会把下拉平白弹出来。
+    /// </summary>
+    public void FocusSearch() => UpdateSuggestions(open: true);
 
     /// <summary>关闭下拉（Escape / 失焦 / 切页）。</summary>
     public void CloseSuggestions() => IsSuggestionsOpen = false;
@@ -329,7 +332,7 @@ public partial class WtLiveViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasSearchText));
         OnPropertyChanged(nameof(ActiveFilterText));
-        UpdateSuggestions();
+        UpdateSuggestions(open: true); // 输入即展开
     }
 
     partial void OnVehicleFilterChanged(string? value)
@@ -347,8 +350,13 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>
     /// 重算下拉项：**关键词项在最前**（默认高亮它 → 直接按 Enter 就是"搜索我打的字"），
     /// 随后是匹配的载具，最后（有筛选时）一个「显示全部涂装」。
+    /// <para>
+    /// <paramref name="open"/> = 是否**顺便展开**：只有用户正在输入 / 点进搜索框 / 按上下键时才展开；
+    /// 后台刷新（如切页后载具表加载完）只重算内容、**不展开**——否则搜索框里一有文字，
+    /// 一进这一页就会平白弹出一个下拉框（见 <see cref="LoadVehicleOptionsAsync"/>）。
+    /// </para>
     /// </summary>
-    private void UpdateSuggestions()
+    private void UpdateSuggestions(bool open)
     {
         Suggestions.Clear();
         HighlightedSuggestion = null;
@@ -391,7 +399,9 @@ public partial class WtLiveViewModel : ObservableObject
         HighlightedSuggestion = Suggestions.FirstOrDefault();
         if (HighlightedSuggestion != null) HighlightedSuggestion.IsHighlighted = true;
 
-        IsSuggestionsOpen = Suggestions.Count > 0;
+        // 展开只在用户主动交互时；列表空了一定收起
+        if (open) IsSuggestionsOpen = Suggestions.Count > 0;
+        else if (Suggestions.Count == 0) IsSuggestionsOpen = false;
     }
 
     /// <summary>按**显示名或裸 id**匹配载具（不区分大小写；前缀命中排前面）。</summary>
@@ -424,7 +434,9 @@ public partial class WtLiveViewModel : ObservableObject
         try
         {
             _vehicleOptions = await Task.Run(() => VehicleNameTable.AllVehicles());
-            if (HasSearchText) UpdateSuggestions(); // await 续体回到 UI 线程
+            // 只重算内容、**不展开**：这一步可能在"刚切到本页"时完成，
+            // 顺手展开会平白弹出一个下拉框（await 续体回到 UI 线程）
+            if (HasSearchText) UpdateSuggestions(open: false);
         }
         catch
         {
