@@ -102,7 +102,7 @@
                          ③ 描边只有外框画一次，输入框自身不带描边，不套框；
                          ④ **长到两行就封顶**（MaxHeight = 60 = 34 + 26 × 2）：再多也不撑高工具栏，
                             改成框内纵向滚动（见下面的 ChipScroll）→ 页头高度恒等于左列「标题 + 提示」 -->
-                    <Border x:Name="SearchShell" Width="300" MinHeight="34" MaxHeight="60" CornerRadius="6"
+                    <Border x:Name="SearchShell" Width="400" MinHeight="34" MaxHeight="60" CornerRadius="6"
                             SnapsToDevicePixels="True" Background="{StaticResource BrushBackground}"
                             BorderThickness="1" MouseLeftButtonDown="SearchShell_MouseLeftButtonDown">
                         <Border.Style>
