@@ -595,10 +595,12 @@ internal static class SelfTest
                 log.AppendLine($"输入框纵向内边距: 多行框 Padding.Top=5 → 文字 Y = {multiTextY:0.##}"
                              + $"（内容宿主体 Y = {multiHostY:0.##}，应再 +5 ≈ {multiHostY + 5:0.##}）");
 
-                // WT Live 搜索框（胶囊 + 输入）：三条样式不变量，钉住"搜索框和标签是一体的"。
+                // WT Live 搜索框（胶囊 + 输入）：样式不变量，钉住"搜索框和标签是一体的"。
+                // 外壳 Border 是**祖先容器**（悬停 / 聚焦是否覆盖整棵子树，看它的 IsMouseOver /
+                // IsKeyboardFocusWithin）；胶囊与末尾输入框放进**同一个 WrapPanel**
+                // （CompositeCollection = 胶囊集合 + 末尾那个 TextBox）→ 输入框永远跟在最后一个胶囊后面。
                 // ① 空态高 34 = 排序下拉 / 刷新按钮（同一行不能高低不一）；
-                // ② 胶囊左边距 == 输入框左内边距 → 胶囊与输入文字**左对齐**（曾经是 6 vs 28：胶囊贴在
-                //    框的最左边、文字却缩在 28，看着像"框里塞了一块别的东西"）；
+                // ② 输入框是那个流式容器的**最后一项**（与胶囊同处一层，而不是被挤到另一整行）；
                 // ③ 胶囊多了必须**换行**（外框跟着长高），不能横向撑出框外。
                 var layoutVm = new WtLiveViewModel();
                 var layoutView = new WarThunderSkinManager.Views.WtLiveView
@@ -617,7 +619,11 @@ internal static class SelfTest
                 var chipBox = (TextBox)layoutView.FindName("SearchBox");
                 var shellAtEmpty = chipShell.ActualHeight;
 
-                // 输入文字的真实起点（Padding 不是同一个量：内容宿主还有固有内缩），胶囊必须与它左对齐
+                // ② 的判据：那个 WrapPanel 的**最后一项**必须是输入框本身
+                var tailIsInputAtEmpty = chipList.Items.Count > 0
+                    && ReferenceEquals(chipList.Items[chipList.Items.Count - 1], chipBox);
+
+                // 输入文字的真实起点（Padding 不是同一个量：内容宿主还有固有内缩）
                 layoutVm.SearchText = "M";
                 layoutHost.UpdateLayout();
                 var textOriginX = chipBox.GetRectFromCharacterIndex(0).X;
@@ -639,10 +645,18 @@ internal static class SelfTest
                 layoutVm.AppendTagChip("cm11");
                 layoutHost.UpdateLayout();
 
+                // 有胶囊后：输入框必须仍在**同一层**（那个 WrapPanel 的最后一项），
+                // 且横向仍落在框内（跟随最后一个胶囊；换行时随行下沉，而不是横着撑出框外）
+                var tailIsInputWithChips = chipList.Items.Count > 0
+                    && ReferenceEquals(chipList.Items[chipList.Items.Count - 1], chipBox);
+                var boxLeft = chipBox.TransformToAncestor(chipShell)
+                    .Transform(new System.Windows.Point(0, 0)).X;
+
                 log.AppendLine($"搜索框布局 : 空态高 = {shellAtEmpty:0.##}（应 34 = 排序下拉 / 刷新按钮）"
-                             + $"，胶囊左边距 = {chipList.Margin.Left:0.##}，输入文字起点 = {textOriginX:0.##}（两者应相等 = 左对齐）"
+                             + $"，输入框是流式容器最后一项 = {tailIsInputAtEmpty && tailIsInputWithChips}（应 True：胶囊与输入同处一层）"
                              + $"，有胶囊后撑高到 = {chipShell.ActualHeight:0.##}（应 > 34，框跟着长高）"
-                             + $"，四个长标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）");
+                             + $"，四个长标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）"
+                             + $"，输入文字起点 = {textOriginX:0.##}、输入框左边缘 = {boxLeft:0.##}（应仍在框内、跟随胶囊）");
                 log.AppendLine($"搜索框描边 : 输入框模板会自己加粗描边 = {innerFrame}（应 False：描边只由外壳画，"
                              + $"双层就成了「框里还有一个框」）"
                              + $"，外壳描边 = {chipShell.BorderThickness.Left:0.##}（应 1）");
