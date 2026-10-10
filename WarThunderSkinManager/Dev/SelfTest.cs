@@ -594,6 +594,43 @@ internal static class SelfTest
                              + $"居中则左右对称留白即可（当前三处搜索框提示均为居中）");
                 log.AppendLine($"输入框纵向内边距: 多行框 Padding.Top=5 → 文字 Y = {multiTextY:0.##}"
                              + $"（内容宿主体 Y = {multiHostY:0.##}，应再 +5 ≈ {multiHostY + 5:0.##}）");
+
+                // WT Live 搜索框（胶囊 + 输入）：三条样式不变量，钉住"搜索框和标签是一体的"。
+                // ① 空态高 34 = 排序下拉 / 刷新按钮（同一行不能高低不一）；
+                // ② 胶囊左边距 == 输入框左内边距 → 胶囊与输入文字**左对齐**（曾经是 6 vs 28：胶囊贴在
+                //    框的最左边、文字却缩在 28，看着像"框里塞了一块别的东西"）；
+                // ③ 胶囊多了必须**换行**（外框跟着长高），不能横向撑出框外。
+                var layoutVm = new WtLiveViewModel();
+                var layoutView = new WarThunderSkinManager.Views.WtLiveView
+                {
+                    DataContext = new { WtLive = layoutVm },
+                    Width = 1000
+                };
+                var layoutHost = new Grid { Width = 1000, Height = 200 };
+                layoutHost.Children.Add(layoutView);
+                layoutHost.Measure(new Size(1000, 200));
+                layoutHost.Arrange(new Rect(0, 0, 1000, 200));
+                layoutHost.UpdateLayout();
+
+                var chipShell = (Border)layoutView.FindName("SearchShell");
+                var chipList = (ItemsControl)layoutView.FindName("ChipList");
+                var chipBox = (TextBox)layoutView.FindName("SearchBox");
+                var shellAtEmpty = chipShell.ActualHeight;
+
+                layoutVm.AppendTagChip("shorekeeper_wuthering_waves");
+                layoutHost.UpdateLayout();
+                var listOfOneRow = chipList.ActualHeight;
+
+                layoutVm.AppendTagChip("wuthering_waves");
+                layoutVm.AppendTagChip("girls_frontline");
+                layoutVm.AppendTagChip("cm11");
+                layoutHost.UpdateLayout();
+
+                log.AppendLine($"搜索框布局 : 空态高 = {shellAtEmpty:0.##}（应 34 = 排序下拉 / 刷新按钮）"
+                             + $"，胶囊左边距 = {chipList.Margin.Left:0.##}（应 = 输入框左内边距 {chipBox.Padding.Left:0.##}，与输入文字左对齐）"
+                             + $"，有胶囊后撑高到 = {chipShell.ActualHeight:0.##}（应 > 34，框跟着长高）"
+                             + $"，四个长标签换行 = {chipList.ActualHeight > listOfOneRow}（应 True，横向不得溢出）");
+
             }
             catch (Exception ex)
             {

@@ -61,7 +61,8 @@
 
                         <!-- 外壳：只画底与描边（跨两行铺满，不参与布局），外观与 BaseTextBox 一致 ——
                              胶囊多了框要跟着长高，所以这里不能再拿 TextBox 当外壳；悬停 / 聚焦反馈也搬到这里 -->
-                        <Border Grid.RowSpan="2" CornerRadius="6" SnapsToDevicePixels="True"
+                        <Border x:Name="SearchShell" Grid.RowSpan="2" MinHeight="34" CornerRadius="6"
+                                SnapsToDevicePixels="True"
                                 Background="{StaticResource BrushBackground}" BorderThickness="1">
                             <Border.Style>
                                 <Style TargetType="Border">
@@ -80,8 +81,11 @@
                             </Border.Style>
                         </Border>
 
-                        <!-- 胶囊（载具 / 标签）：多了自动换行、框跟着长高。一个也没有时整行收起 -->
-                        <ItemsControl Grid.Row="0" Margin="6,5,6,0" ItemsSource="{Binding WtLive.Chips}">
+                        <!-- 胶囊（载具 / 标签）：多了自动换行、框跟着长高。一个也没有时整行收起。
+                             左边距 28 = 输入框的左内边距：胶囊与下面的文字**左对齐**，
+                             放大镜独占左边那条 28 的槽（见下面那个 TextBlock），整个框才像"一个框" -->
+                        <ItemsControl x:Name="ChipList" Grid.Row="0" Margin="28,6,8,0"
+                                      ItemsSource="{Binding WtLive.Chips}">
                             <ItemsControl.Style>
                                 <Style TargetType="ItemsControl">
                                     <Setter Property="Visibility" Value="Visible"/>
@@ -99,18 +103,22 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{StaticResource BrushSurface}" CornerRadius="10"
-                                            Padding="8,1,4,2" Margin="0,0,4,4" SnapsToDevicePixels="True">
+                                    <Border Background="{StaticResource BrushSurface2}" CornerRadius="10"
+                                            Padding="8,1,4,2" Margin="0,0,4,3" SnapsToDevicePixels="True">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource IconFont}"
                                                        FontSize="11" VerticalAlignment="Center"
-                                                       Foreground="{StaticResource BrushTextSecondary}"/>
+                                                       Foreground="{StaticResource BrushPrimary}"/>
                                             <TextBlock Text="{Binding Label}" FontSize="12" Margin="5,0,0,0"
                                                        VerticalAlignment="Center"/>
                                             <!-- 删掉这一个胶囊（退格删最后一个是同一条路，见 code-behind）。
                                                  Focusable=False：点它别把键盘焦点从输入框抢走——
-                                                 抢走就会触发失焦收起下拉（与下拉项同一处理） -->
+                                                 抢走就会触发失焦收起下拉（与下拉项同一处理）。
+                                                 底色给透明、字色给 muted：悬停时 IconButton 把字色提亮，
+                                                 若用默认底色则与胶囊底色同为 Surface2，看不出悬停 -->
                                             <Button Content="&#xF00D;" Margin="2,0,0,0" Focusable="False"
+                                                    Background="Transparent"
+                                                    Foreground="{StaticResource BrushTextMuted}"
                                                     ToolTip="{loc:Loc common.close}"
                                                     CommandParameter="{Binding}"
                                                     Command="{Binding DataContext.WtLive.RemoveChipCommand,
@@ -139,9 +147,12 @@
                                  PreviewMouseLeftButtonDown="SearchBox_PreviewMouseLeftButtonDown"
                                  LostKeyboardFocus="SearchBox_LostKeyboardFocus"/>
 
-                        <!-- 前置放大镜（纯装饰，不挡点击） -->
-                        <TextBlock Grid.Row="1" Text="&#xF002;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                                   Margin="9,0,0,0" VerticalAlignment="Center"
+                        <!-- 前置放大镜（纯装饰，不挡点击）：**跨两行、顶对齐**——
+                             没有胶囊时它落在唯一的输入行里（9 + 图标半高 ≈ 居中，与原样式一致）；
+                             有胶囊时它落在第一行胶囊左边，成为整个框的前导图标（而不是"输入行的图标"） -->
+                        <TextBlock Grid.Row="0" Grid.RowSpan="2" Text="&#xF002;"
+                                   FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   Margin="9,9,0,0" VerticalAlignment="Top"
                                    Foreground="{StaticResource BrushTextMuted}" IsHitTestVisible="False"/>
 
                         <!-- 占位文案（框里空着才显示）：**水平居中**。
