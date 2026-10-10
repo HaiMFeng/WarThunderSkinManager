@@ -357,6 +357,10 @@ public partial class MainViewModel : ObservableObject
         Vehicles.PropertyChanged += OnChildChanged;
         PartReuse.PropertyChanged += OnChildChanged;
 
+        // 从详情浮窗点「下载」：下载流程走完（确认窗关掉、下载真的开始了）就**退出详情** ——
+        // 用户此刻要看的是下载进度，不是刚才那个详情；卡片上的下载按钮不经详情，这一手对那条路径无影响
+        Skins.WtLiveDownloadStarted += () => WtLive.Detail.CloseCommand.Execute(null);
+
         // 目录就绪门槛（新用户引导）：任何库操作在目录未配置时被拦截 → 切到设置页并提示
         DirectoryGate.Blocked += OnDirectoriesBlocked;
 

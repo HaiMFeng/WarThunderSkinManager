@@ -79,6 +79,14 @@ public partial class SkinsViewModel : ObservableObject
 
     // ---------- WT Live 下载（§3.15）----------
 
+    /// <summary>
+    /// 一次 WT Live 下载**真正开始了**（下载项已进列表、任务已起）。
+    /// 供宿主（<see cref="MainViewModel"/>）收尾界面：从详情浮窗点「下载」时，下载流程走完就该
+    /// **退出详情**，而不是把人丢回详情界面（见 <c>MainViewModel</c> 的订阅）。
+    /// 用户取消确认窗 / 在「已下载」提醒里选"不再下载"都不触发——那两种情况什么都没开始。
+    /// </summary>
+    public event Action? WtLiveDownloadStarted;
+
     /// <summary>WT Live 下载列表（「下载列表」浮窗展示状态）。</summary>
     public ObservableCollection<WtLiveDownloadItem> WtLiveDownloads { get; } = new();
 
@@ -227,6 +235,8 @@ public partial class SkinsViewModel : ObservableObject
         // 主窗口顶部通用提示：明确当前开始下载哪个文件
         ShowStatus(Loc.Format("wtlive.started", post.File.Name));
         RunWtLiveDownload(item);
+
+        WtLiveDownloadStarted?.Invoke(); // 宿主据此收起「从详情浮窗进来的那次」详情（若有）
     }
 
     /// <summary>
