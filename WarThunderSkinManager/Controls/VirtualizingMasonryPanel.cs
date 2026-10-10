@@ -27,8 +27,11 @@ namespace WarThunderSkinManager.Controls;
 /// </para>
 /// <para>
 /// **高度从哪来**（像素滚动能用在变高瀑布流上的前提，见 Dan Crevier《Implementing a VirtualizingPanel》
-/// 里"变高项要能算出来"那条）：卡片高 = 图片高（<c>列宽 / 宽高比</c>，公式与绑定共用
-/// <see cref="AspectRatioHeightConverter.ImageHeight"/>）+ 文字块高。卡片模板里标题与副标题都是
+/// 里"变高项要能算出来"那条）：卡片高 = 图片高（<c>(列宽 − 卡片内边距) / 宽高比</c>，
+/// 公式见 <see cref="AspectRatioHeightConverter.ImageHeight"/>）+ 文字块高。图片高这边**由本面板算准了
+/// 推给数据项**（<see cref="PublishImageHeight"/> → 卡片的 <c>ImageHeight</c>），卡片模板只平绑定它 ——
+/// 不让模板自己去问列宽（那条路要靠 RelativeSource 找祖先，回收复用容器时会踩空）。
+/// 卡片模板里标题与副标题都是
 /// **单行 + 省略号**，所以文字块是**常量**：从 <see cref="ChromeGuess"/> 起步、由**第一张真正测过的卡片**
 /// 标定（<see cref="MeasuredChrome"/>），之后未实体化项也用同一个值算 —— 滚动范围从一开始就是准的。
 /// 于是"准"与"快"互为前提：估算准，未实体化项不必去实测；未实体化项不去实测，成本就与总数无关。
@@ -207,6 +210,16 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
 
     /// <summary>宿主给出的"图片高度估算"：<c>(数据项, 图片可用宽) → 图片高</c>。未设置时按默认比例兜底。</summary>
     public Func<object, double, double>? ItemImageHeight { get; set; }
+
+    /// <summary>
+    /// 把这一项要占的**图高**推回给数据项（宿主据此写进卡片自己的属性，模板再平绑定它）。
+    /// <para>
+    /// 卡片里那个缩略图框的高度只能有一个来源。若让模板自己去问面板要列宽（<c>RelativeSource</c> 找祖先），
+    /// 容器**回收复用**时会踩空 → 框塌成 0 高（没有转圈、没有占位图标，只剩文字）。面板在实体化每一项时
+    /// 顺手把算好的值推下来，模板就只剩纯数据绑定。
+    /// </para>
+    /// </summary>
+    public Action<object, double>? PublishImageHeight { get; set; }
 
     /// <summary>标定出的文字块高度（第一张实测卡片 = 实测高 − 估算图高）；null = 还没标定。</summary>
     public double? MeasuredChrome { get; private set; }
@@ -513,6 +526,11 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
 
                     generator.PrepareItemContainer(child);
                 }
+
+                // 把图高推给数据项（卡片里那个缩略图框的高度只绑它）：**必须在测量之前**，
+                // 模板要拿它量高度。放在 IsMeasureValid 判断之前 —— 容器没脏、不用重测，
+                // 也得保证项上的值是对的（换列宽、刚回收回来都算）
+                if (ItemAt(i) is { } item) PublishImageHeight?.Invoke(item, ImageHeightAt(i, itemWidth));
 
                 // **只在容器确实要重测时才量它**（脏 = 刚插进来，或模板 / 绑定刚落地要重算）。
                 // 一轮把一屏几十张全量一遍是这里最大的性能黑洞：卡片子树有绑定 / 动画 / 超链接，

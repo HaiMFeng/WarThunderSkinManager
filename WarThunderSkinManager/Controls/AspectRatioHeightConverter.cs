@@ -33,19 +33,26 @@ public sealed class AspectRatioHeightConverter : IMultiValueConverter
 
     /// <summary>
     /// 卡片横向**为图片让出的宽度**（左右内边距 12×2 + 卡片 1px 描边 ×2 = 26）：
-    /// 只按**列宽**算高度会踩坑——占位框比图片实际可用宽更宽 → 框相对图片"偏高" →
+    /// 只按**列宽**算高度会踩坑——框比图片实际可用宽更宽 → 框相对图片"偏高" →
     /// <c>UniformToFill</c> 为了铺满高度把图片左右各裁掉 13px（约 12%，肉眼可见的裁边）。
     /// <para>
-    /// 这只是**首帧兜底**：卡片模板会把缩略图容器量到的实际宽度一并传进来（见 <c>WtLiveView</c>），
-    /// 之后以那个值为准，所以改模板的内边距 / 描边不会重新引入裁边。
+    /// 现在**卡片模板的缩略图框高度 = 面板按 <c>列宽 − 这个值</c> 与宽高比算好后推下来的</b>（见
+    /// <see cref="VirtualizingMasonryPanel.PublishImageHeight"/> 与 <c>WtLiveCardItem.ImageHeight</c>）：
+    /// 框与图片同比例，图片到达时不会跳高度，也不再有"模板自己去问列宽"那条链路。
+    /// 改模板的内边距 / 描边时，这个值要跟着改（<see cref="VirtualizingMasonryPanel.ImageChromeWidth"/> 默认取它）。
     /// </para>
     /// </summary>
     public double ChromeWidth { get; set; } = 26;
 
     /// <param name="values">
     /// [0] 列宽（<see cref="MasonryPanel.ColumnWidth"/>）；[1] 图片宽高比；
-    /// [2]（可选）图片实际可用宽度（缩略图容器 <c>ActualWidth</c>；首帧为 0）
+    /// [2]（可选）图片实际可用宽度（缩略图容器 <c>ActualWidth</c>）
     /// </param>
+    /// <remarks>
+    /// 这条 <c>IMultiValueConverter</c> 路径**已经不在页面里用了**（模板不再自己算框高）。
+    /// 留着是因为自检仍在用它钉住"按 <c>列宽 − 内边距</c> 算出来的高度 == 图片实际宽度该有的高度"
+    /// 这层恒等关系 —— 那正是面板推下去的那个数的依据。
+    /// </remarks>
     public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Length < 2) return 0d;

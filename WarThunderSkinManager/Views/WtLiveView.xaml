@@ -6,10 +6,9 @@
              xmlns:vm="clr-namespace:WarThunderSkinManager.ViewModels">
     <!-- WT Live 涂装浏览：瀑布流（等宽卡片 / 高度随图片比例 / 最短列优先，见 Controls/MasonryPanel.cs）
          + 滚动到底自动加载下一页。接口依据见 docs/WTLive_涂装_API.md。 -->
-    <UserControl.Resources>
-        <!-- 列宽 + 宽高比 → 缩略图占位高度：图片没下载完也先按比例占好位置 -->
-        <ctrl:AspectRatioHeightConverter x:Key="AspectRatioHeight"/>
-    </UserControl.Resources>
+    <!-- 缩略图框的高度不再由模板自己算（那要靠 RelativeSource 找祖先面板拿列宽，容器回收复用时
+         可能踩空 → 框塌成 0 高）。改由面板算好推给数据项（WtLiveCardItem.ImageHeight），模板只平绑定它。
+         公式仍在 Controls/AspectRatioHeightConverter.ImageHeight：面板与卡片内边距共用同一个数 -->
 
     <Grid>
         <Grid.RowDefinitions>
@@ -465,8 +464,13 @@
                                         </Style>
                                     </Border.Style>
                                     <StackPanel>
-                                        <!-- 缩略图：圆角裁剪在 code-behind 做（ClipToBounds 不认 CornerRadius） -->
-                                        <Border x:Name="Thumb" Background="{StaticResource BrushSurface}" CornerRadius="10"
+                                        <!-- 缩略图框：高度 = **面板算好推下来的** ImageHeight（图片可用宽 ÷ 宽高比），
+                                             图片未到也先按比例占好位。这里**不再自己去问面板要列宽**：
+                                             那要靠 RelativeSource 找祖先面板，容器回收复用时可能踩空 ——
+                                             一踩空整块框就塌成 0 高（没有转圈、没有占位图标，只剩文字）。
+                                             圆角裁剪在 code-behind 做（ClipToBounds 不认 CornerRadius） -->
+                                        <Border x:Name="Thumb" Height="{Binding ImageHeight}"
+                                                Background="{StaticResource BrushSurface}" CornerRadius="10"
                                                 ClipToBounds="True" SizeChanged="Thumbnail_SizeChanged">
                                             <Grid>
                                                 <!-- 加载中：转圈 +（**转够 5s** 才浮现的）「重新加载」。
@@ -529,6 +533,8 @@
                                                     </TextBlock.Style>
                                                 </TextBlock>
 
+                                                <!-- 图片**铺满框**：框的高度已经按图片比例定好（框宽 ÷ 宽高比 == 图片高），
+                                                     UniformToFill 不会裁边；高度不再由图片自己算（那样框会跟着它一起塌） -->
                                                 <Image Source="{Binding PreviewImage}" Stretch="UniformToFill"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                                        RenderTransformOrigin="0.5,0.5">
@@ -582,19 +588,6 @@
                                                             </Style.Triggers>
                                                         </Style>
                                                     </Image.Style>
-                                                    <!-- 占位高度按**图片实际可用宽度**算：列宽比它宽（差卡片内边距 + 描边），
-                                                         用列宽会把图片左右各裁掉十几像素（见 AspectRatioHeightConverter） -->
-                                                    <Image.Height>
-                                                        <MultiBinding Converter="{StaticResource AspectRatioHeight}">
-                                                            <!-- 找**接口**而不是具体面板：本页用虚拟化的
-                                                                 VirtualizingMasonryPanel，自检里也可能是 MasonryPanel，
-                                                                 两者都实现 IMasonryPanel，绑接口才两边都认得到列宽 -->
-                                                            <Binding Path="ColumnWidth"
-                                                                     RelativeSource="{RelativeSource AncestorType={x:Type ctrl:IMasonryPanel}}"/>
-                                                            <Binding Path="Ratio"/>
-                                                            <Binding Path="ActualWidth" ElementName="Thumb"/>
-                                                        </MultiBinding>
-                                                    </Image.Height>
                                                 </Image>
                                             </Grid>
                                         </Border>

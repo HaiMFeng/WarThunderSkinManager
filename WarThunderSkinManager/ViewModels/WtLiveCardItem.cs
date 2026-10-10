@@ -129,6 +129,21 @@ public partial class WtLiveCardItem : ObservableObject
     [ObservableProperty] private ImageSource? _previewImage;
 
     /// <summary>
+    /// 缩略图框（卡片顶部那一块）的高度，像素。**由面板算好后推下来**：
+    /// <c>(列宽 − 卡片内边距) ÷ <see cref="Ratio"/></c>，上下夹在
+    /// <see cref="AspectRatioHeightConverter.MinRatio"/>/<see cref="AspectRatioHeightConverter.MaxRatio"/> 之间
+    /// （公式就是 <see cref="AspectRatioHeightConverter.ImageHeight"/>，面板与卡片共用同一个数）。
+    /// <para>
+    /// **为什么由面板推、而不是模板自己算**：模板要算就得知道"列宽"，而列宽只有面板知道 —— 只能靠
+    /// <c>RelativeSource</c> 往上找祖先面板（当初还叠了个 <c>ElementName</c> 去找 Thumb 的实际宽度）。
+    /// 那条路在**容器回收复用**时会踩空（容器在回收队列里没有祖先 / 重新挂回时解析时机不定），
+    /// 一踩空整块框就塌成 0 高：没有转圈、没有占位图标，卡片刻只剩文字。面板是列宽的唯一知情者，
+    /// 让它算准了推给数据项，模板只做纯数据绑定 —— 这条链上就没有"可能解析不到"的环节了。
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private double _imageHeight;
+
+    /// <summary>
     /// 缩略图状态：加载中显示加载圈、失败 / 无预览图显示占位图标。
     /// 构造即定档（有 URL = 加载中），由 <see cref="WtLiveViewModel"/> 在下载 / 解码结束后改写。
     /// </summary>

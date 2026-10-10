@@ -889,18 +889,74 @@ internal static class SelfTest
                     var lastWindow = (KeepFirst: -1, KeepLast: -2, PreloadFirst: -1, PreloadLast: -2);
                     if (probePanel != null) probePanel.WindowChanged += (_, window) => lastWindow = window;
 
+                    // 探针卡片一律摆成**真有图**的状态（真实页面里绝大多数卡片就是这个态）：
+                    // 这时"加载圈"和"缺图占位图标"都是收起的，**缩略图框的高度只由 ImageHeight 决定** ——
+                    // 框一旦拿不到高度就会塌成 0（缺图态下占位图标会把框撑开，正好把这个问题掩盖掉）
+                    var probeBitmap = new System.Windows.Media.Imaging.WriteableBitmap(
+                        400, 200, 96, 96, System.Windows.Media.PixelFormats.Bgr32, null);
+                    probeBitmap.Freeze();
+
+                    void AddProbeCards(int from, int to)
+                    {
+                        for (var i = from; i < to; i++)
+                        {
+                            var card = Card(i);
+                            card.PreviewImage = probeBitmap;
+                            card.ThumbnailState = WtLiveThumbnailState.Ready;
+                            probeVm.Items.Add(card);
+                        }
+                    }
+
                     // 两组的**条数差**就是自变量，别的必须一样：都要够滚满 40 步（40 × 200 = 8000 px 内容）。
                     // 小样本若不够长，后程会被钳在底部、不再换卡片 —— 那一截"少做的活"会把差值凭空抬高，
                     // 断言就变成量探针而非量面板（400 张 ≈ 15.8k px，够滚满全程）
-                    for (var i = 0; i < 400; i++) probeVm.Items.Add(Card(i));
+                    AddProbeCards(0, 400);
                     probeWin.UpdateLayout();
                     Pump(probeWin.Dispatcher);
                     var smallStep = ScrollSteps(probeScroll, probeWin, 40);
 
-                    for (var i = 400; i < 1320; i++) probeVm.Items.Add(Card(i));
+                    AddProbeCards(400, 1320);
                     probeWin.UpdateLayout();
                     Pump(probeWin.Dispatcher);
                     var largeStep = ScrollSteps(probeScroll, probeWin, 40);
+
+                    // ④ 用户报的复现路径：**把一段滚出窗口、再滚回来**（上面 40 步已经把它滚远了，
+                    //    这里跳回顶部 → 窗口外那批容器全部回收、顶部这批复用它们重新挂回）。
+                    //    判据直接量**用户看到的那样东西**：卡片里那个缩略图框（x:Name="Thumb"）有多高。
+                    //    它现在是面板推下来的 ImageHeight（图片可用宽 ÷ 宽高比）—— 只要这个数没到卡片上，
+                    //    或者框自己不认它，框就塌成 0 高：没有框、没有转圈、没有占位图标，只剩文字
+                    probeScroll.ScrollToVerticalOffset(0);
+                    probeWin.UpdateLayout();
+                    Pump(probeWin.Dispatcher);
+                    probeWin.UpdateLayout();
+
+                    // 期望图高：框宽（列宽 − 卡片内边距）÷ 宽高比 —— 就是面板推给卡片 ImageHeight 的那个数
+                    var expectedImageHeight = WarThunderSkinManager.Controls.AspectRatioHeightConverter.ImageHeight(
+                        (probePanel?.ColumnWidth ?? 0)
+                        - WarThunderSkinManager.Controls.AspectRatioHeightConverter.DefaultChromeWidth, 1.5);
+
+                    var cardsMissingImageBox = 0;   // 框塌了（就是用户报的那个现象）
+                    var cardsWrongImageBox = 0;     // 框在，但高度不是按图片比例来的
+                    var cardsMissingImage = 0;      // 框在、高度也对，图没铺进去
+                    var thumbsNotFound = 0;         // 自检自己没找到那个框（查找方式失效，别误报成产品问题）
+                    if (probePanel != null)
+                    {
+                        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(probePanel); i++)
+                        {
+                            var child = System.Windows.Media.VisualTreeHelper.GetChild(probePanel, i);
+
+                            // 卡片模板的根是那个 Border（容器的可视子项），模板里的 x:Name="Thumb" 在它的
+                            // 名字作用域里 —— 所以要从模板根往上找名字，不能拿容器 FindName
+                            var cardRoot = FindDescendant<Border>(child);
+                            var thumb = cardRoot?.FindName("Thumb") as FrameworkElement;
+                            var image = FindDescendant<Image>(child);
+
+                            if (thumb == null) thumbsNotFound++;
+                            else if (thumb.ActualHeight <= 1 || thumb.ActualWidth <= 1) cardsMissingImageBox++;
+                            else if (Math.Abs(thumb.ActualHeight - expectedImageHeight) > 1) cardsWrongImageBox++;
+                            else if (image == null || image.ActualHeight <= 1) cardsMissingImage++;
+                        }
+                    }
 
                     var realized = probePanel?.RealizedItemCount ?? -1;
                     var realizedRange = probePanel?.RealizedRange ?? (-1, -1);
@@ -929,6 +985,10 @@ internal static class SelfTest
                                  + $"Preload [{lastWindow.PreloadFirst},{lastWindow.PreloadLast}]"
                                  + $"，盖住实体化范围 = {windowCoversRealized}（应 True：可见的卡片不该被当窗口外释放）"
                                  + $"，子项按项序 = {childrenOrdered}（应 True）");
+                    log.AppendLine($"回收回来的图框: 实体化 {realized} 张里 —— 框塌了 = {cardsMissingImageBox}、"
+                                 + $"框高不对 = {cardsWrongImageBox}、图没铺进去 = {cardsMissingImage}、"
+                                 + $"没找到框 = {thumbsNotFound}"
+                                 + $"（前三项都应 0；期望图高 {expectedImageHeight:0.#} px = 列宽 − 内边距 ÷ 宽高比）");
 
                     if (probePanel == null)
                         log.AppendLine("自检异常：滚动探针找不到虚拟化面板（浏览页没换成 VirtualizingMasonryPanel？）");
@@ -944,6 +1004,10 @@ internal static class SelfTest
                                      + "→ 看得见的卡片会被当窗口外释放，图没了再补");
                     else if (!childrenOrdered)
                         log.AppendLine("自检异常：面板子项没有按项下标升序（渲染顺序 = 子项顺序，错序会让相邻卡片互相压住）");
+                    else if (cardsMissingImageBox > 0 || cardsWrongImageBox > 0 || cardsMissingImage > 0)
+                        log.AppendLine($"自检异常：回收回来的卡片缩略图框不对（框塌了 {cardsMissingImageBox} 张、"
+                                     + $"框高不对 {cardsWrongImageBox} 张、图没铺进去 {cardsMissingImage} 张）"
+                                     + " → 卡片会塌成只剩文字");
                     else if (largeStep.Layout > smallStep.Layout + 4)
                         log.AppendLine($"自检异常：滚动每一步的布局成本仍随卡片总数增长"
                                      + $"（400 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
@@ -2548,6 +2612,9 @@ internal static class SelfTest
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanReloadThumbnail)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.CanSearchAuthor)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.MetaSuffix)),
+                // 缩略图框高度：卡片模板平绑定它，面板在实体化每一项时推下来（见 VirtualizingMasonryPanel
+                // 的 PublishImageHeight）—— 模板不再自己找祖先面板要列宽
+                (typeof(WtLiveCardItem), nameof(WtLiveCardItem.ImageHeight)),
                 (typeof(WtLiveCardItem), nameof(WtLiveCardItem.AuthorAvatarUrl)),
                 (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.CanReload)),
                 (typeof(WtLiveDetailImage), nameof(WtLiveDetailImage.IsLoading)),

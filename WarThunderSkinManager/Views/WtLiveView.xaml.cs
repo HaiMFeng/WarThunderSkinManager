@@ -118,11 +118,19 @@ public partial class WtLiveView : UserControl
             if (_panel == null) return;
 
             // 虚拟化面板要给**未实体化**的卡片算高度：图片高 = 列宽 ÷ 宽高比（数据里的 Ratio），
-            // 公式与卡片模板的绑定共用，两处必须是同一个数
+            // 公式与卡片模板共用，两处必须是同一个数
             if (_panel is VirtualizingMasonryPanel virtualizing)
             {
                 virtualizing.ItemImageHeight = (item, imageWidth) => AspectRatioHeightConverter.ImageHeight(
                     imageWidth, item is WtLiveCardItem card ? card.Ratio : 0);
+
+                // 反过来把算好的图高推给卡片：**卡片里缩略图框的高度只有这一个来源**。
+                // 不让模板自己去问面板要列宽 —— 那要靠 RelativeSource 找祖先，容器回收复用时可能踩空，
+                // 一踩空整块框塌成 0 高（没有转圈、没有占位图标，只剩文字）
+                virtualizing.PublishImageHeight = (item, imageHeight) =>
+                {
+                    if (item is WtLiveCardItem card) card.ImageHeight = imageHeight;
+                };
             }
 
             _panel.ColumnWidthChanged += (_, _) => PushThumbnailWidth();
