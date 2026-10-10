@@ -282,6 +282,17 @@ internal static class SelfTest
                          + $"，可收起 = {closedByClose}（应 True）"
                          + $"，清空后收起且文本为空 = {clearedAndClosed}（应 True）");
 
+            // ---- WT Live 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）----
+            // 站点只认这四个值（多一个会被忽略、少一个就等于选了别的）；顺序即下拉顺序，
+            // 默认项必须排第一——否则下拉一展开，"当前值"不在最显眼处。
+            var sortIds = searchVm.SortOptions.Select(o => o.Id).ToList();
+            log.AppendLine($"排序方式   : 档位 = {string.Join(" / ", sortIds)}（应 created / rating / comments / downloads）"
+                         + $"，顺序与目录一致 = {sortIds.SequenceEqual(WtLiveSortCatalog.SortIds)}（应 True）"
+                         + $"，默认 = {searchVm.SelectedSortOption?.Id ?? "(空)"}（应 {WtLiveSortCatalog.DefaultSort}）"
+                         + $"，未知值回落 = {WtLiveSortCatalog.Normalize("nonsense")}（应 {WtLiveSortCatalog.DefaultSort}）"
+                         + $"，文案已翻译 = {searchVm.SortOptions.All(o => o.DisplayName.Length > 0 && !o.DisplayName.Contains('⟦'))}（应 True）"
+                         + $"，排序标题已翻译 = {!LocalizationManager.Instance["wtlive.sort.label"].Contains('⟦')}（应 True）");
+
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
             // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;
@@ -1710,6 +1721,9 @@ internal static class SelfTest
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ActiveFilterText)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Suggestions)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.IsSuggestionsOpen)),
+                // 浏览页排序方式下拉（§5 sort）
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SortOptions)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SelectedSortOption)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.RefreshCommand)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ClearSearchCommand)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ApplySuggestionCommand)),

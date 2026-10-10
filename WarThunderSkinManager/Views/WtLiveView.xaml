@@ -27,11 +27,28 @@
                 <TextBlock Text="{loc:Loc wtlive.page.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
             </StackPanel>
 
-            <!-- 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
+            <!-- 排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
                  搜索框**不只用来选载具**：输入即给下拉——载具、关键词搜索、清除三条通道，
                  选中载具 → 按载具筛选；选中关键词 → searchString 搜索（见 WtLiveViewModel）。 -->
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）。
+                         排在搜索框**左侧**：它是"整份列表怎么排"，先于搜索框这个"要哪些"的入口；
+                         选择即从第一页重新拉取（VM 里 OnSelectedSortOptionChanged → Refresh），
+                         与搜索 / 刷新共用同一行、同一套 34 高的控件高度 -->
+                    <ComboBox Width="120" Margin="0,0,8,0" VerticalAlignment="Center"
+                              Style="{StaticResource BaseComboBox}"
+                              ToolTip="{loc:Loc wtlive.sort.label}"
+                              ItemsSource="{Binding WtLive.SortOptions}"
+                              SelectedItem="{Binding WtLive.SelectedSortOption, Mode=TwoWay}">
+                        <!-- 用 ItemTemplate 而非 DisplayMemberPath：自定义模板下前者能正确传到选择区 -->
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
                     <Grid Width="300">
                         <TextBox x:Name="SearchBox" Style="{StaticResource BaseTextBox}"
                                  Padding="28,0,28,0"

@@ -53,7 +53,7 @@ public sealed class ThemeItem
     public override string ToString() => DisplayName;
 }
 
-/// <summary>WT Live 设置的下拉项（清晰度档位 / 预览图缓存上限共用；显示名由各自的目录算好传进来）。</summary>
+/// <summary>WT Live 的下拉项（清晰度档位 / 预览图缓存上限 / 浏览页排序方式共用；显示名由各自的目录算好传进来）。</summary>
 public sealed class WtLiveOptionItem
 {
     public string Id { get; }
@@ -1183,6 +1183,9 @@ public partial class MainViewModel : ObservableObject
         // 载具名自动检索跟随语言：用户映射仍然最优先，自动译名按新语言重取（§3.7）
         Skins.ApplyLanguageChange();
         Vehicles.ApplyLanguageChange();
+
+        // WT Live 浏览页的排序下拉文案跟随语言（搜索框占位文案走 loc:Loc 绑定，本就自动刷新）
+        WtLive.ApplyLanguageChange();
 
         // 「更新资源」行条目的显示名与状态文案跟随语言（§3.15）
         foreach (var item in ResourceItems)

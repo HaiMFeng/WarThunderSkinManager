@@ -24,9 +24,6 @@ namespace WarThunderSkinManager.ViewModels;
 /// </summary>
 public partial class WtLiveViewModel : ObservableObject
 {
-    /// <summary>浏览顺序：最近发布（时间倒序，§5）。</summary>
-    private const string SortCreated = "created";
-
     /// <summary>缩略图要显示的设备像素宽的**兜底值**（视图还没报来实际列宽时用）。</summary>
     private const double DefaultThumbnailWidth = 320;
 
@@ -60,6 +57,22 @@ public partial class WtLiveViewModel : ObservableObject
     /// 与 <see cref="VehicleFilter"/> **互斥**：搜索框一次只表达一个查询维度。
     /// </summary>
     [ObservableProperty] private string? _keywordFilter;
+
+    /// <summary>
+    /// 排序方式（§5 <c>sort</c>：最近发布 / 热门 / 评论 / 下载）。
+    /// 与载具 / 关键词一样是**服务端**查询维度——改变即从第一页重新拉取
+    /// （见 <see cref="OnSelectedSortOptionChanged"/>），本地重排已到的那几页没有意义。
+    /// </summary>
+    [ObservableProperty] private WtLiveOptionItem? _selectedSortOption;
+
+    /// <summary>排序方式下拉项（构造时与界面语言切换后重建，见 <see cref="BuildSortOptions"/>）。</summary>
+    public ObservableCollection<WtLiveOptionItem> SortOptions { get; } = new();
+
+    /// <summary>正在重建排序选项：期间改选中项不算"用户换排序"，不触发重新拉取。</summary>
+    private bool _rebuildingSortOptions;
+
+    /// <summary>当前排序值（下拉未就绪时回落默认「最近发布」，保证请求参数永远合法）。</summary>
+    private string SortId => SelectedSortOption?.Id ?? WtLiveSortCatalog.DefaultSort;
 
     /// <summary>搜索框文本（用户输入；选中载具后回填其显示名）。</summary>
     [ObservableProperty] private string _searchText = "";
@@ -119,7 +132,54 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>当前清晰度档位（<see cref="WtLiveQualityCatalog"/>；设置页改档时由 <see cref="SetQuality"/> 更新）。</summary>
     private string _quality = WtLiveQualityCatalog.DefaultQuality;
 
-    public WtLiveViewModel() => Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
+    public WtLiveViewModel()
+    {
+        Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
+        BuildSortOptions();
+    }
+
+    /// <summary>
+    /// 重建排序下拉项（构造时 + 界面语言切换后），并**保持当前选择**。
+    /// <para>
+    /// 期间置 <see cref="_rebuildingSortOptions"/>：重建会换掉选中项的**实例**（同一个值、新对象），
+    /// 不挡住的话会走 <see cref="OnSelectedSortOptionChanged"/> 平白重拉一次列表；
+    /// 而 <c>SortOptions.Clear()</c> 还会让 ComboBox 先回写一个 null。
+    /// </para>
+    /// </summary>
+    private void BuildSortOptions()
+    {
+        var current = SortId;
+
+        _rebuildingSortOptions = true;
+        try
+        {
+            SortOptions.Clear();
+            foreach (var id in WtLiveSortCatalog.SortIds)
+                SortOptions.Add(new WtLiveOptionItem(id, WtLiveSortCatalog.DisplayName(id)));
+
+            SelectedSortOption = SortOptions.FirstOrDefault(
+                o => string.Equals(o.Id, current, StringComparison.OrdinalIgnoreCase)) ?? SortOptions[0];
+        }
+        finally
+        {
+            _rebuildingSortOptions = false;
+        }
+    }
+
+    /// <summary>界面语言切换后重建排序下拉文案（由 <see cref="MainViewModel.ApplyLanguage"/> 触发）。</summary>
+    public void ApplyLanguageChange() => BuildSortOptions();
+
+    /// <summary>
+    /// 换排序方式 = 用户显式动作 → **立即从第一页重新拉取**。
+    /// 走与换筛选条件同一条 <see cref="Refresh"/> 路径：加载中排队、当前这页回来后立刻补上，
+    /// 不会出现"点了没反应"。
+    /// </summary>
+    partial void OnSelectedSortOptionChanged(WtLiveOptionItem? value)
+    {
+        if (value == null || _rebuildingSortOptions) return; // 下拉重建时的瞬时 null / 同值换实例
+
+        Refresh();
+    }
 
     /// <summary>
     /// 视图把卡片缩略图**实际要显示的尺寸**下发到这里：面板列宽（DIP）+ 屏幕缩放。
@@ -457,7 +517,7 @@ public partial class WtLiveViewModel : ObservableObject
         {
             // 浏览请求都是短请求：不设取消（退出即进程结束；可取消的长任务在下载列表那边）
             var page = await WTLiveService.FetchFeedPageAsync(
-                _nextPage, VehicleFilter, KeywordFilter, SortCreated, CancellationToken.None);
+                _nextPage, VehicleFilter, KeywordFilter, SortId, CancellationToken.None);
 
             foreach (var item in page.Items)
             {
