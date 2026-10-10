@@ -278,44 +278,75 @@ public partial class WtLiveViewModel : ObservableObject
     public void SetQuality(string? quality) => _quality = WtLiveQualityCatalog.Normalize(quality);
 
     /// <summary>
-    /// 视图在滚动时喂进来的**可视窗口**（含面板"保留实体"范围再往外扩的那一圈）：
-    /// 窗口内的卡片保留 / 按需补取缩略图，窗口外的卡片**释放已解码的位图并掐断在途下载**。
+    /// 视图在滚动时喂进来的**可视窗口**，两圈（面板报的就是这两圈）：
+    /// <paramref name="keepFirst"/> / <paramref name="keepLast"/> = 面板正在实体化的范围
+    /// （≈ 用户正看着的那几屏），<paramref name="preloadFirst"/> / <paramref name="preloadLast"/> =
+    /// 更大的一圈（保留位图的窗口，必定盖住前者）。
     /// <para>
+    /// 窗口内的卡片保留 / 按需补取缩略图，窗口外的卡片**释放已解码的位图并掐断在途下载**。
     /// 这一条是"越滚越卡"的主因之一：卡片一旦取过图就永不释放，滚过几千张之后
     /// 几百 MB 的解码位图全挂在卡片上（GC 压力 + 工作集膨胀，且与卡片数一起线性增长）。
-    /// 释放后滚回来会重新取，但**走磁盘缓存（零网络）**，而且窗口比"看得见"的那一圈大得多，
+    /// 释放后滚回来会重新取，但**走磁盘缓存（零网络）**，而且保留窗口比"看得见"的那一圈大得多，
     /// 正常滚动不会看到"图没了再补"。
     /// </para>
     /// <para>
-    /// 视图之所以能给出这个窗口：面板知道每张卡片的排布矩形（<c>MasonryPanel.GetRange</c>），
-    /// 而"看得见的那一圈"与"保留实体的那一圈"用同一个边界 —— 于是**被释放的卡片必定已被收起**
-    /// （不可见），不会出现"看得见的卡片在转圈"。
+    /// **补取顺序按"离视口由近到远"**（见 <see cref="ThumbnailLoadOrder"/>）：下载并发只有几路，
+    /// 顺序就是"多久能看见图"。**不是**按下标从头排 —— 那样远端几百张会插在可见卡片前面，
+    /// 可见卡片等超 <see cref="SlowLoadWatcher.Threshold"/> 就亮出「重新加载」，看着就是"预览图丢了"。
     /// </para>
     /// </summary>
-    public void SetVisibleWindow(int first, int last)
+    public void SetVisibleWindow(int keepFirst, int keepLast, int preloadFirst, int preloadLast)
     {
-        _visibleWindow = (first, last);
-        ApplyVisibleWindow();
+        _visibleWindow = (preloadFirst, preloadLast);
+        ApplyVisibleWindow(keepFirst, keepLast);
     }
 
-    /// <summary>窗口内的补取、窗口外的释放。卡片上千时这是 O(n) 的遍历，但只做比较与赋值。</summary>
-    private void ApplyVisibleWindow()
+    /// <summary>
+    /// 补取的下标顺序：**近处（实体化范围）先、远端后**，且只含保留窗口内的卡片。
+    /// <para>
+    /// 近处那一圈**从中点往两边**排：实体化范围是"视口上下各留一屏"对称扩出来的，它的中点 ≈ 视口中点，
+    /// 于是"正看着的那几张"排在最前面。做成纯函数是为了让自检直接钉住顺序（不碰网络）。
+    /// </para>
+    /// </summary>
+    internal static IEnumerable<int> ThumbnailLoadOrder(
+        int count, int keepFirst, int keepLast, int wantFirst, int wantLast)
+    {
+        var nearFirst = Math.Max(0, keepFirst);
+        var nearLast = Math.Min(keepLast, count - 1);
+
+        if (nearLast >= nearFirst)
+        {
+            var middle = (nearFirst + nearLast) / 2;
+            for (var distance = 0; ; distance++)
+            {
+                var low = middle - distance;
+                var high = middle + 1 + distance;
+                if (low < nearFirst && high > nearLast) break;
+
+                if (low >= nearFirst) yield return low;
+                if (high <= nearLast) yield return high;
+            }
+        }
+
+        var farFirst = Math.Max(0, wantFirst);
+        var farLast = Math.Min(wantLast, count - 1);
+        for (var i = farFirst; i <= farLast; i++)
+            if (i < keepFirst || i > keepLast) yield return i;
+    }
+
+    /// <summary>窗口内的补取（近处先）、窗口外的释放。卡片上千时这是 O(n) 的遍历，但只做比较与赋值。</summary>
+    private void ApplyVisibleWindow(int keepFirst, int keepLast)
     {
         if (_visibleWindow is not { } window) return;
 
-        for (var i = 0; i < Items.Count; i++)
-        {
-            var card = Items[i];
+        // ① 补取：近处（用户正看着的那几屏）先排进下载队列
+        foreach (var i in ThumbnailLoadOrder(Items.Count, keepFirst, keepLast, window.First, window.Last))
+            if (NeedsThumbnail(Items[i])) _ = LoadThumbnailAsync(Items[i]);
 
-            if (i >= window.First && i <= window.Last)
-            {
-                if (NeedsThumbnail(card)) _ = LoadThumbnailAsync(card);
-            }
-            else
-            {
-                ReleaseThumbnail(card);
-            }
-        }
+        // ② 释放：保留窗口外的把已解码位图交出去（滚回来按需重取，走磁盘缓存零网络）。
+        //    未取过图 / 已经失败的卡片在 ReleaseThumbnail 里原样返回，不会被改写状态
+        for (var i = 0; i < Items.Count; i++)
+            if (i < window.First || i > window.Last) ReleaseThumbnail(Items[i]);
     }
 
     /// <summary>这张卡的下标是否落在可视窗口里（窗口未知时一律算"在"）。</summary>

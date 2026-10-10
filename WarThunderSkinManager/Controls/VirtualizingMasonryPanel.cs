@@ -60,8 +60,13 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
     /// <summary>视口外再实体化多少屏（滚动时不至于每帧都生成 / 回收）。</summary>
     private const double RealizeMarginScreens = 1.0;
 
-    /// <summary>宿主保留缩略图位图的窗口比实体化窗口外扩多少屏（先取图、后现身）。</summary>
-    private const double PreloadMarginScreens = 2.0;
+    /// <summary>
+    /// 报给宿主的"保留缩略图位图"窗口 = 视口再外扩多少屏（与 <see cref="MasonryPanel"/> 同一口径）。
+    /// **按视口算而不是按实体化项数算**：项数口径会把窗口放大到十几屏（一屏的项数 × 外扩倍数），
+    /// 于是几百张还很远的卡片一起挤进缩略图下载队列 —— 用户正看着的那几屏排在队尾，
+    /// 等超过 <c>SlowLoadWatcher</c> 的 5 s 就冒"重新加载"，看着就是"预览图丢了"。
+    /// </summary>
+    private const double PreloadMarginScreens = 3.0;
 
     /// <summary>不在滚动容器里（拿不到视口）时的兜底视口高：只实体化最前面一批，绝不全量实体化。</summary>
     private const double UnconstrainedViewportFallback = 600;
@@ -94,6 +99,30 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
     public VirtualizingMasonryPanel()
     {
         Loaded += (_, _) => HookScroll();
+    }
+
+    /// <summary>
+    /// 面板子项是否严格按"项下标升序"排列。
+    /// <para>
+    /// 两处依赖这条不变量：① **渲染顺序 = 子项顺序**，而同一列里靠下的卡片下标必然更大、
+    /// 也就必须后画（后画的压在上面），顺序一乱相邻卡片就会互相压住；② 回收 / 生成时的插入位置。
+    /// 自检直接钉住它，免得插入位置写歪之后只表现为"某张卡片压住了另一张"这种难查的现象。
+    /// </para>
+    /// </summary>
+    internal bool ChildrenInItemOrder()
+    {
+        var generator = ItemContainerGenerator;
+        var previous = -1;
+
+        for (var childIndex = 0; childIndex < InternalChildren.Count; childIndex++)
+        {
+            var itemIndex = generator.IndexFromGeneratorPosition(new GeneratorPosition(childIndex, 0));
+            if (itemIndex <= previous) return false;
+
+            previous = itemIndex;
+        }
+
+        return true;
     }
 
     /// <summary>列宽变化（视图据此重下"缩略图按多少设备像素解码"）。</summary>
@@ -420,14 +449,26 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
             (first, last) = (fallback, fallback);
         }
 
-        RealizeWindow(first, last, itemWidth, gap);
+        // 宿主"保留缩略图位图"的窗口：视口外扩 PreloadMarginScreens 屏。
+        // 必须**盖住实体化范围**，否则"看得见的卡片"会被当成窗口外释放掉（图没了再补，反而更抖）
+        var preloadMargin = viewportHeight * PreloadMarginScreens;
+        var (preloadFirst, preloadLast) = FindWindow(
+            Math.Max(0, offset - preloadMargin), offset + viewportHeight + preloadMargin);
+
+        preloadFirst = preloadFirst < 0 ? first : Math.Min(preloadFirst, first);
+        preloadLast = Math.Min(count - 1, Math.Max(preloadLast, last));
+
+        RealizeWindow(first, last, preloadFirst, preloadLast, itemWidth, gap);
 
         // 返回内容总高：ScrollViewer 用它算滚动范围（与实体化了多少项无关，所以滚动条长度稳定）
         return new Size(MasonryLayout.ColumnsWidth(columns, itemWidth, gap), _totalHeight);
     }
 
-    /// <summary>只让 [first, last] 这些项有容器：范围内的按需生成并测量，范围外的回收。</summary>
-    private void RealizeWindow(int first, int last, double itemWidth, double gap)
+    /// <summary>
+    /// 只让 [first, last] 这些项有容器：范围内的按需生成并测量，范围外的回收；
+    /// 顺便把 [preloadFirst, preloadLast]（宿主保留缩略图位图的窗口）报出去。
+    /// </summary>
+    private void RealizeWindow(int first, int last, int preloadFirst, int preloadLast, double itemWidth, double gap)
     {
         var generator = ItemContainerGenerator;
 
@@ -516,11 +557,10 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
 
         RealizedRange = (first, last);
 
-        // 宿主（VM）据窗口决定保留 / 释放缩略图位图：实体化范围 + 一圈外扩（先取图、后现身）
-        var span = Math.Max(4, last - first + 1);
-        var slack = (int)Math.Ceiling(span * PreloadMarginScreens);
-        WindowChanged?.Invoke(this, (first, last,
-            Math.Max(0, first - slack), Math.Min(ItemCount - 1, last + slack)));
+        // 宿主（VM）据窗口**决定保留 / 释放缩略图位图**，并按 Keep（实体化范围 = 用户正看着的几屏）
+        // **优先补取**：Keep 圈在 Preload 圈里面，宿主先取里面那一圈，外面那一圈排在后面 ——
+        // 反过来的话远端几百张会插在可见卡片前面，可见卡片等超 5 s 就冒"重新加载"，看着像图丢了
+        WindowChanged?.Invoke(this, (first, last, preloadFirst, preloadLast));
     }
 
     protected override Size ArrangeOverride(Size finalSize)

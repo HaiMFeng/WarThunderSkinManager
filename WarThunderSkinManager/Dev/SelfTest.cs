@@ -862,6 +862,10 @@ internal static class SelfTest
                     var probeScroll = (ScrollViewer)probeView.FindName("ListScroll");
                     var probePanel = FindDescendant<WarThunderSkinManager.Controls.VirtualizingMasonryPanel>(probeView);
 
+                    // 面板报的两圈窗口：宿主据它决定"保留 / 释放"与"补取顺序"，这里钉住它的口径
+                    var lastWindow = (KeepFirst: -1, KeepLast: -2, PreloadFirst: -1, PreloadLast: -2);
+                    if (probePanel != null) probePanel.WindowChanged += (_, window) => lastWindow = window;
+
                     for (var i = 0; i < 120; i++) probeVm.Items.Add(Card(i));
                     probeWin.UpdateLayout();
                     Pump(probeWin.Dispatcher);
@@ -877,6 +881,16 @@ internal static class SelfTest
                     var contentHeight = probePanel?.ContentHeight ?? 0;
                     var chrome = probePanel?.MeasuredChrome;
 
+                    // 两条与"看得见的卡片"有关的护栏（都曾是踩过的坑）：
+                    // ① 保留位图的窗口必须盖住实体化范围，否则可见卡片被当窗口外释放（图没了再补）；
+                    // ② Keep 必须等于实体化范围（宿主靠它把可见那几屏排在补取队列前面），
+                    //    且面板子项必须按项下标升序（渲染顺序 = 子项顺序）。
+                    var windowCoversRealized = lastWindow.PreloadFirst <= realizedRange.Item1
+                                               && lastWindow.PreloadLast >= realizedRange.Item2
+                                               && lastWindow.KeepFirst == realizedRange.Item1
+                                               && lastWindow.KeepLast == realizedRange.Item2;
+                    var childrenOrdered = probePanel?.ChildrenInItemOrder() ?? false;
+
                     log.AppendLine($"滚动成本   : 120 张 → 每步 滚 {smallStep.Scroll:0.##} + 布局 {smallStep.Layout:0.##} ms；"
                                  + $"1320 张 → 每步 滚 {largeStep.Scroll:0.##} + 布局 {largeStep.Layout:0.##} ms"
                                  + $"（每步 = 滚 200px + 走完一轮布局，UI 线程侧）");
@@ -885,6 +899,10 @@ internal static class SelfTest
                                  + (smallStep.AllocKb > 0 ? $"（120 张时每步 {smallStep.AllocKb:0} KB）" : ""));
                     log.AppendLine($"虚拟化面板 : 1320 张里实体化 = {realized} 张（范围 [{realizedRange.Item1},{realizedRange.Item2}]）"
                                  + $"，内容高 {contentHeight:0} px，标定文字块高 = {(chrome.HasValue ? chrome.Value.ToString("0.#") : "未标定")}");
+                    log.AppendLine($"面板窗口   : Keep [{lastWindow.KeepFirst},{lastWindow.KeepLast}]、"
+                                 + $"Preload [{lastWindow.PreloadFirst},{lastWindow.PreloadLast}]"
+                                 + $"，盖住实体化范围 = {windowCoversRealized}（应 True：可见的卡片不该被当窗口外释放）"
+                                 + $"，子项按项序 = {childrenOrdered}（应 True）");
 
                     if (probePanel == null)
                         log.AppendLine("自检异常：滚动探针找不到虚拟化面板（浏览页没换成 VirtualizingMasonryPanel？）");
@@ -892,6 +910,14 @@ internal static class SelfTest
                         log.AppendLine($"自检异常：虚拟化面板实体化数量异常（{realized} 张，应远小于 1320）");
                     else if (realizedRange.Item1 > probeVm.Items.Count || realizedRange.Item2 < 0)
                         log.AppendLine($"自检异常：虚拟化面板实体化范围异常（[{realizedRange.Item1},{realizedRange.Item2}]）");
+                    else if (!windowCoversRealized)
+                        log.AppendLine($"自检异常：保留位图的窗口没盖住实体化范围"
+                                     + $"（Keep [{lastWindow.KeepFirst},{lastWindow.KeepLast}]、"
+                                     + $"Preload [{lastWindow.PreloadFirst},{lastWindow.PreloadLast}]、"
+                                     + $"实体化 [{realizedRange.Item1},{realizedRange.Item2}]）"
+                                     + "→ 看得见的卡片会被当窗口外释放，图没了再补");
+                    else if (!childrenOrdered)
+                        log.AppendLine("自检异常：面板子项没有按项下标升序（渲染顺序 = 子项顺序，错序会让相邻卡片互相压住）");
                     else if (largeStep.Layout > smallStep.Layout + 4)
                         log.AppendLine($"自检异常：滚动每一步的布局成本仍随卡片总数增长"
                                      + $"（120 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
@@ -2411,7 +2437,7 @@ internal static class SelfTest
 
             failedCard.ThumbnailState = WtLiveThumbnailState.Missing;
 
-            windowVm.SetVisibleWindow(1, 1); // 只把下标 1 留在窗口内
+            windowVm.SetVisibleWindow(1, 1, 1, 1); // 只把下标 1 留在窗口内（Keep 与 Preload 同一圈）
 
             var releasedOutside = outsideWindow.PreviewImage == null && outsideWindow.ThumbnailCancellation == null;
             var releasedLoad = outsideLoad.IsCancellationRequested;
@@ -2435,6 +2461,28 @@ internal static class SelfTest
                 log.AppendLine("自检异常：被释放的卡片滚回来后不会被补取（状态没回到加载中）");
             else if (!failedKept)
                 log.AppendLine("自检异常：加载失败的卡片被窗口逻辑改写成加载中（会一直转圈）");
+
+            // ---- 缩略图**补取顺序**：近处（面板实体化的那几屏）先、且从它的中点往两边，远端最后 ----
+            // 下载并发只有几路，顺序就是"多久能看见图"：按下标从头排的话，远端几百张会插在可见卡片前面，
+            // 可见卡片等超 SlowLoadWatcher 的 5s 就亮「重新加载」，看着就是"预览图丢了"（踩过）
+            var order = WtLiveViewModel.ThumbnailLoadOrder(count: 30, keepFirst: 10, keepLast: 20,
+                wantFirst: 0, wantLast: 29).ToArray();
+            var nearRingFirst = order.Take(11).OrderBy(i => i).SequenceEqual(Enumerable.Range(10, 11))
+                                && order.Skip(11).All(i => i < 10 || i > 20);
+            var startsAtViewportMiddle = order.Length > 0 && order[0] == 15; // [10,20] 的中间
+            var complete = order.Length == 30 && order.Distinct().Count() == 30;
+            var bounded = order.All(i => i >= 0 && i <= 29);
+
+            log.AppendLine($"缩略图补取顺序: 近处全部排在远端之前 = {nearRingFirst}（应 True）"
+                         + $"，从视口中间那几张开始 = {startsAtViewportMiddle}（应 True）"
+                         + $"，不重不漏 = {complete && bounded}（应 True）");
+
+            if (!nearRingFirst)
+                log.AppendLine("自检异常：缩略图补取没把近处那几屏排在前面（远端插队，可见卡片要等很久）");
+            else if (!startsAtViewportMiddle)
+                log.AppendLine("自检异常：缩略图补取没从近处中点开始（正看着的卡片被排到队尾）");
+            else if (!complete || !bounded)
+                log.AppendLine("自检异常：缩略图补取顺序重复、漏项或越界");
 
             // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
             //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----

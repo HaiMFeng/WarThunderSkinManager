@@ -127,10 +127,13 @@ public partial class WtLiveView : UserControl
 
             _panel.ColumnWidthChanged += (_, _) => PushThumbnailWidth();
 
-            // "保留哪些缩略图"问面板：它自己知道当前实体化了哪些项（虚拟化面板里窗口外根本没有容器），
-            // 这里只把**更大的一圈**（保留位图的范围）转给 VM，于是滚回来时图已经在磁盘缓存里
+            // "保留哪些缩略图"问面板：它自己知道当前实体化了哪些项（虚拟化面板里窗口外根本没有容器）。
+            // 面板报**两圈**，两圈都转给 VM：Preload 决定保留 / 释放（滚回来时图还在磁盘缓存里），
+            // Keep（实体化范围 = 用户正看着的几屏）决定**补取顺序** —— 少转这一圈，
+            // 补取就按全窗口下标从头排，远端几百张插在前面，可见卡片要等很久才出图
             _panel.WindowChanged += (_, window) =>
-                ViewModel?.SetVisibleWindow(window.PreloadFirst, window.PreloadLast);
+                ViewModel?.SetVisibleWindow(
+                    window.KeepFirst, window.KeepLast, window.PreloadFirst, window.PreloadLast);
 
             // 窗口被拖到缩放比不同的另一块屏幕上：列宽（DIP）没变，但设备像素变了
             if (Window.GetWindow(this) is { } window) window.DpiChanged += (_, _) => PushThumbnailWidth();

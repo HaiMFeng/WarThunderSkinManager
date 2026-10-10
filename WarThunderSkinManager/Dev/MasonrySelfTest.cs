@@ -166,12 +166,16 @@ internal static class MasonrySelfTest
     }
 
     /// <summary>
-    /// 卡片悬停动画的回归断言（取 <c>WtLiveView</c> 里**真正的卡片模板**来查）。
+    /// 卡片悬停效果的回归断言（取 <c>WtLiveView</c> 里**真正的卡片模板**来查）。两条：
     /// <para>
-    /// 核心一条：动画**必须只落 <c>RenderTransform</c>（渲染层）**。瀑布流是"按测量出来的高度"
-    /// 排位的（<see cref="MasonryPanel"/> 每次测量都重算列高），动画一旦碰 Height / Margin / Padding /
-    /// Width，每帧都会触发重新测量与排列 → 整列卡片跟着乱跳。另外两条：静止时不许有位移（否则卡片
-    /// 一进视野就是抬起状态）、松手必须复位（否则抬起后就再也放不下）。
+    /// ① 卡片自己身上**只许改颜色**（描边转强调色），不许有任何动画。瀑布流是"按测量出来的高度"
+    /// 排位的，动画碰 Height / Margin / Padding 会每帧触发重排、整列乱跳；而碰 RenderTransform 的
+    /// **位移**（曾经的"整卡上浮 3px"）会在卡片挨着视口顶边时被滚动视口裁掉一截、看着像被上面盖住 ——
+    /// 所以上浮已去掉，这条断言改成"不许再有动画"钉住它别回来。
+    /// </para>
+    /// <para>
+    /// ② 缩略图放大（卡片里唯一的动画）**必须只落 <c>ScaleTransform</c>**，且静止态是位移 0 / 缩放 1
+    /// （否则卡片一进视野就是抬起 / 放大状态，松手也回不去）。
     /// </para>
     /// 需要调用方已经合并好主题字典（模板里的 StaticResource 靠它解析）。
     /// </summary>
@@ -185,45 +189,69 @@ internal static class MasonrySelfTest
             var hover = card.Style?.Triggers.OfType<Trigger>()
                 .FirstOrDefault(t => t.Property == UIElement.IsMouseOverProperty);
 
-            var enter = Animations(hover?.EnterActions);
-            var exit = Animations(hover?.ExitActions);
-            var animated = enter.Concat(exit).ToList();
+            var cardAnimated = Animations(hover?.EnterActions).Concat(Animations(hover?.ExitActions)).ToList();
+            var colorOnly = cardAnimated.Count == 0
+                            && (hover?.Setters.OfType<Setter>() ?? Enumerable.Empty<Setter>())
+                                .All(s => s.Property == Border.BorderBrushProperty
+                                       || s.Property == Border.BackgroundProperty);
 
-            // PropertyPath 会把 "(UIElement.RenderTransform).(TranslateTransform.Y)" 解析成 "(0).(1)" +
-            // 一张**参数表**：路径字符串本身看不出动的是哪个属性，得看参数里的 DependencyProperty
-            var targets = animated
-                .Select(a => a.GetValue(Storyboard.TargetPropertyProperty))
-                .OfType<PropertyPath>()
-                .SelectMany(p => p.PathParameters ?? Enumerable.Empty<object>())
-                .OfType<DependencyProperty>()
-                .ToList();
-
-            var renderOnly = animated.Count > 0
-                          && targets.Count > 0
-                          && targets.All(dp => dp == UIElement.RenderTransformProperty
-                                            || dp == TranslateTransform.YProperty
+            // 卡片里唯一的动画是缩略图的放大：只许动 ScaleTransform
+            var image = FindInTemplate<Image>(card);
+            var imageHover = image?.Style?.Triggers.OfType<Trigger>()
+                .FirstOrDefault(t => t.Property == UIElement.IsMouseOverProperty);
+            var imageAnimated = Animations(imageHover?.EnterActions)
+                .Concat(Animations(imageHover?.ExitActions)).ToList();
+            // 路径 "(UIElement.RenderTransform).(ScaleTransform.ScaleX)" 的参数表里**两个**都在：
+            // 父层 RenderTransform 与叶子 ScaleX —— 所以放行父层，但每条动画必须真的落在 Scale 上
+            var imageRenderOnly = imageAnimated.Count > 0
+                                  && imageAnimated.All(a => TargetProperties(a).All(
+                                      dp => dp == UIElement.RenderTransformProperty
                                             || dp == ScaleTransform.ScaleXProperty
-                                            || dp == ScaleTransform.ScaleYProperty);
-            var restOffset = (card.RenderTransform as TranslateTransform)?.Y ?? double.NaN;
-            var exitResets = exit.Count > 0 && exit.All(a => a.To is 0d);
+                                            || dp == ScaleTransform.ScaleYProperty))
+                                  && imageAnimated.All(a => TargetProperties(a).Any(
+                                      dp => dp == ScaleTransform.ScaleXProperty
+                                            || dp == ScaleTransform.ScaleYProperty));
 
-            log.AppendLine($"卡片悬停   : 悬停动画 = {animated.Count} 条，目标属性 = "
-                         + $"{string.Join(" / ", targets.Select(dp => dp.Name).Distinct())}"
-                         + $"，全在渲染层 = {renderOnly}"
-                         + $"（应 True：碰 Height / Margin / Padding 会让整个瀑布流重排、卡片乱跳）"
-                         + $"，静止时位移 = {restOffset:0.##}（应 0）、松手复位 = {exitResets}（应 True）");
+            var restOffset = (card.RenderTransform as TranslateTransform)?.Y ?? 0;
+            var restScale = (image?.RenderTransform as ScaleTransform)?.ScaleX ?? 1;
 
-            if (!renderOnly)
-                log.AppendLine("自检异常：卡片悬停动画动了布局属性（只允许 RenderTransform）");
+            log.AppendLine($"卡片悬停   : 只改颜色不许有动画 = {colorOnly}"
+                         + $"（应 True：整卡上浮会被视口裁掉一截、动布局属性会让整列重排）"
+                         + $"，缩略图放大动画 = {imageAnimated.Count} 条且全在渲染层 = {imageRenderOnly}（应 True）"
+                         + $"，静止态 = 位移 {restOffset:0.##} / 缩放 {restScale:0.##}（应 0 / 1）");
+
+            if (!colorOnly)
+                log.AppendLine("自检异常：卡片悬停动了颜色以外的东西（整卡上浮 / 动画会让瀑布流重排或被视口裁掉）");
+            else if (!imageRenderOnly)
+                log.AppendLine("自检异常：缩略图放大动画动了渲染层以外的属性（或干脆没动画）");
             else if (Math.Abs(restOffset) > 0.001)
-                log.AppendLine($"自检异常：卡片悬停动画的渲染变换初始值非 0（{restOffset:0.##}）");
-            else if (!exitResets)
-                log.AppendLine("自检异常：卡片悬停动画松手后未复位（ExitActions 未回到 0）");
+                log.AppendLine($"自检异常：卡片静止态带位移（{restOffset:0.##}）");
+            else if (Math.Abs(restScale - 1) > 0.001)
+                log.AppendLine($"自检异常：缩略图静止态缩放不为 1（{restScale:0.##}）");
         }
         catch (Exception ex)
         {
-            log.AppendLine($"自检异常：卡片悬停动画自检抛错 → {ex.Message}");
+            log.AppendLine($"自检异常：卡片悬停自检抛错 → {ex.Message}");
         }
+    }
+
+    /// <summary>一条动画的目标属性表：PropertyPath 会把 <c>"(UIElement.RenderTransform).(ScaleTransform.ScaleX)"</c>
+    /// 解析成 <c>"(0).(1)"</c> + 一张参数表，路径字符串本身看不出动的是哪个属性，得看参数里的 DependencyProperty。</summary>
+    private static IEnumerable<DependencyProperty> TargetProperties(DoubleAnimation animation)
+        => (animation.GetValue(Storyboard.TargetPropertyProperty) as PropertyPath)?.PathParameters?
+               .OfType<DependencyProperty>()
+           ?? Enumerable.Empty<DependencyProperty>();
+
+    /// <summary>在"刚 LoadContent 出来、还没上树"的模板里按逻辑树找元素（此时可视树还没建）。</summary>
+    private static T? FindInTemplate<T>(DependencyObject root) where T : DependencyObject
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            if (child is T hit) return hit;
+            if (FindInTemplate<T>(child) is { } deep) return deep;
+        }
+
+        return null;
     }
 
     private static List<DoubleAnimation> Animations(TriggerActionCollection? actions)

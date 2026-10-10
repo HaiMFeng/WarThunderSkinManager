@@ -425,8 +425,7 @@
                     <!-- VirtualizationMode=Recycling：滚出视口的卡片容器**回收复用**（面板自己在窗口外
                          调 Recycle）—— 首次实例化一张卡片模板约 4 ms，复用只换 DataContext，
                          不做这一步，快速滚动时每滚一屏就是十几处 4 ms 的卡顿 -->
-                    <!-- 上方留 4：卡片悬停会抬升 3px（渲染层，不改布局），第一排贴着视口顶边的话
-                         抬起的那几像素会被滚动视口裁掉 —— 这 4px 余量就是给它的 -->
+                    <!-- 上方留 4：第一排不贴着区域顶边（悬停的上浮已去掉，这点余量留着当缩进） -->
                     <ItemsControl x:Name="CardList" Margin="0,4,0,0" ItemsSource="{Binding WtLive.Items}"
                                   VirtualizingPanel.IsVirtualizing="True"
                                   VirtualizingPanel.VirtualizationMode="Recycling">
@@ -446,15 +445,14 @@
                                 <!-- 卡片：白底 + 1px 描边 + 圆角 12。不用 Card 样式（它带阴影：
                                      瀑布流一屏几十张，逐张阴影的开销不值当，改用描边分层）。
                                      整张卡片可点 → 打开详情浮窗（右下角「下载」按钮自己处理点击，不冒泡到这里）。
-                                     悬停：整张卡抬升 3px + 描边转强调色。**只动 RenderTransform（渲染层）**——
-                                     瀑布流是按"测量出来的高度"排的，动画 Height / Margin / Padding
-                                     会让整列重新测量、卡片乱跳；抬升量里那 4px 余量见下面 ItemsControl 的 margin -->
+                                     悬停：描边转强调色 + 卡内图片轻微放大（见下面 Image 的 ScaleTransform）。
+                                     **不再做"整张卡上浮 3px"**：上浮是渲染层的位移，卡片挨着视口顶边时
+                                     那 3px 落到视口之外，会被滚动视口裁掉一截（滚到半途尤其明显，
+                                     看着像"被上面那张/被工具栏盖住"）。瀑布流是绝对定位，卡片之间只有 16px
+                                     间距，上浮也换不来多少层次感，索性只留描边 + 图片放大 -->
                                 <Border BorderThickness="1"
                                         CornerRadius="12" Padding="12" SnapsToDevicePixels="True"
                                         Cursor="Hand" MouseLeftButtonUp="Card_MouseLeftButtonUp">
-                                    <Border.RenderTransform>
-                                        <TranslateTransform Y="0"/>
-                                    </Border.RenderTransform>
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <Setter Property="Background" Value="{StaticResource BrushBackground}"/>
@@ -462,30 +460,6 @@
                                             <Style.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
-                                                    <Trigger.EnterActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation To="-3" Duration="0:0:0.12"
-                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <CubicEase EasingMode="EaseOut"/>
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.EnterActions>
-                                                    <Trigger.ExitActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation To="0" Duration="0:0:0.16"
-                                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <CubicEase EasingMode="EaseOut"/>
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.ExitActions>
                                                 </Trigger>
                                             </Style.Triggers>
                                         </Style>
