@@ -92,7 +92,7 @@
                     </ComboBox>
 
                     <!-- 搜索框 = **一个容器**（外壳 Border 是祖先）：
-                         [放大镜槽] [胶囊 + 末尾的输入框（同一个 WrapPanel 流式换行）] [清空槽]。
+                         [放大镜槽] [胶囊 + 末尾的输入框（同一个 TagInputPanel 流式换行，输入框拉满本行）] [清空槽]。
                          这是 Fluent Tag Picker / MUI Autocomplete / Choices.js 一类成熟控件的做法：
                          ① **外框是容器、输入框是它的后代** —— 悬停 / 聚焦状态才算得上整个框
                             （WPF 的 IsMouseOver / IsKeyboardFocusWithin 都覆盖可视子树，等于 CSS 的 :hover / :focus-within；
@@ -102,10 +102,12 @@
                          ③ 描边只有外框画一次，输入框自身不带描边，不套框；
                          ④ **长到两行就封顶**（MaxHeight = 60 = 34 + 26 × 2）：再多也不撑高工具栏，
                             改成框内纵向滚动（见下面的 ChipScroll）→ 页头高度恒等于左列「标题 + 提示」 -->
-                    <!-- 点框内任意处 = 点进输入框：挂 **Preview（隧道）**而不是冒泡的 MouseLeftButtonDown——
-                         中段被 ChipScroll 盖着，命中的是那个 ScrollViewer，它会把冒泡的按下吃掉，
-                         于是外壳的冒泡处理器只在两侧 28 的槽上响应（表现："只有输入框那一小块能点进来"）。
-                         隧道从根往下走、先经过外壳，子元素截不住（见 code-behind 的处理器）。 -->
+                    <!-- 点框内任意处 = 点进输入框。**主路径是布局**：输入框被 TagInputPanel 拉满本行，
+                         框里那片空白就是输入框本身，按下由 WPF 原生地落到它身上。
+                         这一层处理器只兜**没用输入框盖住的地方**（两侧 28 的槽、胶囊之间的缝、上下 3 的留白）：
+                         挂的是 **Preview（隧道）**而不是冒泡的 MouseLeftButtonDown——那些地方的命中元素可能是
+                         里面的 ScrollViewer，冒泡的按下会被它吃掉；隧道从根往下走、先经过外壳，子元素截不住
+                         （见 code-behind 的处理器）。 -->
                     <Border x:Name="SearchShell" Width="400" MinHeight="34" MaxHeight="60" CornerRadius="6"
                             SnapsToDevicePixels="True" Background="{StaticResource BrushBackground}"
                             BorderThickness="1" PreviewMouseLeftButtonDown="SearchShell_PreviewMouseLeftButtonDown">
@@ -161,15 +163,17 @@
                                            Foreground="{StaticResource BrushTextMuted}"/>
                             </Grid>
 
-                            <!-- 胶囊 + 输入框：**同一个 WrapPanel**，输入框是最后一项 →
-                                 光标永远跟在最后一个胶囊后面，放不下就换行、框跟着长高。
+                            <!-- 胶囊 + 输入框：**同一个流式面板**（Controls/TagInputPanel），输入框是最后一项 →
+                                 光标永远跟在最后一个胶囊后面，放不下就换行、框跟着长高；
+                                 且**输入框拉满本行剩余宽度**（WrapPanel 做不到，会留一片点不到的空白）。
                                  ItemsSource 用 CompositeCollection（胶囊集合 + 末尾的输入框），
-                                 这样只有**一层** WrapPanel：换行才连续（把输入框放在 ItemsControl 外，
+                                 这样只有**一层**流式面板：换行才连续（把输入框放在 ItemsControl 外，
                                  它会被当成一个整块、永远独占一行）。
                                  社区同款坑：① 不能再设 ItemTemplate —— 它会连输入框一起套上胶囊模板，
                                  得改成 ItemsControl.Resources 里的**隐式 DataTemplate**（按 DataType 匹配，
                                  末尾那个 TextBox 是 UIElement，会被原样呈现）；
-                                 ② 输入框要给 MinWidth / MaxWidth，否则没字时缩成一条线、字一长又把框撑爆。
+                                 ② 输入框要给 MinWidth，否则没字时会缩成一条线（宽度不再写 MaxWidth：
+                                 由面板拉满本行，MinWidth 只作"塞不下就换行"的阈值）。
                                 **高度预算**（治"加第一个胶囊就跳一下高"）：这一行恒为 26 高
                                 = 22（胶囊高 = 输入框高）+ 上下各 2 外边距（**胶囊与输入框都给 2，对称**）；
                                 再各留 3 → 内容 32、外壳 34，与空态**完全一致**；
@@ -183,7 +187,10 @@
                             <ItemsControl x:Name="ChipList">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <WrapPanel/>
+                                        <!-- **不是 WrapPanel**：它会把末尾输入框按内容宽排成一小条，
+                                             右侧留出一大片不响应点击的空白（"点不到输入框"）。TagInputPanel
+                                             让最后一项（输入框）拉满本行剩余宽度 → 那片空白就是输入框本身。 -->
+                                        <ctrl:TagInputPanel/>
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
 
@@ -240,9 +247,12 @@
                                                          Source={x:Reference SearchPopup}}"/>
 
                                         <!-- 末尾的输入框：高 22 = 胶囊高，两者文字中线才在同一水平线上；
-                                             上下也给 2 外边距 → 与胶囊**行高一致**（见上「高度预算」） -->
+                                             上下也给 2 外边距 → 与胶囊**行高一致**（见上「高度预算」）。
+                                             **不给 MaxWidth**：宽度由 TagInputPanel 拉满本行剩余
+                                             （MinWidth 只是"塞不下就换行"的阈值），
+                                             否则框里右侧的空白既点不到、看着也不像输入框 -->
                                         <TextBox x:Name="SearchBox" Style="{StaticResource BaseTextBox}"
-                                                 Height="22" MinWidth="80" MaxWidth="240" Padding="2,0,0,0"
+                                                 Height="22" MinWidth="80" Padding="2,0,0,0"
                                                  Margin="0,2,0,2" VerticalAlignment="Top"
                                                  Text="{Binding WtLive.SearchText, UpdateSourceTrigger=PropertyChanged}"
                                                  PreviewKeyDown="SearchBox_PreviewKeyDown"
@@ -270,7 +280,7 @@
                              左右各 30 是**对称**内缩（避开左侧放大镜与右侧「×」），
                              这样居中点正好落在输入框中心，而不是被单侧留白推偏。
                              判据用 HasSearchInput：有胶囊时（哪怕输入框是空的）也不该再提示"搜索载具 / #标签" -->
-                        <TextBlock Text="{loc:Loc wtlive.search.placeholder}" Margin="30,0,30,0"
+                        <TextBlock x:Name="SearchPlaceholder" Text="{loc:Loc wtlive.search.placeholder}" Margin="30,0,30,0"
                                    HorizontalAlignment="Center"
                                    VerticalAlignment="Center" Foreground="{StaticResource BrushTextMuted}"
                                    IsHitTestVisible="False" TextTrimming="CharacterEllipsis">

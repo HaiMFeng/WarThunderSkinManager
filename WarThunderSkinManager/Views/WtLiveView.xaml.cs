@@ -64,7 +64,7 @@ public partial class WtLiveView : UserControl
         viewModel.Chips.CollectionChanged += (_, _) => ScrollChipsToEnd();
     }
 
-    /// <summary>等这一轮布局跑完再滚：此刻 WrapPanel 还没把新行排出来，立刻滚会停在上一次的高度。</summary>
+    /// <summary>等这一轮布局跑完再滚：此刻流式面板还没把新行排出来，立刻滚会停在上一次的高度。</summary>
     private void ScrollChipsToEnd()
         => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => ChipScroll.ScrollToEnd()));
 
@@ -194,17 +194,20 @@ public partial class WtLiveView : UserControl
     }
 
     /// <summary>
-    /// 点搜索框的**空白处**（两侧槽位、胶囊之间、输入行留白）= 点进输入框：聚焦并把下拉打开。
+    /// 点搜索框里**没被输入框盖住的地方**（两侧 28 的槽、胶囊之间的缝、上下 3 的留白）= 点进输入框：
+    /// 聚焦并把下拉打开。
     /// <para>
-    /// **必须用 Preview（隧道）**，不能用冒泡的 <c>MouseLeftButtonDown</c>：外壳中段（左右各 28 的
-    /// 槽之外）被 <c>ChipScroll</c> 这个 ScrollViewer 盖着，鼠标按下的命中元素是**它**而不是外壳
-    /// Border——冒泡事件因此根本不以外壳为起点往上传，外壳的冒泡处理器只在两侧那两条槽上响应，
-    /// 表现就是"只有输入框那一小块能点进来"。隧道阶段从根往下走，先经过外壳，子元素截不住。
+    /// **主路径不在这里**：输入框由 <see cref="Controls.TagInputPanel"/> 拉满本行剩余宽度，框里那片空白
+    /// 就是 TextBox 本身，按下由 WPF 原生地聚焦（那是"点哪儿都能输入"的真正依据）。这里只兜遗漏处。
+    /// </para>
+    /// <para>
+    /// **必须用 Preview（隧道）**，不能用冒泡的 <c>MouseLeftButtonDown</c>：那些位置的命中元素可能是
+    /// 里面的 <c>ChipScroll</c>（ScrollViewer），冒泡的按下会被它吃掉、到不了外壳的处理器；
+    /// 隧道阶段从根往下走，先经过外壳，子元素截不住。
     /// </para>
     /// <para>
     /// **落在按钮 / 滚动条上的按下不抢**：胶囊上的「×」、右侧「清空」、框内滚动条都有自己的交互
-    /// （抢过来会顺带把下拉弹出来）。输入框则正常走：这里先聚焦，它再按这次按下放光标。
-    /// 下拉项在独立的 Popup 里（有自己的可视树），它们的点击不会走到这里。
+    /// （抢过来会顺带把下拉弹出来）。下拉项在独立的 Popup 里（有自己的可视树），它们的点击不会走到这里。
     /// </para>
     /// </summary>
     private void SearchShell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

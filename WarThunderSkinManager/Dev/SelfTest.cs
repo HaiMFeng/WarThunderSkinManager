@@ -645,8 +645,9 @@ internal static class SelfTest
 
                 // WT Live 搜索框（胶囊 + 输入）：样式不变量，钉住"搜索框和标签是一体的"。
                 // 外壳 Border 是**祖先容器**（悬停 / 聚焦是否覆盖整棵子树，看它的 IsMouseOver /
-                // IsKeyboardFocusWithin）；胶囊与末尾输入框放进**同一个 WrapPanel**
-                // （CompositeCollection = 胶囊集合 + 末尾那个 TextBox）→ 输入框永远跟在最后一个胶囊后面。
+                // IsKeyboardFocusWithin）；胶囊与末尾输入框放进**同一个流式面板**（Controls/TagInputPanel）
+                // （CompositeCollection = 胶囊集合 + 末尾那个 TextBox）→ 输入框永远跟在最后一个胶囊后面，
+                // 且拉满本行剩余宽度（"点框里哪儿都能输入"的布局依据，见下面的「搜索框可点」）。
                 // ① 空态高 34 = 排序下拉 / 刷新按钮（同一行不能高低不一）；
                 // ② 输入框是那个流式容器的**最后一项**（与胶囊同处一层，而不是被挤到另一整行）；
                 // ③ 胶囊多了必须**换行**（不能横向撑出框外），且**最多两行**：再满就封顶 60 高
@@ -690,7 +691,7 @@ internal static class SelfTest
                 var boxCenterY = chipBox.TransformToAncestor(chipShell)
                     .Transform(new System.Windows.Point(0, 0)).Y + chipBox.ActualHeight / 2;
 
-                // ② 的判据：那个 WrapPanel 的**最后一项**必须是输入框本身
+                // ② 的判据：那个流式面板的**最后一项**必须是输入框本身
                 var tailIsInputAtEmpty = chipList.Items.Count > 0
                     && ReferenceEquals(chipList.Items[chipList.Items.Count - 1], chipBox);
 
@@ -700,23 +701,18 @@ internal static class SelfTest
                 var textOriginX = chipBox.GetRectFromCharacterIndex(0).X;
                 layoutVm.SearchText = "";
 
-                // 「点搜索框空白处 = 点进输入框」：外壳中段（两侧 28 的槽之外）**不是**外壳 Border 的命中面——
-                // ChipScroll（ScrollViewer）盖在那里，鼠标按下的命中元素是它。冒泡的 MouseLeftButtonDown
-                // 因此不以外壳为起点往上传 → 挂冒泡时就只有两侧那两条槽响应（表现："只有输入框那一小块
-                // 能点进来"）。所以这条交互挂在**外壳的 Preview（隧道）**上：隧道从根往下走，子元素截不住。
-                // 这里钉住它的前提——中段的命中元素是外壳的**后代**（不是外壳自己）。
-                var midPoint = new Point(chipShell.ActualWidth / 2, chipShell.ActualHeight / 2);
-                var midHit = System.Windows.Media.VisualTreeHelper.HitTest(chipShell, midPoint)?.VisualHit;
-                var midIsDescendant = false;
-                for (var n = midHit; n != null; n = System.Windows.Media.VisualTreeHelper.GetParent(n))
-                {
-                    if (ReferenceEquals(n, chipShell)) { midIsDescendant = true; break; }
-                }
-
-                var midIsShell = ReferenceEquals(midHit, chipShell);
-                log.AppendLine($"搜索框可点 : 中段命中元素 = {midHit?.GetType().Name ?? "null"}，是外壳的后代 = {midIsDescendant}"
-                             + $"（应 True）、就是外壳自己 = {midIsShell}（应 False：中段被 ChipScroll 盖着 →"
-                             + $" 冒泡的按下到不了外壳的处理器，点空白处聚焦输入框必须挂 Preview 隧道）");
+                // 「点搜索框里哪儿都能输入」的判据（**不依赖任何事件转发**，全靠布局）：
+                // ① 输入框被 TagInputPanel 拉满本行剩余宽度 → 框里那片空白**就是 TextBox 本身**，
+                //    按下由 WPF 原生聚焦（WrapPanel 会把它排成 80 宽的一小条，右侧留一片点不到的空白）；
+                // ② 压在上面的占位文案 IsHitTestVisible=False（不挡点击，否则点它就是点到文案）；
+                // ③ 输入框仍是流式容器的最后一项（胶囊跟着它换行，不另起一整行）。
+                var rowWidth = ((FrameworkElement)chipList).ActualWidth;
+                var inputFillsRow = rowWidth > 0 && Math.Abs(chipBox.ActualWidth - rowWidth) < 1;
+                var placeholderTransparent =
+                    (layoutView.FindName("SearchPlaceholder") as UIElement) is { IsHitTestVisible: false };
+                log.AppendLine($"搜索框可点 : 输入框宽 = {chipBox.ActualWidth:0.##}、本行可用宽 = {rowWidth:0.##}"
+                             + $"，拉满本行 = {inputFillsRow}（应 True：框里那片空白就是输入框本身，点哪儿都能输入）"
+                             + $"，占位文案不挡点击 = {placeholderTransparent}（应 True）");
 
                 // 输入框**自带描边**是"框里还有一个框"的根源：BaseTextBox 的模板聚焦时把内框硬改成
                 // 1.5px 蓝色（ControlTemplate.Triggers 里的 Setter，外面设 BorderThickness=0 也压不住），
@@ -750,7 +746,7 @@ internal static class SelfTest
                 layoutVm.AppendTagChip("shorekeeper_wuthering_waves");
                 layoutHost.UpdateLayout();
 
-                // 有胶囊后：输入框必须仍在**同一层**（那个 WrapPanel 的最后一项），
+                // 有胶囊后：输入框必须仍在**同一层**（那个流式面板的最后一项），
                 // 且横向仍落在框内（跟随最后一个胶囊；换行时随行下沉，而不是横着撑出框外）
                 var tailIsInputWithChips = chipList.Items.Count > 0
                     && ReferenceEquals(chipList.Items[chipList.Items.Count - 1], chipBox);
@@ -780,7 +776,9 @@ internal static class SelfTest
                 log.AppendLine($"搜索框封顶 : 高度上限 = {shellMaxHeight:0.##}（应 60 = 两行：34 + 26 × 2）"
                              + $"，四个标签时外壳高 = {shellOverflow:0.##}（应 == 上限：不再撑高工具栏）"
                              + $"，框内纵向可滚 = {scrollableExtent:0.##}（应 > 0；视口 {scrollableViewport:0.##} <= 上限）"
-                             + $"，滚动条 = {scrollBarMode}（应 Auto：装不下才出现）");
+                             + $"，滚动条 = {scrollBarMode}（应 Auto：装不下才出现）"
+                             + $"，输入框宽 = {chipBox.ActualWidth:0.##}（应 >= MinWidth {chipBox.MinWidth:0.##}："
+                             + $"本行塞不下就换行再拉满，不被胶囊挤成一条缝）");
                 log.AppendLine($"搜索下拉   : 锚点 = 外壳 {popupTargetIsShell}（应 True：不跟着输入框 / 光标跑）"
                              + $"，宽 = {popupWidth:0.##}（应 == 搜索框宽 {shellWidth:0.##}：左边缘对齐）");
                 log.AppendLine($"页头结构   : 左列 = 标题 + 搜索提示两行、右列 = 工具条 → "
