@@ -35,8 +35,11 @@
                     <!-- 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）。
                          排在搜索框**左侧**：它是"整份列表怎么排"，先于搜索框这个"要哪些"的入口；
                          选择即从第一页重新拉取（VM 里 OnSelectedSortOptionChanged → Refresh），
-                         与搜索 / 刷新共用同一行、同一套 34 高的控件高度 -->
-                    <ComboBox Width="120" Margin="0,0,8,0" VerticalAlignment="Center"
+                         与搜索 / 刷新共用同一行、同一套 34 高的控件高度。
+                         **不给固定宽度**：文案随语言变（中文 4 字 / 英文 Downloads 更长），
+                         写死就会在某种语言下过宽或把字裁掉；ComboBox 本身就按最宽项量尺寸，
+                         这里让内容自己定，宽度也稳定不跳 -->
+                    <ComboBox Margin="0,0,8,0" VerticalAlignment="Center"
                               Style="{StaticResource BaseComboBox}"
                               ToolTip="{loc:Loc wtlive.sort.label}"
                               ItemsSource="{Binding WtLive.SortOptions}"
