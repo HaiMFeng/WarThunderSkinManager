@@ -110,9 +110,9 @@ public static class PartExclusionService
 
     private static void Save()
     {
-        var path = FilePath(_configDir);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(_excluded, JsonOpts));
+        // 原子写：排除清单被写坏（断电 / 进程被杀）会让 Load 退回空清单 →
+        // 用户手动排除过的部件全部"复活"并重新进入激活输出，所以不能留半截文件
+        AtomicFile.WriteAllText(FilePath(_configDir), JsonSerializer.Serialize(_excluded, JsonOpts));
         _stamp = Stamp(_configDir);
     }
 

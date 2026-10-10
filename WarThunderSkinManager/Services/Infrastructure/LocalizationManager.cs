@@ -85,8 +85,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         var baselinePath = BaselineFile(configDir, Culture);
 
         var defaults = DefaultsFor(Culture);
-        var fromFile = ReadFile(langPath);
-        var baseline = ReadFile(baselinePath);
+        var fromFile = ReadFile(langPath, out var langReadable);
+        var baseline = ReadFile(baselinePath, out _);
 
         // 以新版内置文案为底；仅保留「用户确实改过」的条目
         var merged = new Dictionary<string, string>(defaults, StringComparer.Ordinal);
@@ -99,7 +99,9 @@ public sealed class LocalizationManager : INotifyPropertyChanged
 
         _strings = merged;
 
-        if (Differs(fromFile, merged)) TryWriteFile(langPath, merged);
+        // 语言文件**存在但读不出 / 解析失败**时**不回写**：界面已用内置文案（不会空白），
+        // 但用户的文件必须原样留着——否则一次手抖（多一个逗号 / 编码异常）就把自定义译文永久抹掉
+        if (langReadable && Differs(fromFile, merged)) TryWriteFile(langPath, merged);
         TryWriteFile(baselinePath, defaults);
 
         RaiseChanged();
@@ -154,9 +156,14 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Culture)));
     }
 
-    private static Dictionary<string, string> ReadFile(string path)
+    /// <summary>
+    /// 读语言文件。<paramref name="readable"/> = <c>false</c> 表示**文件存在但读不出 / 解析失败**
+    /// （与"文件不存在"区分开）——调用方据此避免把用户的文件当成空文件覆盖掉（自定义译文不能丢）。
+    /// </summary>
+    private static Dictionary<string, string> ReadFile(string path, out bool readable)
     {
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
+        readable = true;
         try
         {
             if (!File.Exists(path)) return dict;
@@ -166,7 +173,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         }
         catch
         {
-            // 忽略，退回默认
+            readable = false; // 文件在，但读不出：**别当空文件**，交给调用方决定不覆盖
         }
         return dict;
     }
@@ -175,15 +182,13 @@ public sealed class LocalizationManager : INotifyPropertyChanged
     {
         try
         {
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
                 Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
-            File.WriteAllText(path, JsonSerializer.Serialize(strings, options), new UTF8Encoding(false));
+            // 原子写（先 .tmp 再 Move）：语言文件是用户会手改的文件，半截 JSON 会连累下次启动
+            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(strings, options));
         }
         catch
         {

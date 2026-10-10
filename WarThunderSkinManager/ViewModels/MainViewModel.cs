@@ -547,7 +547,7 @@ public partial class MainViewModel : ObservableObject
                         result.Warnings.AddRange(part.Warnings);
                         if (part.Canceled)
                         {
-                            result.Canceled = true; // 已复制半成品已清理，源完好（同卷已改名条目保留在目标）
+                            result.Canceled = true; // 已搬运的内容全部回滚，旧目录完好如初（见 DirectoryMigrator）
                             break;
                         }
                     }

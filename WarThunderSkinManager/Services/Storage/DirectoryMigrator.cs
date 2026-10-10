@@ -22,7 +22,10 @@ public sealed class MigrationProgress
 /// <summary>迁移结果。</summary>
 public sealed class MigrationResult
 {
-    /// <summary>用户取消：已复制的内容保留在目标，**源不删除**（旧配置依旧可用）</summary>
+    /// <summary>
+    /// 用户取消：本次的搬运**全部回滚**（复制的半成品删掉、同卷改名的搬回原位），
+    /// **旧目录保持迁移前的样子**（调用方会把配置目录回滚，所以旧目录必须还能用）。
+    /// </summary>
     public bool Canceled { get; set; }
 
     public long MovedBytes { get; set; }
@@ -37,9 +40,15 @@ public sealed class MigrationResult
 /// <item>**同卷** → 顶层条目直接 <see cref="Directory.Move"/>（瞬时，移动即删除源）；</item>
 /// <item>**跨卷** → 逐文件复制（1 MB 缓冲，按字节报进度），**全部完成后**才删除源——
 /// 中途失败 / 取消时源完好，旧目录仍可用；</item>
-/// <item>取消在文件之间生效；已复制内容留在目标，源不删。</item>
+/// <item>取消在条目 / 文件之间生效；**取消或失败都会回滚本次搬运**（复制的半成品删掉、
+/// 同卷改名的搬回原位），旧目录恢复成迁移前的样子。</item>
 /// </list>
 /// 后台线程调用（上百 GB 是分钟级操作）；目标若已含同名条目则跳过并记入警告（不合并、不覆盖）。
+/// <para>
+/// **为什么要回滚同卷改名**：同卷走 <see cref="Directory.Move"/> 是瞬时的，源当场就没了；
+/// 而调用方在取消 / 失败时会**把配置目录回滚回旧值**（旧目录继续用）——若已改名条目留在新目录，
+/// 用户看到的就是"整个库不见了"（数据其实在新目录，得手动搬回）。所以要在这里把旧目录复原。
+/// </para>
 /// </summary>
 public static class DirectoryMigrator
 {
@@ -80,7 +89,7 @@ public static class DirectoryMigrator
 
         var total = plan.Sum(p => p.Bytes);
         var done = 0L;
-        var movedTargets = new List<string>();  // 同卷改名完成（源已不在，数据完整地在目标）
+        var movedTargets = new List<(string Target, string Source)>(); // 同卷改名完成（源已不在，数据完整地在目标）
         var copiedTargets = new List<string>(); // 跨卷复制产生（取消时清理半成品，允许之后重试）
 
         try
@@ -94,7 +103,7 @@ public static class DirectoryMigrator
                 {
                     if (isDir) Directory.Move(source, target);
                     else File.Move(source, target);
-                    movedTargets.Add(target);
+                    movedTargets.Add((target, source));
                     done += bytes;
                     result.MovedBytes += bytes;
                     progress?.Report(new MigrationProgress { DoneBytes = done, TotalBytes = total, Current = Path.GetFileName(source) });
@@ -140,6 +149,7 @@ public static class DirectoryMigrator
         {
             result.Canceled = true;
             CleanupCopied(copiedTargets, result);
+            RollbackMoved(movedTargets, result);
             return result;
         }
         catch (Exception ex)
@@ -149,6 +159,7 @@ public static class DirectoryMigrator
             result.Warnings.Add(LocalizationManager.Instance.Format(
                 "migrate.error.interrupted", ex.Message));
             CleanupCopied(copiedTargets, result);
+            RollbackMoved(movedTargets, result);
             return result;
         }
 
@@ -185,6 +196,32 @@ public static class DirectoryMigrator
                 result.Warnings.Add($"{Path.GetFileName(target)}：{ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// 回滚本次**同卷改名**（取消 / 失败时把已搬走的条目移回原位，逆序处理以还原嵌套关系）：
+    /// 调用方随后会把配置目录回滚回旧值，旧目录必须完好如初，否则用户看到的是"库被搬空了"。
+    /// 原位已被占用（理论上不该发生）时跳过并记警告，不覆盖任何东西。
+    /// </summary>
+    private static void RollbackMoved(List<(string Target, string Source)> moved, MigrationResult result)
+    {
+        for (var i = moved.Count - 1; i >= 0; i--)
+        {
+            var (target, source) = moved[i];
+            try
+            {
+                if (Directory.Exists(target) && !Directory.Exists(source) && !File.Exists(source))
+                    Directory.Move(target, source);
+                else if (File.Exists(target) && !File.Exists(source) && !Directory.Exists(source))
+                    File.Move(target, source);
+            }
+            catch (Exception ex)
+            {
+                result.Warnings.Add($"{Path.GetFileName(target)}：{ex.Message}");
+            }
+        }
+
+        moved.Clear();
     }
 
     private static IEnumerable<string> EnumerateFiles(string dir)

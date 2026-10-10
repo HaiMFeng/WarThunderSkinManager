@@ -42,8 +42,22 @@ public partial class BusyOverlay : UserControl
         DataContext = BusyIndicator.Instance;
 
         BusyIndicator.Instance.PropertyChanged += OnBusyPropertyChanged;
-        Loaded += (_, _) => SyncExclusive(); // 宿主加载时若已在忙，补一次
+        Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+    }
+
+    /// <summary>
+    /// 宿主加载：**先重订通知**再补一次状态。
+    /// <see cref="OnUnloaded"/> 退订过，若这里不重订，一旦发生 Unloaded→Loaded
+    /// （换宿主 / 可视树被摘了又挂回），此后 <c>IsBusy</c> 的变化没人听——
+    /// 忙起来时进了独占，忙完了却永远不释放，界面会一直卡在禁用态。
+    /// </summary>
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        BusyIndicator.Instance.PropertyChanged -= OnBusyPropertyChanged; // 幂等：避免重复挂
+        BusyIndicator.Instance.PropertyChanged += OnBusyPropertyChanged;
+
+        SyncExclusive(); // 宿主加载时若已在忙，补一次
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)

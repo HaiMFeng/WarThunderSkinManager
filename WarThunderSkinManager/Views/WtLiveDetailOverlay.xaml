@@ -83,13 +83,18 @@
                                 Command="{Binding WtLive.Detail.CloseCommand}"/>
                     </Border>
 
-                    <!-- 这一张正在下载 / 解码：转圈 +（**转够 5s** 才浮现的）「重新加载」 -->
+                    <!-- 正在取图 / 取正文：转圈 +（**转够 5s** 才浮现的）「重新加载」。
+                         两个信号都要认：详情接口在飞时 Images 还是空的（Current==null），
+                         只判 Current.IsLoading 的话这段时间整块区域是空白 -->
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Viewbox Width="28" Height="28" HorizontalAlignment="Center">
                             <Viewbox.Style>
                                 <Style TargetType="Viewbox">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WtLive.Detail.IsLoading}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
                                         <DataTrigger Binding="{Binding WtLive.Detail.Current.IsLoading}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>

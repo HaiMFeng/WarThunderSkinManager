@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using WarThunderSkinManager.Models;
 
@@ -162,9 +161,8 @@ public static class LibraryService
 
         try
         {
-            Directory.CreateDirectory(IndexDirectory(configDir));
-            File.WriteAllText(IndexFile(configDir),
-                JsonSerializer.Serialize(snapshot, JsonOpts), new UTF8Encoding(false));
+            // 原子写：半截快照虽会被 LoadSnapshot 的 catch 挡下（退回重建），但没必要留这个坑
+            AtomicFile.WriteAllText(IndexFile(configDir), JsonSerializer.Serialize(snapshot, JsonOpts));
         }
         catch
         {
@@ -216,7 +214,8 @@ public static class LibraryService
     /// <summary>
     /// 磁盘上的库是否已与快照不符：包目录**增 / 删**，或 <c>meta.json</c>
     /// （映射来自 blk 时还要 <c>source.blk</c>）的**时间戳 / 长度**变化。
-    /// 只做目录枚举与文件戳比较、不做任何解析 → 可在后台快速跑完。
+    /// 只做目录枚举与文件戳比较；仅在遇到「快照里没有的目录」时才读一次它的 <c>meta.json</c>
+    /// 判断它是不是能被 <see cref="Build"/> 收录的真包（见下）→ 可在后台快速跑完。
     /// </summary>
     public static bool IsStale(LibrarySnapshot snapshot, string resourceDir)
     {
@@ -230,7 +229,15 @@ public static class LibraryService
         foreach (var dir in Directory.EnumerateDirectories(packagesDir))
         {
             var id = Path.GetFileName(dir);
-            if (!known.TryGetValue(id, out var package)) return true; // 新增了包
+            if (!known.TryGetValue(id, out var package))
+            {
+                // 快照里没有：可能是**真新增的包**，也可能是**读不出 meta.json 的目录**
+                // （建到一半 / meta 损坏）。后者永远进不了快照（Build 走 PackageStore.LoadAll 会跳过它），
+                // 若在这里当成"新增"，IsStale 会恒为 true → 每次启动都白做一次全量重建。
+                // 判定口径必须与 Build 完全一致。
+                if (PackageStore.Load(resourceDir, id) == null) continue;
+                return true; // 真的新增了包
+            }
 
             var (metaTicks, metaLength) = Stamp(PackageStore.MetaPath(resourceDir, id));
             if (metaTicks != package.MetaTicks || metaLength != package.MetaLength) return true; // meta 被改

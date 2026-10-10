@@ -343,8 +343,17 @@ public partial class SkinsViewModel : ObservableObject
             $"{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}-{Path.GetFileName(item.FileName)}");
 
         if (hasPreview)
+        {
+            // `Path.GetExtension` 会把 URL 的查询串一起吃进来（`…/x.jpg?v=2` → `.jpg?v=2`），
+            // 而 `?` 是非法文件名字符 → `File.Create` 直接抛，整个下载项失败。
+            // CDN 一旦给预览图带上版本参数就会踩到，所以只保留合法的扩展名字符。
+            var previewExt = Path.GetExtension(item.PreviewUrl) ?? "";
+            var cut = previewExt.IndexOfAny(Path.GetInvalidFileNameChars());
+            if (cut >= 0) previewExt = previewExt[..cut];
+
             previewImagePath = Path.Combine(wtliveDir,
-                $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(item.PreviewUrl)}");
+                $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{previewExt}");
+        }
 
         // 预览图**优先吃缓存**：命中就本地复制一份（几毫秒、零流量），这一路直接算完成。
         // 注意是**复制**不是把缓存文件交出去：暂存区随后会被清理，否则会把缓存一起删掉
