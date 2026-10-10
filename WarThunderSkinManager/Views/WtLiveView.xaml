@@ -17,7 +17,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0">
+        <Grid x:Name="Header" Grid.Row="0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -25,14 +25,37 @@
 
             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                 <TextBlock Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
-                <TextBlock Text="{loc:Loc wtlive.page.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,0"/>
+
+                <!-- 当前查询摘要（胶囊在界面上是一块块，这行把它写成人话，也点明走的是哪条通道：
+                     按载具 / 按标签）——放在标题下、**替掉原来那行页面描述**。
+                     两个要点，都是为了"高度不跳"：
+                     ① 用 Hidden 而**不是** Collapsed：这行**始终占住**，有没有筛选都不改变标题区高度
+                        （否则摘要一出现，整页内容就往下窜）；
+                     ② 单行 + 省略号：标签再多也不换行，高度恒为一行 -->
+                <TextBlock Text="{Binding WtLive.ActiveFilterText}" Margin="0,4,0,0"
+                           FontSize="12" HorizontalAlignment="Left" MaxWidth="420"
+                           Foreground="{StaticResource BrushPrimary}"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Hidden"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </StackPanel>
 
             <!-- 排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
                  搜索框**不只用来选载具**：输入即给下拉——载具、标签、清除三条通道；
                  选中的候选不写回输入框，而是变成**胶囊**（载具最多一个、标签可叠多个），
                  退格一次删一个（见 WtLiveViewModel / WtLiveSearchChip）。 -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
+            <!-- VerticalAlignment=Top：摘要搬到标题下面后，这里只剩工具条一行，
+                 居中会让工具条相对左边「标题」那一行往下沉，Top 才与标题对齐 -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="16,0,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <!-- 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）。
                          排在搜索框**左侧**：它是"整份列表怎么排"，先于搜索框这个"要哪些"的入口；
@@ -332,23 +355,6 @@
                             FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.refresh}"
                             Command="{Binding WtLive.RefreshCommand}"/>
                 </StackPanel>
-
-                <!-- 当前查询摘要：载具 / 关键词在搜索框里都只是文字，这里点明走的是哪条通道 -->
-                <TextBlock Text="{Binding WtLive.ActiveFilterText}" HorizontalAlignment="Right"
-                           Margin="0,6,0,0" FontSize="12" MaxWidth="420"
-                           Foreground="{StaticResource BrushPrimary}"
-                           TextTrimming="CharacterEllipsis">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
             </StackPanel>
         </Grid>
 
