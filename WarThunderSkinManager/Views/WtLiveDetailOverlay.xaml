@@ -57,6 +57,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 轮播：占剩余高度；图片 Uniform 且只缩不放（低清垫底图不会被拉糊）。
@@ -243,8 +244,42 @@
                     </TextBox.Style>
                 </TextBox>
 
+                <!-- 标签（写在正文下面）：站点把描述里的标签**服务端**包成了 ?q=%23xxx 的链接，
+                     我们从那里认（认不出再用文本兜底，见 WtLiveTag）。
+                     超链接样式与设置页「关于」一致；点一下 = **清掉现有条件**按该标签重新搜（见 SearchTag） -->
+                <ItemsControl Grid.Row="3" Margin="0,10,0,0" ItemsSource="{Binding WtLive.Detail.Tags}">
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding WtLive.Detail.HasTags}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Margin="0,0,10,4" FontSize="12">
+                                <Hyperlink CommandParameter="{Binding}"
+                                           Command="{Binding DataContext.WtLive.SearchTagCommand,
+                                                     RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                           Foreground="{StaticResource BrushPrimary}"
+                                           TextDecorations="Underline">
+                                    <Run Text="{Binding ., Mode=OneWay}"/>
+                                </Hyperlink>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <!-- 底部动作：在浏览器打开（左） / 下载 + 关闭（右） -->
-                <Grid Grid.Row="3" Margin="0,14,0,0">
+                <Grid Grid.Row="4" Margin="0,14,0,0">
                     <Button HorizontalAlignment="Left" Content="{loc:Loc wtlive.detail.openInBrowser}"
                             Style="{StaticResource SecondaryButton}"
                             Command="{Binding OpenLinkCommand}"

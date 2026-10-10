@@ -293,6 +293,64 @@ internal static class SelfTest
                          + $"，文案已翻译 = {searchVm.SortOptions.All(o => o.DisplayName.Length > 0 && !o.DisplayName.Contains('⟦'))}（应 True）"
                          + $"，排序标题已翻译 = {!LocalizationManager.Instance["wtlive.sort.label"].Contains('⟦')}（应 True）");
 
+            // ---- WT Live 标签（§3.6）：描述 → 标签列表 ----
+            // 站点把描述里的标签**服务端**包成了锚点（<a href="//live.warthunder.com/?q=%23anime">#anime</a>），
+            // 而且是**连续拼接、中间没有空格**——正文转纯文本后就是 "#anime#girls_frontline#cm11"。
+            // 所以认 ?q=%23 最准；认不到才退回文本猜测（猜的那条要求 ≥2 字符：正文里的 "#1" 只是编号）。
+            const string rawSample =
+                "<p><a href=\"//live.warthunder.com/?q=%23anime\" class=\"WTL-Embed-Hashtag\">#anime</a>"
+                + "<a href=\"//live.warthunder.com/?q=%23girls_frontline\" class=\"WTL-Embed-Hashtag\">#girls_frontline</a>"
+                + "<a href=\"//live.warthunder.com/?q=%23cm11\" class=\"WTL-Embed-Hashtag\">#cm11</a></p>";
+            var anchorTags = WtLiveTag.Parse(rawSample, "#anime#girls_frontline#cm11");
+            var textTags = WtLiveTag.Parse("", "#anime#shorekeeper  #wuthering_waves   #anime");
+            var noiseTags = WtLiveTag.Parse(null, "no tag here, just #1 and #a");
+            log.AppendLine($"标签解析   : 锚点优先 = {string.Join(" / ", anchorTags)}（应 anime / girls_frontline / cm11）"
+                         + $"，连写兜底 = {string.Join(" / ", textTags)}（应 anime / shorekeeper / wuthering_waves：多空格 + 去重）"
+                         + $"，单字符不认 = {noiseTags.Count}（应 0）");
+
+            // ---- WT Live 标签查询串（§3.6）：接口 searchString=#a #b ----
+            // 实测（2026-10-10）：多标签是**并集**；不带 # 的裸词返回 0 条 → 站点只做标签搜索。
+            log.AppendLine($"标签查询串 : [{WtLiveTag.ToQuery(new[] { "#Anime", "skin", " " })}]（应 [#Anime #skin]：单个空格、去空项）"
+                         + $"，首词 = {WtLiveTag.FirstToken("  #anime #skin")}（应 anime）"
+                         + $"，去掉首词 = [{WtLiveTag.DropFirstToken("  #anime #skin")}]（应 [#skin]）"
+                         + $"，连字符不是标签字符 = {WtLiveTag.LooksLikeTag("f-15")}（应 False）");
+
+            // ---- WT Live 搜索胶囊（标签 / 载具）：条件叠在胶囊上，查询串由胶囊拼出来 ----
+            var chipVm = new WtLiveViewModel();
+            chipVm.AppendTagChip("#anime");
+            chipVm.AppendTagChip("ANIME");                     // 只是大小写不同 → 同一个标签，不叠
+            chipVm.AppendTagChip("skin");
+            chipVm.AppendVehicleChip("f_15e", "F-15E");
+            chipVm.AppendVehicleChip("su_30mkk", "Su-30MKK");  // 载具最多一个 → 替换
+            var tagChipCount = chipVm.Chips.Count(c => c.Kind == WtLiveChipKind.Tag);
+            var vehicleReplaced = chipVm.Chips.Count(c => c.Kind == WtLiveChipKind.Vehicle) == 1
+                                  && chipVm.VehicleFilter == "su_30mkk";
+            log.AppendLine($"搜索胶囊   : 标签去重后 = {tagChipCount}（应 2）"
+                         + $"，载具再选即替换 = {vehicleReplaced}（应 True）"
+                         + $"，标签查询串 = [{chipVm.TagQuery}]（应 [#anime #skin]）"
+                         + $"，摘要 = [{chipVm.ActiveFilterText}]");
+            log.AppendLine($"胶囊文案   : {chipVm.Chips[0].Label}（应 标签:anime）"
+                         + $"，{chipVm.Chips[^1].Label}（应 载具:Su-30MKK）"
+                         + $"，一次退格删一个 = {chipVm.RemoveLastChip(refresh: false)}（应 True）"
+                         + $"，删后剩 = {chipVm.Chips.Count}（应 2）"
+                         + $"，空框退格 = {new WtLiveViewModel().RemoveLastChip(refresh: false)}（应 False）");
+            chipVm.ClearChips();
+            log.AppendLine($"清空胶囊   : 剩余 = {chipVm.Chips.Count}（应 0）"
+                         + $"，有筛选 = {chipVm.HasFilter}（应 False）"
+                         + $"，摘要 = [{chipVm.ActiveFilterText}]（应 []）");
+
+            // ---- 搜索下拉的候选：打入 # → 给标签候选（不给载具）；裸词 → 标签打头 ----
+            var suggestionVm = new WtLiveViewModel();
+            suggestionVm.SearchText = "#";
+            var hashOnly = suggestionVm.Suggestions.Select(x => $"{x.Kind}:{x.Display}").ToList();
+            suggestionVm.SearchText = "#anim";
+            var hashTyping = suggestionVm.Suggestions.Select(x => x.Display).ToList();
+            suggestionVm.SearchText = "anime";
+            var plainWord = suggestionVm.Suggestions.Select(x => $"{x.Kind}:{x.Display}").ToList();
+            log.AppendLine($"搜索候选   : 打入 # = [{string.Join(" / ", hashOnly)}]（应 [Tag:标签:]）"
+                         + $"，打入 #anim = [{string.Join(" / ", hashTyping)}]（应 [标签:anim]）"
+                         + $"，裸词 = [{string.Join(" / ", plainWord)}]（应 [Tag:标签:anime]：站点没有全文搜索，裸词也只当标签）");
+
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
             // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
             var flagged = 0;
@@ -461,7 +519,7 @@ internal static class SelfTest
                 ("涂装管理", 0xF1FC), ("载具管理", 0xF072), ("多源复用", 0xF24D),
                 ("WT Live", 0xF290), ("设置", 0xF013),
                 ("拖入导入", 0xF56F), ("WT Live 列表", 0xF0ED), ("下载重试", 0xF021),
-                ("缩略图占位", 0xF03E), ("部件", 0xF12E),
+                ("缩略图占位", 0xF03E), ("部件", 0xF12E), ("标签", 0xF02B),
                 ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023)
             };
             var missingIcons = iconFontOk && iconGlyphs != null
@@ -1664,7 +1722,8 @@ internal static class SelfTest
             static WTLiveFeedItem MakeFeedItem(long id, string? previewUrl, string fileLink) => new(
                 id, "锅盖头", "FHQ-11 Fire Rescue", "desc", previewUrl, 16d / 9d, 386,
                 "template_cn_hq_11.zip", fileLink, 4930419, 6, 3, 30,
-                $"https://live.warthunder.com/post/{id}/en/");
+                $"https://live.warthunder.com/post/{id}/en/",
+                new[] { "anime", "9dds" });
 
             var cardWithFile = new WtLiveCardItem(MakeFeedItem(
                 1189546, sampleThumb, "https://live.warthunder.com/dl/845e4034/"));
@@ -1714,13 +1773,22 @@ internal static class SelfTest
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.SourceUrl)),
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.HasSourceUrl)),
                 (typeof(PackageEditorViewModel), nameof(PackageEditorViewModel.OpenLinkCommand)),
-                // WT Live 顶部搜索框（载具下拉 + 关键词 + 清除）
+                // WT Live 顶部搜索框（载具 / 标签胶囊 + 清除）
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SearchText)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.HasSearchText)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.HasSearchInput)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.HasFilter)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ActiveFilterText)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Chips)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.RemoveChipCommand)),
+                (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SearchTagCommand)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Suggestions)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.IsSuggestionsOpen)),
+                (typeof(WtLiveSearchChip), nameof(WtLiveSearchChip.Label)),
+                (typeof(WtLiveSearchChip), nameof(WtLiveSearchChip.Icon)),
+                // 详情浮窗的标签行
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.Tags)),
+                (typeof(WtLiveDetailViewModel), nameof(WtLiveDetailViewModel.HasTags)),
                 // 浏览页排序方式下拉（§5 sort）
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SortOptions)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SelectedSortOption)),

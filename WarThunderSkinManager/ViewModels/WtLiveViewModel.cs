@@ -49,18 +49,9 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>已到底（本页不足 25 条），不再请求下一页。</summary>
     [ObservableProperty] private bool _isExhausted;
 
-    /// <summary>载具筛选（<c>units.csv</c> 裸 id；null/空 = 全部涂装）。由搜索框选中载具后赋值。</summary>
-    [ObservableProperty] private string? _vehicleFilter;
-
-    /// <summary>
-    /// 关键词筛选（接口 <c>searchString=</c>，匹配标题 / 标签；空 = 不限）。
-    /// 与 <see cref="VehicleFilter"/> **互斥**：搜索框一次只表达一个查询维度。
-    /// </summary>
-    [ObservableProperty] private string? _keywordFilter;
-
     /// <summary>
     /// 排序方式（§5 <c>sort</c>：最近发布 / 热门 / 评论 / 下载）。
-    /// 与载具 / 关键词一样是**服务端**查询维度——改变即从第一页重新拉取
+    /// 与载具 / 标签一样是**服务端**查询维度——改变即从第一页重新拉取
     /// （见 <see cref="OnSelectedSortOptionChanged"/>），本地重排已到的那几页没有意义。
     /// </summary>
     [ObservableProperty] private WtLiveOptionItem? _selectedSortOption;
@@ -74,10 +65,17 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>当前排序值（下拉未就绪时回落默认「最近发布」，保证请求参数永远合法）。</summary>
     private string SortId => SelectedSortOption?.Id ?? WtLiveSortCatalog.DefaultSort;
 
-    /// <summary>搜索框文本（用户输入；选中载具后回填其显示名）。</summary>
+    /// <summary>
+    /// 搜索框里的**胶囊**（已确认的筛选条件：载具 / 标签）。
+    /// 搜索框本身只装"正在输入的那一段"，选中的候选一律变成胶囊——
+    /// 这样多标签能叠、载具不会被文字覆盖、退格能一个个删。
+    /// </summary>
+    public ObservableCollection<WtLiveSearchChip> Chips { get; } = new();
+
+    /// <summary>搜索框文本 = **正在输入的那一段**（胶囊生效后会清空；见 <see cref="ApplySuggestion"/>）。</summary>
     [ObservableProperty] private string _searchText = "";
 
-    /// <summary>搜索下拉项（载具 / 关键词 / 清除，见 <see cref="WtLiveSearchSuggestion"/>）。</summary>
+    /// <summary>搜索下拉项（载具 / 标签 / 清除，见 <see cref="WtLiveSearchSuggestion"/>）。</summary>
     public ObservableCollection<WtLiveSearchSuggestion> Suggestions { get; } = new();
 
     /// <summary>下拉是否展开。</summary>
@@ -86,21 +84,47 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>键盘高亮项（上下键移动，Enter 应用）。</summary>
     [ObservableProperty] private WtLiveSearchSuggestion? _highlightedSuggestion;
 
-    /// <summary>搜索框里有没有内容（决定「×」清空按钮是否出现）。</summary>
+    /// <summary>搜索框里有没有内容（决定「×」清空按钮是否出现）。没有胶囊时它就是空框。</summary>
     public bool HasSearchText => SearchText.Trim().Length > 0;
 
-    /// <summary>是否已有筛选 / 关键词（决定「显示全部涂装」项与筛选摘要是否出现）。</summary>
-    public bool HasFilter => !string.IsNullOrWhiteSpace(VehicleFilter) || !string.IsNullOrWhiteSpace(KeywordFilter);
+    /// <summary>搜索框里有东西可清（文字或胶囊）→ 显示「×」。</summary>
+    public bool HasSearchInput => HasSearchText || Chips.Count > 0;
+
+    /// <summary>是否已有筛选条件（决定「显示全部涂装」项与筛选摘要是否出现）。</summary>
+    public bool HasFilter => Chips.Count > 0;
+
+    /// <summary>载具筛选（<c>units.csv</c> 裸 id；胶囊里最多一个，null = 不限）。</summary>
+    internal string? VehicleFilter
+        => Chips.FirstOrDefault(c => c.Kind == WtLiveChipKind.Vehicle)?.Value;
 
     /// <summary>
-    /// 当前查询的摘要（空 = 全部涂装）：载具与关键词在搜索框里都只是"一串文字"，
-    /// 这行提示点明当前走的是哪条通道（按载具 / 按关键词）。
+    /// 标签查询串（接口 <c>searchString=</c>；<c>#a #b</c>，单个空格分隔）。
+    /// 站点只做标签搜索——裸词实测返回 0 条（见 <see cref="WtLiveTag"/>），所以这里只拼标签。
     /// </summary>
-    public string ActiveFilterText => !string.IsNullOrWhiteSpace(VehicleFilter)
-        ? Loc.Format("wtlive.search.byVehicle", SearchText.Trim())
-        : !string.IsNullOrWhiteSpace(KeywordFilter)
-            ? Loc.Format("wtlive.search.byKeyword", KeywordFilter)
-            : "";
+    internal string TagQuery => WtLiveTag.ToQuery(
+        Chips.Where(c => c.Kind == WtLiveChipKind.Tag).Select(c => c.Value));
+
+    /// <summary>
+    /// 当前查询的摘要（空 = 全部涂装）：胶囊在界面上是"一块块"，这行把它写成人话，
+    /// 也点明走的是哪条通道（按载具 / 按标签）。
+    /// </summary>
+    public string ActiveFilterText
+    {
+        get
+        {
+            var parts = new List<string>(2);
+
+            if (VehicleFilter is { Length: > 0 } vehicle)
+                parts.Add(Loc.Format("wtlive.search.byVehicle",
+                    Chips.First(c => c.Kind == WtLiveChipKind.Vehicle).Text));
+
+            var tags = Chips.Where(c => c.Kind == WtLiveChipKind.Tag)
+                .Select(c => WtLiveTag.ToQueryToken(c.Value)).ToList();
+            if (tags.Count > 0) parts.Add(Loc.Format("wtlive.search.byTag", string.Join(' ', tags)));
+
+            return string.Join(" · ", parts);
+        }
+    }
 
     /// <summary>列表里有没有内容（空状态与页脚据此显示）。</summary>
     public bool HasItems => Items.Count > 0;
@@ -135,6 +159,15 @@ public partial class WtLiveViewModel : ObservableObject
     public WtLiveViewModel()
     {
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasItems));
+        Chips.CollectionChanged += (_, _) =>
+        {
+            // 派生自胶囊的四个量：摘要、有没有筛选、「×」是否出现、载具值（XAML / 自检都读它们）
+            OnPropertyChanged(nameof(HasFilter));
+            OnPropertyChanged(nameof(ActiveFilterText));
+            OnPropertyChanged(nameof(HasSearchInput));
+            OnPropertyChanged(nameof(VehicleFilter));
+        };
+
         BuildSortOptions();
     }
 
@@ -166,8 +199,17 @@ public partial class WtLiveViewModel : ObservableObject
         }
     }
 
-    /// <summary>界面语言切换后重建排序下拉文案（由 <see cref="MainViewModel.ApplyLanguage"/> 触发）。</summary>
-    public void ApplyLanguageChange() => BuildSortOptions();
+    /// <summary>
+    /// 界面语言切换后重建**派生自文案**的东西（由 <see cref="MainViewModel.ApplyLanguage"/> 触发）：
+    /// 排序下拉项与胶囊标签（两者都是构造时算好的字符串，不像 <c>loc:Loc</c> 会自己刷新）。
+    /// </summary>
+    public void ApplyLanguageChange()
+    {
+        BuildSortOptions();
+
+        foreach (var chip in Chips) chip.RefreshTexts();
+        if (HasFilter) OnPropertyChanged(nameof(ActiveFilterText));
+    }
 
     /// <summary>
     /// 换排序方式 = 用户显式动作 → **立即从第一页重新拉取**。
@@ -270,9 +312,10 @@ public partial class WtLiveViewModel : ObservableObject
         RequestMore();
     }
 
-    // ---------- 搜索（§4 载具 + §3.1 searchString：搜索框**不只用于选载具**）----------
-    // 下拉项按 WtLiveSearchKind 分流：载具 / 关键词 / 清除，三者共用同一套下拉、键盘与视图结构；
-    // 要再加搜索维度（如按作者）时加一个 Kind + UpdateSuggestions / ApplySuggestion 各一支即可。
+    // ---------- 搜索（§4 载具 + §3.6 标签：搜索框**不只用于选载具**）----------
+    // 下拉项按 WtLiveSearchKind 分流：载具 / 标签 / 清除，三者共用同一套下拉、键盘与视图结构。
+    // 选中的候选**不写回输入框**，而是变成一个胶囊（见 Chips）：多标签能叠、载具不会被文字覆盖、
+    // 退格能一个个删。要再加搜索维度（如按作者）时加一个 Kind + UpdateSuggestions / ApplySuggestion 各一支即可。
 
     /// <summary>
     /// **用户主动**点进搜索框 / 按上下键时展开下拉（文本非空时）。
@@ -300,8 +343,9 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Enter：有高亮项就应用它；没有（下拉已关）则把**当前文本当关键词**搜——
-    /// "直接搜我打的字"是最不意外的默认。
+    /// Enter：有高亮项就应用它；否则把输入框里的文字收成**标签胶囊**——
+    /// 站点只做标签搜索（裸词实测 0 条，见 <see cref="WtLiveTag"/>），
+    /// "直接回车 = 搜这个标签"是唯一有结果的默认。
     /// </summary>
     [RelayCommand]
     private void SubmitSearch()
@@ -312,19 +356,17 @@ public partial class WtLiveViewModel : ObservableObject
             return;
         }
 
-        var text = SearchText.Trim();
-        if (text.Length == 0) return;
+        if (SearchText.Trim().Length == 0) return;
 
-        ApplySuggestion(new WtLiveSearchSuggestion
-        {
-            Kind = WtLiveSearchKind.Keyword,
-            Display = text,
-            Keyword = text
-        });
+        var added = CommitTypedTags();
+        IsSuggestionsOpen = false;
+
+        if (added) Refresh();
     }
 
     /// <summary>
-    /// 应用一条搜索建议（点击 / Enter）：载具 → 载具筛选；关键词 → 关键词搜索；清除 → 回到全部涂装。
+    /// 应用一条搜索建议（点击 / Enter）：载具 → 载具胶囊；标签 → 标签胶囊；清除 → 清掉全部条件。
+    /// 胶囊**加**在现有条件上（不是替换）——多标签就是这么叠出来的；载具最多一个，再选即替换。
     /// </summary>
     [RelayCommand]
     private void ApplySuggestion(WtLiveSearchSuggestion? suggestion)
@@ -334,21 +376,20 @@ public partial class WtLiveViewModel : ObservableObject
         switch (suggestion.Kind)
         {
             case WtLiveSearchKind.Vehicle:
-                VehicleFilter = suggestion.VehicleId;
-                KeywordFilter = null;
-                SearchText = suggestion.Display;
+                // 用户明确点了载具 → 输入框里那点文字不算数了
+                SearchText = "";
+                AppendVehicleChip(suggestion.Value, suggestion.Text);
                 break;
 
-            case WtLiveSearchKind.Keyword:
-                VehicleFilter = null;
-                KeywordFilter = suggestion.Keyword;
-                SearchText = suggestion.Keyword;
+            case WtLiveSearchKind.Tag:
+                // 只吃掉"正在输入的那一个词"：粘贴 "#a #b" 时先收 a，框里留下 "#b" 接着收
+                SearchText = WtLiveTag.DropFirstToken(SearchText);
+                AppendTagChip(suggestion.Value);
                 break;
 
             case WtLiveSearchKind.Clear:
-                VehicleFilter = null;
-                KeywordFilter = null;
                 SearchText = "";
+                ClearChips();
                 break;
         }
 
@@ -358,58 +399,155 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 从**别处**按载具筛选（涂装管理页页头的「在 WT Live 中搜索」）：
-    /// 走与下拉选中载具**同一条路径**（<see cref="ApplySuggestion"/>），
-    /// 因此搜索框文本 / 筛选摘要 / 列表状态与手动筛选完全一致。
+    /// 从**别处**按载具筛选（涂装管理页页头的「在 WT Live 中搜索」）：**先清掉现有条件**，
+    /// 只留这一个载具胶囊。用户点的是"搜这个载具"，叠在旧标签上多半什么都搜不到。
     /// </summary>
     public void SearchVehicle(string vehicleId, string? displayName)
     {
         if (string.IsNullOrWhiteSpace(vehicleId)) return;
 
-        ApplySuggestion(new WtLiveSearchSuggestion
-        {
-            Kind = WtLiveSearchKind.Vehicle,
-            VehicleId = vehicleId,
-            Display = string.IsNullOrWhiteSpace(displayName) ? vehicleId : displayName
-        });
+        SearchText = "";
+        ClearChips();
+        AppendVehicleChip(vehicleId, displayName);
+        IsSuggestionsOpen = false;
+        Refresh();
     }
 
-    /// <summary>清空搜索框与筛选（搜索框右侧「×」）。已筛选时重拉列表；只是打了字则仅清空。</summary>
+    /// <summary>
+    /// 按标签搜索（详情浮窗里点标签）：**先清掉现有条件**，只留这一个标签，再从第一页拉。
+    /// 站点对多个标签是**并集**——叠在旧条件上只会多出一堆不相干的结果，
+    /// 而用户点标签想看的就是"这个标签的全部涂装"。
+    /// </summary>
+    [RelayCommand]
+    private void SearchTag(string? tag)
+    {
+        var value = WtLiveTag.Normalize(tag);
+        if (value.Length == 0) return;
+
+        Detail.CloseCommand.Execute(null); // 先关浮窗，否则结果被它盖着看不见
+
+        SearchText = "";
+        ClearChips();
+        AppendTagChip(value);
+        IsSuggestionsOpen = false;
+        Refresh();
+    }
+
+    /// <summary>清空搜索框与全部条件（搜索框右侧「×」）。有胶囊时重拉列表；只是打了字则仅清空。</summary>
     [RelayCommand]
     private void ClearSearch()
     {
         var hadFilter = HasFilter;
 
-        VehicleFilter = null;
-        KeywordFilter = null;
         SearchText = "";
+        ClearChips();
         IsSuggestionsOpen = false;
 
         if (hadFilter) Refresh();
     }
 
-    partial void OnSearchTextChanged(string value)
+    // ---------- 胶囊（搜索条件的唯一载体）----------
+
+    /// <summary>加一个标签胶囊（去重；**不刷新**，由调用方决定何时重拉）。</summary>
+    internal void AppendTagChip(string? tag)
     {
-        OnPropertyChanged(nameof(HasSearchText));
-        OnPropertyChanged(nameof(ActiveFilterText));
-        UpdateSuggestions(open: true); // 输入即展开
+        var value = WtLiveTag.Normalize(tag);
+        if (value.Length == 0) return;
+        if (Chips.Any(c => c.Kind == WtLiveChipKind.Tag
+                           && string.Equals(c.Value, value, StringComparison.OrdinalIgnoreCase))) return;
+
+        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Tag, value, value));
     }
 
-    partial void OnVehicleFilterChanged(string? value)
+    /// <summary>加一个载具胶囊（**最多一个**：已有的载具被替换；**不刷新**）。</summary>
+    internal void AppendVehicleChip(string vehicleId, string? displayName)
     {
-        OnPropertyChanged(nameof(HasFilter));
-        OnPropertyChanged(nameof(ActiveFilterText));
+        if (string.IsNullOrWhiteSpace(vehicleId)) return;
+
+        ClearChips(WtLiveChipKind.Vehicle);
+        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Vehicle, vehicleId, displayName ?? ""));
     }
 
-    partial void OnKeywordFilterChanged(string? value)
+    /// <summary>清掉全部胶囊（<paramref name="kind"/> 非空时只清这一类）；**不刷新**。</summary>
+    internal void ClearChips(WtLiveChipKind? kind = null)
     {
-        OnPropertyChanged(nameof(HasFilter));
-        OnPropertyChanged(nameof(ActiveFilterText));
+        if (kind == null)
+        {
+            Chips.Clear();
+            return;
+        }
+
+        for (var i = Chips.Count - 1; i >= 0; i--)
+            if (Chips[i].Kind == kind) Chips.RemoveAt(i);
     }
 
     /// <summary>
-    /// 重算下拉项：**关键词项在最前**（默认高亮它 → 直接按 Enter 就是"搜索我打的字"），
-    /// 随后是匹配的载具，最后（有筛选时）一个「显示全部涂装」。
+    /// 退格删除**最后一个**胶囊（输入框空着时按退格 → 一次删一个）。删掉即重拉：
+    /// 筛条件变了列表就得跟着变，否则摘要与列表对不上。
+    /// </summary>
+    /// <param name="refresh">是否立刻重拉；自检只在纯状态下验语义，避免在这里发请求</param>
+    /// <returns>是否真的删掉了一个胶囊</returns>
+    internal bool RemoveLastChip(bool refresh = true)
+    {
+        if (Chips.Count == 0) return false;
+
+        Chips.RemoveAt(Chips.Count - 1);
+        if (refresh) Refresh();
+        return true;
+    }
+
+    /// <summary>点胶囊上的「×」删掉它（删掉即重拉）。</summary>
+    [RelayCommand]
+    private void RemoveChip(WtLiveSearchChip? chip)
+    {
+        if (chip == null || !Chips.Remove(chip)) return;
+
+        Refresh();
+    }
+
+    /// <summary>
+    /// 把输入框里的文字收成标签胶囊：按空白**从左到右**逐个收（粘贴 <c>#a #b</c> 得到两个胶囊），
+    /// 收完清空输入框。**不刷新**。
+    /// </summary>
+    /// <returns>是否真的加了胶囊（只有一个孤零零的 <c>#</c> 时不算）</returns>
+    private bool CommitTypedTags()
+    {
+        var added = false;
+        var rest = SearchText;
+
+        while (true)
+        {
+            var token = WtLiveTag.FirstToken(rest);
+            var next = WtLiveTag.DropFirstToken(rest);
+
+            if (token.Length > 0)
+            {
+                AppendTagChip(token);
+                added = true;
+            }
+
+            if (next.Length == 0) break;
+            rest = next;
+        }
+
+        SearchText = "";
+        return added;
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasSearchText));
+        OnPropertyChanged(nameof(HasSearchInput));
+        UpdateSuggestions(open: true); // 输入即展开
+    }
+
+    /// <summary>
+    /// 重算下拉项：**标签项在最前**（默认高亮它 → 直接按 Enter 就把输入的文字收成标签胶囊），
+    /// 随后是匹配的载具，最后（有胶囊时）一个「显示全部涂装」。
+    /// <para>
+    /// 打入 <c>#</c> 就先亮出 <c>标签:</c>（还没打名字时文案就是"标签:"，提示接着打）；
+    /// 已经以 <c>#</c> 开头就不再给载具——<c>#xx</c> 不可能是载具名，标签与载具靠这个 <c>#</c> 区分。
+    /// </para>
     /// <para>
     /// <paramref name="open"/> = 是否**顺便展开**：只有用户正在输入 / 点进搜索框 / 按上下键时才展开；
     /// 后台刷新（如切页后载具表加载完）只重算内容、**不展开**——否则搜索框里一有文字，
@@ -425,24 +563,35 @@ public partial class WtLiveViewModel : ObservableObject
 
         if (text.Length > 0)
         {
-            Suggestions.Add(new WtLiveSearchSuggestion
-            {
-                Kind = WtLiveSearchKind.Keyword,
-                Display = Loc.Format("wtlive.search.keyword", text),
-                Keyword = text,
-                Icon = "\uF002" // 放大镜
-            });
+            var token = WtLiveTag.FirstToken(text);
+            var tagged = text[0] == '#';
 
-            foreach (var vehicle in MatchVehicles(text).Take(MaxVehicleSuggestions))
+            if (tagged || token.Length > 0)
             {
                 Suggestions.Add(new WtLiveSearchSuggestion
                 {
-                    Kind = WtLiveSearchKind.Vehicle,
-                    Display = vehicle.DisplayName,
-                    Detail = vehicle.Id,
-                    VehicleId = vehicle.Id,
-                    Icon = "\uF072" // 载具（与导航「载具管理」同一字形）
+                    Kind = WtLiveSearchKind.Tag,
+                    Display = WtLiveSearchChipCatalog.TagLabel(token),
+                    Value = token,
+                    Text = token,
+                    Icon = WtLiveSearchChipCatalog.TagIcon
                 });
+            }
+
+            if (!tagged)
+            {
+                foreach (var vehicle in MatchVehicles(text).Take(MaxVehicleSuggestions))
+                {
+                    Suggestions.Add(new WtLiveSearchSuggestion
+                    {
+                        Kind = WtLiveSearchKind.Vehicle,
+                        Display = WtLiveSearchChipCatalog.VehicleLabel(vehicle.DisplayName),
+                        Detail = vehicle.Id,
+                        Value = vehicle.Id,
+                        Text = vehicle.DisplayName,
+                        Icon = WtLiveSearchChipCatalog.VehicleIcon
+                    });
+                }
             }
         }
 
@@ -452,7 +601,7 @@ public partial class WtLiveViewModel : ObservableObject
             {
                 Kind = WtLiveSearchKind.Clear,
                 Display = Loc["wtlive.search.clear"],
-                Icon = "\uF00D" // 叉
+                Icon = WtLiveSearchChipCatalog.ClearIcon
             });
         }
 
@@ -517,7 +666,7 @@ public partial class WtLiveViewModel : ObservableObject
         {
             // 浏览请求都是短请求：不设取消（退出即进程结束；可取消的长任务在下载列表那边）
             var page = await WTLiveService.FetchFeedPageAsync(
-                _nextPage, VehicleFilter, KeywordFilter, SortId, CancellationToken.None);
+                _nextPage, VehicleFilter, TagQuery.Length > 0 ? TagQuery : null, SortId, CancellationToken.None);
 
             foreach (var item in page.Items)
             {

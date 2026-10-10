@@ -70,7 +70,7 @@ Feed.type    = 'regular';
 | `page` | 是 | 整数，从 `0` 起 | 分页页码 |
 | `period` | 否 | `0` / `1` / `7` / `30` / `365` 等 | 时间范围（天）；`0` 或不传=全部时间 |
 | `subtype` | 否 | `all` | 子类型筛选，默认 `all` |
-| `searchString` | 否 | 字符串 | 关键词搜索（标题/标签） |
+| `searchString` | 否 | `#tag`（多个用空格分隔） | **标签搜索**（就是页面 URL 的 `q` 参数；**不带 `#` 的裸词返回 0 条**，详见 §3.6） |
 | `user` | 否 | 用户 id 或 `0` | 指定作者；`0`/空=全部 |
 | `vehicle` | 否 | `units.csv` 裸 id，如 `cn_m1a2t` | **按载具筛选**（见第 4 节） |
 | `additional` | 否 | `{}` | 附加过滤，普通列表为空对象 |
@@ -155,6 +155,39 @@ Feed.type    = 'regular';
 - **返回结构**：与 `get_regular` **逐字段一致**（含 `file.link` 下载直链、`images` 预览、`author.id` 等），下游解析/下载逻辑可直接复用。
 - **实测**（`user=132424191`，匿名）：`list=25`；`page=1` 内容不同（分页有效）；`author.id=132424191` 命中；`file.link` 形如 `https://live.warthunder.com/dl/<hash>/`。
 - **产品意义**：这是**免登录的公开能力**，可作为"按作者筛选/浏览"维度加入"应用内涂装浏览器"，与 §14（放弃登录）范围完全兼容。
+
+### 3.6 标签搜索（`searchString`，2026-10-10 实测）
+
+站点**只做标签搜索，没有全文搜索**：`searchString` 整个被当作标签查询处理，
+它同时就是页面 URL 里的 `q` 参数（`?q=%23anime` ↔ `searchString=#anime`，`%23` 即 `#`）。
+
+| 请求 | 结果 | 结论 |
+|---|---|---|
+| `searchString=#anime` | 25 条（`link` = `/feed/camouflages/?q=%23anime`） | 标签搜索的正面用例 |
+| `searchString=anime`（裸词） | **0 条** | 不带 `#` 什么都搜不到 |
+| `searchString=#anime #skin` | 25 条（`link` 回写 `q=%23anime+%23skin`） | 多标签：**空格分隔**，服务端原样回写 |
+| `searchString=#anime #不存在的标签` | 25 条（与只搜 `#anime` 相同） | 多标签是**并集**（命中任一），**不是交集** |
+| `searchString=#ANIME` / `#Anime` | 25 条 | **大小写不敏感** |
+| `searchString=#anime  #skin`（两个空格） | 25 条（`q=%23anime++%23skin`） | 服务端**不归一空格**；站点前端会并成一个 |
+| `searchString=#f-15` | **0 条** | 连字符不是标签字符 → 标签字符集是 `[A-Za-z0-9_]` |
+
+> 站点搜索框的行为（前端）：用户输入什么都会被**自动补上 `#`**（输入 `anime` 时页面里就变成 `#anime`），
+> 连续空格也会被并成一个。所以网页上永远不会发出裸词查询——这与"裸词 0 条"是同一件事的两面。
+> 应用侧发请求时也应按**单个空格**拼接（见 `Services/Online/WtLiveTag.cs`）。
+
+#### 3.6.1 描述里的标签（`description` 字段）
+
+`description` 是**服务端渲染好的 HTML**，其中的标签已经被包成了锚点：
+
+```html
+<a href="//live.warthunder.com/?q=%23anime" target="_blank" class="WTL-Embed-Hashtag">#anime</a>
+```
+
+- 多个标签是**连续拼接、中间没有空格**（实测）：`...#anime</a><a ...>#girls_frontline</a><a ...>#cm11</a>...`
+  → 剥掉 HTML 转纯文本后就是 `#anime#girls_frontline#cm11`（作者怎么写的都不影响，服务端已经分好词）。
+- 因此"从描述里认标签"最可靠的办法是**认 `?q=%23` 锚点**；认不到（站点改版 / 描述没被渲染）
+  再退回对纯文本做 `#` + `[A-Za-z0-9_]` 匹配——此时 `#` 天然就是分隔符，连写也切得开。
+- 应用侧据此把详情里的标签做成可点链接，点一下 = 按该标签搜索（查询形态见本节表格）。
 
 ---
 

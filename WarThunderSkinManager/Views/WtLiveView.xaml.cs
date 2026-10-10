@@ -135,7 +135,26 @@ public partial class WtLiveView : UserControl
                 viewModel.SubmitSearchCommand.Execute(null);
                 e.Handled = true;
                 break;
+
+            case Key.Back:
+                // 输入框空着时退格 = 删掉**最后一个胶囊**（"该胶囊一次退格即能删除"）。
+                // 框里有字时是正常的退格删字，不能碰胶囊。
+                if (viewModel.SearchText.Length == 0 && viewModel.RemoveLastChip()) e.Handled = true;
+                break;
         }
+    }
+
+    /// <summary>
+    /// 点搜索框的**空白处**（胶囊右边、输入行留白）= 点进输入框：聚焦并把下拉打开。
+    /// 外壳 Border 不是 TextBox，这些位置的点击不会落到输入框上；而下拉项在独立的 Popup 里，
+    /// 它们的点击不会冒泡到这里（Popup 有自己的可视树）。
+    /// </summary>
+    private void SearchShell_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (SearchBox.IsKeyboardFocusWithin) return;
+
+        SearchBox.Focus();
+        ViewModel?.FocusSearch();
     }
 
     /// <summary>点列表区域即收起搜索下拉（点击不可聚焦的卡片不会让搜索框失焦）。</summary>

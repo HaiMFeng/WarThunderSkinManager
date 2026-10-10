@@ -38,6 +38,7 @@ public partial class WtLiveCardItem : ObservableObject
         Title = item.Title;
         Author = item.Author;
         Description = item.Description;
+        Tags = item.Tags;
         PreviewUrl = item.PreviewUrl;
         Ratio = item.Ratio;
         PreviewWidth = item.PreviewWidth;
@@ -68,6 +69,9 @@ public partial class WtLiveCardItem : ObservableObject
 
     /// <summary>描述纯文本（多行；后续做详情/下载确认时可复用，列表不显示）。</summary>
     public string Description { get; }
+
+    /// <summary>描述里的标签（不含 <c>#</c>；详情浮窗点开时先拿它垫底，等详情接口回来再换全）。</summary>
+    public IReadOnlyList<string> Tags { get; }
 
     /// <summary>预览缩略图 URL；null = 该帖没有预览图。</summary>
     public string? PreviewUrl { get; }

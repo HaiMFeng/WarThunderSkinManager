@@ -25,6 +25,7 @@ public sealed record WTLiveFile(string Name, string Link, long Size);
 /// <param name="Id">当前语言版本帖子 id</param>
 /// <param name="Author">作者昵称</param>
 /// <param name="DescriptionText">正文纯文本（HTML 已剥离）</param>
+/// <param name="Tags">正文里的标签（不含 <c>#</c>，去重、按出现顺序；见 <see cref="WtLiveTag"/>)</param>
 /// <param name="DisplayName">建议显示名 = 附件压缩包文件名（去扩展名）；无附件时为空</param>
 /// <param name="ImageUrls">预览原图 URL（按帖子顺序）</param>
 /// <param name="File">附件文件；null = 该帖没有站内附件（可能外链网盘）</param>
@@ -34,6 +35,7 @@ public sealed record WTLivePost(
     long Id,
     string Author,
     string DescriptionText,
+    IReadOnlyList<string> Tags,
     string DisplayName,
     IReadOnlyList<string> ImageUrls,
     WTLiveFile? File,
@@ -47,6 +49,7 @@ public sealed record WTLivePost(
 /// <param name="Author">作者昵称</param>
 /// <param name="Title">卡片标题：描述首行（HTML 已剥离；为空时退回压缩包文件名 → <c>#帖子id</c>）</param>
 /// <param name="Description">描述纯文本（多行，供详情/预览使用）</param>
+/// <param name="Tags">描述里的标签（不含 <c>#</c>，去重、按出现顺序；见 <see cref="WtLiveTag"/>)</param>
 /// <param name="PreviewUrl">预览缩略图 URL（CDN，**低清变体**）；null = 该帖没有预览图</param>
 /// <param name="Ratio">预览图宽高比（宽/高）；缺失时按 16:9 兜底</param>
 /// <param name="PreviewWidth">预览缩略图申报的像素宽；0 = 未申报（解码宽度按不封顶处理）。
@@ -72,7 +75,8 @@ public sealed record WTLiveFeedItem(
     int Downloads,
     int Likes,
     int Views,
-    string PostUrl);
+    string PostUrl,
+    IReadOnlyList<string> Tags);
 
 /// <summary>一页涂装列表；<paramref name="HasMore"/> = 本页满页（站点固定 25/页，不足即到底，§3.3）。</summary>
 public sealed record WTLiveFeedPage(IReadOnlyList<WTLiveFeedItem> Items, bool HasMore);
@@ -166,6 +170,7 @@ public static class WTLiveService
             : new WTLiveFile(dto.File.Name ?? "", dto.File.Link, dto.File.Size);
 
         var descriptionText = HtmlToText(dto.Description ?? "");
+        var tags = WtLiveTag.Parse(dto.Description, descriptionText);
 
         // 建议显示名 = 压缩包文件名去扩展名（如 template_cn_hq_11）；
         // 正文首行通常是作者的宣传语而非涂装名，不用于命名（§3.15）
@@ -174,6 +179,7 @@ public static class WTLiveService
         return new WTLivePost(postId, dto.Id,
             dto.Author?.Nickname ?? "",
             descriptionText,
+            tags,
             displayName,
             images,
             file,
@@ -240,6 +246,7 @@ public static class WTLiveService
         {
             var (previewUrl, ratio, previewWidth) = ReadPreview(one.Images);
             var description = HtmlToText(one.Description ?? "");
+            var tags = WtLiveTag.Parse(one.Description, description);
             var fileName = one.File?.Name ?? "";
 
             items.Add(new WTLiveFeedItem(
@@ -256,7 +263,8 @@ public static class WTLiveService
                 one.Downloads,
                 one.Likes,
                 one.Views,
-                $"https://live.warthunder.com/post/{one.LangGroup}/en/"));
+                $"https://live.warthunder.com/post/{one.LangGroup}/en/",
+                tags));
         }
 
         return new WTLiveFeedPage(items, items.Count >= FeedPageSize);

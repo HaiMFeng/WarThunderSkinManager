@@ -66,6 +66,15 @@ public partial class WtLiveDetailViewModel : ObservableObject
     /// <summary>浮窗里所有预览图（顺序 = 帖子内顺序）。</summary>
     public ObservableCollection<WtLiveDetailImage> Images { get; } = new();
 
+    /// <summary>
+    /// 描述里的标签（**带 <c>#</c>**，视图直接显示；点一下按它搜索，见 <see cref="WtLiveTag"/>）。
+    /// 卡片那层先垫上，详情接口回来后再换成更全的一份。
+    /// </summary>
+    public ObservableCollection<string> Tags { get; } = new();
+
+    /// <summary>有没有标签（视图据此把整行收起，不留空行）。</summary>
+    public bool HasTags => Tags.Count > 0;
+
     /// <summary>浮窗是否打开（视图的可见性由它驱动）。</summary>
     [ObservableProperty] private bool _isOpen;
 
@@ -109,6 +118,8 @@ public partial class WtLiveDetailViewModel : ObservableObject
             OnPropertyChanged(nameof(IndexText));
             OnPropertyChanged(nameof(HasMultipleImages));
         };
+
+        Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
     }
 
     /// <summary>
@@ -130,6 +141,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         Author = card.Author;
         PostUrl = card.PostUrl;
         Description = card.Description;
+        SetTags(card.Tags);
         FileText = "";
         HasFile = card.HasFile;
         StatsText = BuildStats(card.Downloads, card.Likes, card.Views);
@@ -146,6 +158,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         _card = null;
         CancelPendingImages();
         Images.Clear();
+        Tags.Clear();
         ErrorMessage = "";
         IsLoading = false;
     }
@@ -285,6 +298,9 @@ public partial class WtLiveDetailViewModel : ObservableObject
         if (post.Author.Length > 0) Author = post.Author;
         if (post.DisplayName.Length > 0 && Title.Length == 0) Title = post.DisplayName;
         if (post.DescriptionText.Length > 0) Description = post.DescriptionText;
+
+        // 标签：详情接口的那份更全（列表接口的描述可能被截断）——空的话保住卡片那份
+        if (post.Tags.Count > 0) SetTags(post.Tags);
         if (post.File != null)
             FileText = $"{post.File.Name}（{DataResetService.FormatSize(post.File.Size)}）";
 
@@ -318,6 +334,21 @@ public partial class WtLiveDetailViewModel : ObservableObject
         // 垫底：标记成 Placeholder，否则"已经有图了"会把原图那趟挡掉（图会一直停在低清）
         Images[0].Image = card.PreviewImage;
         Images[0].IsPlaceholder = true;
+    }
+
+    /// <summary>
+    /// 重建标签行：接口给的是**不带 <c>#</c> 的标签值**，这里统一存成 <c>#tag</c>（视图直接显示、
+    /// 点击时再交给 <see cref="WtLiveViewModel.SearchTagCommand"/> 归一）。
+    /// </summary>
+    private void SetTags(IReadOnlyList<string> tags)
+    {
+        Tags.Clear();
+
+        foreach (var tag in tags)
+        {
+            var value = WtLiveTag.Normalize(tag);
+            if (value.Length > 0) Tags.Add(WtLiveTag.ToQueryToken(value));
+        }
     }
 
     /// <summary>取消所有在途的图片下载（关窗 / 换帖）：图已经不要了，让它白下完只是浪费带宽。</summary>
