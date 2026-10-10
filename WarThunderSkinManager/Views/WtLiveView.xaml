@@ -102,12 +102,13 @@
                          ③ 描边只有外框画一次，输入框自身不带描边，不套框；
                          ④ **长到两行就封顶**（MaxHeight = 60 = 34 + 26 × 2）：再多也不撑高工具栏，
                             改成框内纵向滚动（见下面的 ChipScroll）→ 页头高度恒等于左列「标题 + 提示」 -->
-                    <!-- 点框内任意处 = 点进输入框。**主路径是布局**：输入框被 TagInputPanel 拉满本行，
-                         框里那片空白就是输入框本身，按下由 WPF 原生地落到它身上。
-                         这一层处理器只兜**没用输入框盖住的地方**（两侧 28 的槽、胶囊之间的缝、上下 3 的留白）：
-                         挂的是 **Preview（隧道）**而不是冒泡的 MouseLeftButtonDown——那些地方的命中元素可能是
-                         里面的 ScrollViewer，冒泡的按下会被它吃掉；隧道从根往下走、先经过外壳，子元素截不住
-                         （见 code-behind 的处理器）。 -->
+                    <!-- 点框内任意处 = 点进输入框，两半各管一段：
+                         ① **布局管中段**：输入框被 TagInputPanel 拉满本行，框里那片空白就是输入框本身，
+                            按下由 WPF 原生地落到它身上（自检「搜索框点入」用真实窗口量过命中面）；
+                         ② **这层处理器管其余**：两侧放大镜 /「×」槽位（命中元素是外壳自己）、可见的「×」与
+                            胶囊「×」（命中元素是按钮，按钮会吃掉冒泡的按下）、胶囊之间的缝、上下 3 的留白。
+                            挂 **Preview（隧道）**而不是冒泡的 MouseLeftButtonDown：隧道从根往下走、先经过外壳，
+                            子元素截不住。判定见 code-behind（只有滚动条不抢）。 -->
                     <Border x:Name="SearchShell" Width="400" MinHeight="34" MaxHeight="60" CornerRadius="6"
                             SnapsToDevicePixels="True" Background="{StaticResource BrushBackground}"
                             BorderThickness="1" PreviewMouseLeftButtonDown="SearchShell_PreviewMouseLeftButtonDown">
@@ -298,7 +299,7 @@
 
                         <!-- 清空（有文字或有胶囊才出现）：一次清掉条件与输入。
                              顶边距 4 → 24 高的按钮中线落在 16，与第一行胶囊 / 输入框同一中轴 -->
-                        <Button Content="&#xF00D;"
+                        <Button x:Name="SearchClear" Content="&#xF00D;"
                                 HorizontalAlignment="Right" VerticalAlignment="Top"
                                 Margin="0,4,4,0" ToolTip="{loc:Loc wtlive.search.clear}"
                                 Command="{Binding WtLive.ClearSearchCommand}">

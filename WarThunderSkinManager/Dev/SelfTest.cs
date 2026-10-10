@@ -714,6 +714,110 @@ internal static class SelfTest
                              + $"，拉满本行 = {inputFillsRow}（应 True：框里那片空白就是输入框本身，点哪儿都能输入）"
                              + $"，占位文案不挡点击 = {placeholderTransparent}（应 True）");
 
+                // 「点框里哪儿都能输入」还有一半靠**事件**：两侧的放大镜 / 「×」槽位按下的命中元素是
+                // **外壳 Border**（不是输入框），靠外壳的 PreviewMouseLeftButtonDown 兜底聚焦；
+                // 可见的「×」「胶囊×」按下的命中元素是**按钮**，也要照样聚焦（点掉再接着打字）。
+                // 这一半只能在**真实窗口**里验（自检其余部分都不建窗：没窗口既拿不到真实命中面、也拿不到键盘焦点）。
+                // 建窗失败（无桌面 / 会话 0）不算失败，记「跳过」。
+                try
+                {
+                    var winVm = new WtLiveViewModel();
+                    var winView = new WarThunderSkinManager.Views.WtLiveView { DataContext = new { WtLive = winVm } };
+                    var win = new Window
+                    {
+                        Width = 900,
+                        Height = 200,
+                        WindowStyle = WindowStyle.None,
+                        ShowInTaskbar = false,
+                        ShowActivated = false,     // 别抢桌面焦点（焦点断言不需要激活窗口）
+                        Left = -4000,              // 挪到屏幕外，别闪到用户
+                        Top = -4000,
+                        Content = winView,
+                    };
+                    win.Show();
+                    win.UpdateLayout();
+
+                    var wShell = (Border)winView.FindName("SearchShell");
+                    var wBox = (TextBox)winView.FindName("SearchBox");
+                    var wClear = (Button)winView.FindName("SearchClear");
+                    var wScroll = (ScrollViewer)winView.FindName("ChipScroll");
+
+                    // ① 真实命中面：中段必须落在输入框里；两侧槽位落在外壳（→ 那两处只能靠外壳兜底聚焦）
+                    var middleToInput = InTree(wShell.InputHitTest(new Point(200, 17)) as DependencyObject, wBox);
+                    var leftSlotToShell = ReferenceEquals(wShell.InputHitTest(new Point(14, 17)), wShell);
+                    var rightSlotToShell = ReferenceEquals(wShell.InputHitTest(new Point(385, 17)), wShell);
+
+                    // ② 聚焦调用本身（在真实窗口里才拿得到键盘焦点）：投一次 PreviewMouseLeftButtonDown
+                    //    到外壳上（= 点了两侧槽位）→ 焦点须落到输入框
+                    System.Windows.Input.Keyboard.ClearFocus();
+                    RaisePreview(wShell);
+                    var shellPressFocused = ReferenceEquals(System.Windows.Input.Keyboard.FocusedElement, wBox);
+
+                    // ③ 判定纯函数：按在滚动条上不抢；按在「×」（按钮）上要抢。
+                    //    路由不用自检——「×」就在外壳子树里，隧道一定先过外壳（④ 断言这层从属关系）。
+                    winVm.AppendTagChip("cm11");
+                    winVm.SearchText = "x";                       // 让「×」出现，并撑出框内滚动条
+                    for (var i = 0; i < 6; i++) winVm.AppendTagChip("very_long_tag_" + i);
+                    win.UpdateLayout();
+
+                    var bar = FindDescendant<ScrollBar>(wScroll);
+                    var isPressOnScrollBar = typeof(WarThunderSkinManager.Views.WtLiveView)
+                        .GetMethod("IsPressOnScrollBar",
+                            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+                    var barDecision = bar == null ? (bool?)null : (bool)isPressOnScrollBar.Invoke(winView, new object[] { bar })!;
+                    var clearDecision = bar == null
+                        ? (bool?)null
+                        : (bool)isPressOnScrollBar.Invoke(winView, new object[] { wClear })!;
+
+                    // ④ 从属关系：「×」与框内滚动条都在外壳子树里（隧道路由必经外壳）
+                    var clearInsideShell = InTree(wClear, wShell);
+                    var barInsideShell = bar == null ? (bool?)null : InTree(bar, wShell);
+
+                    log.AppendLine($"搜索框点入 : 真实命中（有窗口时）—— 中段落在输入框 = {middleToInput}（应 True）、"
+                                 + $"两侧槽位落在外壳 = {leftSlotToShell}/{rightSlotToShell}（应 True/True：那两处靠外壳兜底），"
+                                 + $"按外壳聚焦 = {shellPressFocused}（应 True）");
+                    log.AppendLine($"搜索框点入 : 按下判定 —— 落在滚动条 = {(barDecision?.ToString() ?? "未找到（跳过）")}（应 True：不抢光标），"
+                                 + $"落在「×」= {(clearDecision?.ToString() ?? "跳过")}（应 False：照常聚焦，点掉再接着打字），"
+                                 + $"「×」在外壳子树里 = {clearInsideShell}（应 True）、滚动条在外壳子树里 = "
+                                 + $"{(barInsideShell?.ToString() ?? "跳过")}（应 True：隧道必过外壳）");
+
+                    win.Content = null;
+                    win.Close();
+                }
+                catch (Exception ex)
+                {
+                    log.AppendLine($"搜索框点入 : 跳过（建真实窗口失败：{ex.GetType().Name}: {ex.Message}）");
+                }
+
+                static bool InTree(DependencyObject? node, DependencyObject? ancestor)
+                {
+                    for (var n = node; n != null && ancestor != null; n = System.Windows.Media.VisualTreeHelper.GetParent(n))
+                        if (ReferenceEquals(n, ancestor)) return true;
+                    return false;
+                }
+
+                // 在某个元素上投一次 PreviewMouseLeftButtonDown（等于"按在它身上"）：
+                // 隧道从根往下走会先经过外壳 → 外壳那个处理器该跑就得跑。有窗口时 RaiseEvent 才建得出祖先路由。
+                static void RaisePreview(UIElement source) => source.RaiseEvent(
+                    new System.Windows.Input.MouseButtonEventArgs(
+                        System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                    { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent });
+
+                static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+                {
+                    var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+                    for (var i = 0; i < count; i++)
+                    {
+                        var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+                        if (child is T hit) return hit;
+                        var deep = FindDescendant<T>(child);
+                        if (deep != null) return deep;
+                    }
+
+                    return null;
+                }
+
                 // 输入框**自带描边**是"框里还有一个框"的根源：BaseTextBox 的模板聚焦时把内框硬改成
                 // 1.5px 蓝色（ControlTemplate.Triggers 里的 Setter，外面设 BorderThickness=0 也压不住），
                 // 所以这里用了只含内容宿主的模板。聚焦态在自检里测不了（没有窗口拿不到键盘焦点），

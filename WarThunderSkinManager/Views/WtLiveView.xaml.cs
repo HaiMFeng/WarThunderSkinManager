@@ -206,13 +206,16 @@ public partial class WtLiveView : UserControl
     /// 隧道阶段从根往下走，先经过外壳，子元素截不住。
     /// </para>
     /// <para>
-    /// **落在按钮 / 滚动条上的按下不抢**：胶囊上的「×」、右侧「清空」、框内滚动条都有自己的交互
-    /// （抢过来会顺带把下拉弹出来）。下拉项在独立的 Popup 里（有自己的可视树），它们的点击不会走到这里。
+    /// **落在滚动条上的按下不抢**（拖滚动条不该把光标拽进输入框）。胶囊上的「×」、右侧「清空」是
+    /// **例外——照样聚焦**：它们的 <c>Command</c> 自己会执行（删胶囊 / 清空），而"框里点哪儿都能接着打字"
+    /// 才是这里要的（Fluent 的 Tag Picker 也是这个手感：点掉一个标签，光标仍在输入处）。
+    /// 按钮是 <c>Focusable=False</c>，不会把焦点抢走。下拉项在独立的 Popup 里（有自己的可视树），
+    /// 它们的点击不会走到这里。
     /// </para>
     /// </summary>
     private void SearchShell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (IsPressOnOwnControl(e.OriginalSource as DependencyObject)) return;
+        if (IsPressOnScrollBar(e.OriginalSource as DependencyObject)) return;
         if (SearchBox.IsKeyboardFocusWithin) return;
 
         SearchBox.Focus();
@@ -220,13 +223,13 @@ public partial class WtLiveView : UserControl
     }
 
     /// <summary>
-    /// 这次按下的落点是不是外壳自己的交互控件（按钮 / 滚动条，往上找到外壳为止）。
+    /// 这次按下的落点是不是框内的滚动条（往上找到外壳为止）。
     /// </summary>
-    private bool IsPressOnOwnControl(DependencyObject? source)
+    private bool IsPressOnScrollBar(DependencyObject? source)
     {
         for (var node = source; node != null && !ReferenceEquals(node, SearchShell); node = VisualTreeHelper.GetParent(node))
         {
-            if (node is ButtonBase or ScrollBar) return true;
+            if (node is ScrollBar) return true;
         }
 
         return false;

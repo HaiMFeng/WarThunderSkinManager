@@ -26,6 +26,10 @@ namespace WarThunderSkinManager.Controls;
 /// 行高 = 本行最高的项（含外边距），列宽同理（项占位 = 自身宽 + 左右外边距）。
 /// 高度不受可用高度约束（框内滚动由外层 ScrollViewer 负责）。
 /// </para>
+/// <para>
+/// 两侧的放大镜 / 「×」槽位不在本面板里（由外层留出）：那几处按下的命中元素是外壳 Border，
+/// 由外壳的 <c>PreviewMouseLeftButtonDown</c> 兜底聚焦（见 <c>Views/WtLiveView.xaml.cs</c>）。
+/// </para>
 /// </remarks>
 public sealed class TagInputPanel : Panel
 {
