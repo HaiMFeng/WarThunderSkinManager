@@ -23,6 +23,18 @@ public partial class WtLiveView : UserControl
     /// <summary>距底部这么远就预取下一页：等真滚到底再请求，用户会看到明显的空档。</summary>
     private const double PrefetchDistance = 400;
 
+    /// <summary>
+    /// 面板"保留实体"的窗口半径（屏数）：视野外再多留这么多屏的卡片**不收起**。
+    /// 留富余是为了滚动时不至于每帧都收起 / 展开（收起到"看得见"之间留了一屏多的缓冲）。
+    /// </summary>
+    private const double RealizeScreens = 1.5;
+
+    /// <summary>
+    /// 缩略图"保留位图"的窗口半径（屏数）：比 <see cref="RealizeScreens"/> 更大，
+    /// 于是被释放的卡片必定已被收起（看不见），且滚到近处会先补图再露面。
+    /// </summary>
+    private const double PreloadScreens = 3;
+
     private MasonryPanel? _panel;
 
     /// <summary>已经订阅过胶囊集合的那个 VM（换了 VM 要重新订阅，且不能重复订阅）。</summary>
@@ -116,12 +128,20 @@ public partial class WtLiveView : UserControl
             _panel = FindPanel(CardList);
             if (_panel == null) return;
 
-            _panel.ColumnWidthChanged += (_, _) => PushThumbnailWidth();
+            _panel.ColumnWidthChanged += (_, _) =>
+            {
+                PushThumbnailWidth();
+
+                // 列宽一变，面板的高度缓存整体作废、被收起的卡片会被唤醒重测（见 MasonryPanel）：
+                // 等这一轮布局跑完再把可视窗口重新收一次，别让整列一直实体着
+                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ApplyRealizeWindowForCurrentScroll));
+            };
 
             // 窗口被拖到缩放比不同的另一块屏幕上：列宽（DIP）没变，但设备像素变了
             if (Window.GetWindow(this) is { } window) window.DpiChanged += (_, _) => PushThumbnailWidth();
 
             PushThumbnailWidth();
+            ApplyRealizeWindowForCurrentScroll(); // 首屏也要收一次（否则第一页之后全靠滚动事件才生效）
         }));
     }
 
@@ -133,6 +153,31 @@ public partial class WtLiveView : UserControl
         var dpi = VisualTreeHelper.GetDpi(_panel);
         ViewModel?.SetDisplayWidth(_panel.ColumnWidth, dpi.DpiScaleX);
     }
+
+    /// <summary>
+    /// 按**当前滚动位置**更新"保留实体 / 保留缩略图"的窗口（滚动、列宽变化、首屏都会调）。
+    /// <para>
+    /// 两圈半径分开：面板把 <see cref="RealizeScreens"/> 屏之外的卡片**收起**（不测量 / 不渲染，
+    /// 位置照旧、滚动范围不变），VM 把 <see cref="PreloadScreens"/> 屏之外的缩略图**释放**
+    /// —— 释放圈比收起圈大，于是"被释放的卡片一定已经被收起（看不见）"，
+    /// 而滚到近处时会先在收起圈外把图取回来（走磁盘缓存），不会看到"图没了再补"。
+    /// </para>
+    /// </summary>
+    private void ApplyRealizeWindow(double offset, double viewportHeight)
+    {
+        if (_panel == null || ViewModel is not { } viewModel || viewportHeight <= 0) return;
+
+        // 面板还没有排布结果（刚重开 / 刚换列宽）→ 什么都不做：那会儿任何窗口判断都不可靠
+        if (_panel.GetRange(offset, viewportHeight, viewportHeight * RealizeScreens) is not { } realize) return;
+
+        _panel.SetRealizedRange(realize.First, realize.Last);
+
+        if (_panel.GetRange(offset, viewportHeight, viewportHeight * PreloadScreens) is { } preload)
+            viewModel.SetVisibleWindow(preload.First, preload.Last);
+    }
+
+    private void ApplyRealizeWindowForCurrentScroll()
+        => ApplyRealizeWindow(ListScroll.VerticalOffset, ListScroll.ViewportHeight);
 
     /// <summary>
     /// 点卡片 = 打开详情浮窗（预览图轮播 + 完整信息 + 下载）。
@@ -288,13 +333,17 @@ public partial class WtLiveView : UserControl
     }
 
     /// <summary>
-    /// 接近底部即请求下一页。<see cref="WtLiveViewModel.RequestMore"/> 是幂等的（加载中 / 已到底 /
-    /// 失败态都直接忽略），所以这里不必自己去重，反复触发是安全的。
-    /// 首屏内容不足一屏时，列表撑高会再次触发它，直到铺满或到底。
+    /// 滚动时做两件事：**更新保留实体 / 缩略图的窗口**（见 <see cref="ApplyRealizeWindow"/>），
+    /// 以及接近底部就请求下一页（<see cref="WtLiveViewModel.RequestMore"/> 是幂等的
+    /// ——加载中 / 已到底 / 失败态都直接忽略，所以不必自己去重，反复触发是安全的；
+    /// 首屏内容不足一屏时，列表撑高会再次触发它，直到铺满或到底）。
     /// </summary>
     private void ListScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (e.ExtentHeight <= 0) return;
+
+        ApplyRealizeWindow(e.VerticalOffset, e.ViewportHeight);
+
         if (e.VerticalOffset + e.ViewportHeight < e.ExtentHeight - PrefetchDistance) return;
 
         ViewModel?.RequestMore();

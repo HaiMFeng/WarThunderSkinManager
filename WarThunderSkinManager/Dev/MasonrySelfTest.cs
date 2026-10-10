@@ -225,6 +225,8 @@ internal static class MasonrySelfTest
         {
             BuildCards(200).Measure(new Size(1100, double.PositiveInfinity)); // 预热：避开首次 JIT / 字体缓存
 
+            var full = 0d;
+
             foreach (var count in new[] { 500, 1500, 3000 })
             {
                 var panel = BuildCards(count);
@@ -235,17 +237,176 @@ internal static class MasonrySelfTest
                 stopwatch.Stop();
 
                 var ms = stopwatch.Elapsed.TotalMilliseconds;
+                if (count == 3000) full = ms;
+
                 log.AppendLine($"瀑布流规模: {count} 张卡片 → 测量+排列 = {ms:0.#} ms，"
                              + $"内容高 {panel.DesiredSize.Height:0} px，元素 ≈ {count * 8}");
 
                 if (count == 3000 && ms > 3000)
                     log.AppendLine($"自检异常：3000 张卡片的布局耗时 {ms:0} ms（>3000ms），疑似退化到 O(N²)");
             }
+
+            // 窗口裁剪后同规模复测（「保留实体范围」= 3000 张里只留 50 张）：
+            // 收起的那 2950 张不再参与测量 / 排列，这里能量到布局侧的省下多少；
+            // 更主要的一头（每帧渲染遍历、命中测试）在离屏自检里量不到，只能靠"彻底不参与"来保证
+            var trimmed = BuildCards(3000);
+            trimmed.Measure(new Size(1100, double.PositiveInfinity));
+            trimmed.Arrange(new Rect(0, 0, 1100, trimmed.DesiredSize.Height));
+            var heightBefore = trimmed.DesiredSize.Height;
+
+            trimmed.SetRealizedRange(1000, 1049);
+
+            var trimStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            trimmed.Measure(new Size(1100, double.PositiveInfinity));
+            trimmed.Arrange(new Rect(0, 0, 1100, trimmed.DesiredSize.Height));
+            trimStopwatch.Stop();
+
+            var trimmedMs = trimStopwatch.Elapsed.TotalMilliseconds;
+            var heightKept = Math.Abs(heightBefore - trimmed.DesiredSize.Height) < 0.01;
+            var collapsedOk = trimmed.CollapsedCount == 2950;
+
+            // 这一行量的是**布局侧**的省：收起的卡片不测量、也不排列（同规模全量那一行是对照）。
+            // 更主要的一头（每帧渲染遍历、命中测试）在离屏自检里量不到，只能靠"彻底不参与"保证
+            log.AppendLine($"瀑布流裁剪: 3000 张收起 {trimmed.CollapsedCount} 张（只留 50 张实体）→ "
+                         + $"再布局一次 = {trimmedMs:0.#} ms"
+                         + (full > 0 ? $"（同规模全量 {full:0.#} ms）" : "")
+                         + $"，收起后总高不变 = {heightKept}（应 True：滚动范围不能跟着裁）");
+
+            if (!collapsedOk)
+                log.AppendLine($"自检异常：瀑布流裁剪收起张数不符（{trimmed.CollapsedCount}，应 2950）");
+            else if (!heightKept)
+                log.AppendLine("自检异常：瀑布流裁剪改变了内容高度（滚动范围会跳）");
         }
         catch (Exception ex)
         {
             log.AppendLine($"自检异常：瀑布流规模探针抛错 → {ex}");
         }
+    }
+
+    /// <summary>
+    /// 「窗口裁剪」的回归断言（<see cref="MasonryPanel.SetRealizedRange"/>）：**收起不许动布局**。
+    /// <para>
+    /// 这是瀑布流"卡片上千后卡顿"的治理手段（窗口外的卡片彻底不参与测量 / 渲染 / 命中测试），
+    /// 它成立的前提有四条，逐条钉住：① 总高不变（滚动范围不跳）；② 每张卡片位置不变（滚回来不错位）；
+    /// ③ 收起草不影响"可视窗口命中哪些下标"的判断；④ 列宽变了（窗口缩放）能把收起的卡片**唤醒**重测，
+    /// 且重测后的排布与"从零排一遍"完全一致（高度缓存作废这条不能漏）。
+    /// </para>
+    /// </summary>
+    public static void CheckWindowTrim(StringBuilder log)
+    {
+        try
+        {
+            const int count = 40;
+            var panel = BuildFixedPanel(count);
+
+            var before = Layout(panel, 500, out var heightBefore);
+
+            var range = panel.GetRange(0, 300, 0);
+            var rangeOk = range is { First: 0 } first && first.Last > 0 && first.Last < count;
+
+            // 只保留中间 6 块实体，其余收起
+            panel.SetRealizedRange(10, 15);
+            var collapsedCount = panel.CollapsedCount;
+            var collapsedOk = collapsedCount == count - 6;
+
+            // 收起后**再排一遍**：总高与每块位置都必须一字不变
+            var after = Layout(panel, 500, out var heightAfter);
+            var heightKept = Math.Abs(heightBefore - heightAfter) < 0.01;
+            var slotsKept = before.Count == after.Count;
+            for (var i = 0; slotsKept && i < before.Count; i++) slotsKept = Same(before[i], after[i]);
+
+            var rangeAfter = panel.GetRange(0, 300, 0);
+            var rangeStable = range is { } r && rangeAfter is { } r2 && r.First == r2.First && r.Last == r2.Last;
+
+            // 列宽变了（可用宽 500 → 700，列宽 240 → 220）→ 收起的卡片必须被唤醒重测
+            // （收起状态下量不出高度），重排结果与"从零排一遍"必须一字不差
+            var wideColumns = ColumnsFor(700);
+            var narrowColumns = ColumnsFor(500);
+            var slotsWide = Layout(panel, 700, out var heightWide);
+            var wokeUp = panel.CollapsedCount == 0;
+
+            var fresh = BuildFixedPanel(count);
+            var freshSlots = Layout(fresh, 700, out var freshHeight);
+            var wideOk = Math.Abs(heightWide - freshHeight) < 0.01 && slotsWide.Count == freshSlots.Count;
+            for (var i = 0; wideOk && i < slotsWide.Count; i++) wideOk = Same(slotsWide[i], freshSlots[i]);
+
+            log.AppendLine($"瀑布流窗口: 命中范围 = {(range is { } rr ? $"[{rr.First},{rr.Last}]" : "未命中")}（应含 0）"
+                         + $"，收起张数 = {collapsedCount} / {count}（应 {count - 6}）→ {collapsedOk}"
+                         + $"，收起后总高不变 = {heightKept}、位置不变 = {slotsKept}、命中范围不变 = {rangeStable}"
+                         + $"（都应 True：裁剪不许动滚动范围与卡片位置）");
+            log.AppendLine($"瀑布流换列宽: 列宽 {narrowColumns.Width:0.#} → {wideColumns.Width:0.#}"
+                         + $"（{narrowColumns.Columns} → {wideColumns.Columns} 列），收起的卡片被唤醒 = {wokeUp}（应 True）"
+                         + $"，重排与从零排一致 = {wideOk}（应 True：高度缓存作废这条不能漏）");
+
+            if (!rangeOk)
+                log.AppendLine("自检异常：瀑布流窗口命中范围不符（滚动位置 0 / 视口 300 应命中前几块）");
+            else if (!collapsedOk)
+                log.AppendLine($"自检异常：瀑布流窗口收起数量不符（收起 {panel.CollapsedCount}，应 {count - 6}）");
+            else if (!heightKept || !slotsKept)
+                log.AppendLine("自检异常：瀑布流窗口裁剪改变了布局（总高 / 卡片位置变了，滚动会跳）");
+            else if (!rangeStable)
+                log.AppendLine("自检异常：瀑布流窗口裁剪影响了可视范围命中（位置没变，命中范围就不该变）");
+            else if (!wokeUp)
+                log.AppendLine("自检异常：列宽变化后收起的卡片未被唤醒（高度缓存失效会导致错位）");
+            else if (!wideOk)
+                log.AppendLine("自检异常：列宽变化后重排结果与从零排不一致（高度缓存 / 唤醒有漏）");
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine($"自检异常：瀑布流窗口裁剪自检抛错 → {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 造 <paramref name="count"/> 个等高方块（落位可精确断言，用于窗口裁剪的回归）。
+    /// 宽度区间留得宽（120~320）：这样"可用宽 500 → 700"会真的把**列宽**从 240 换到 220
+    /// （列宽没变的话高度缓存依然有效、也就不会走唤醒那条路，测不到想测的）。
+    /// </summary>
+    private static MasonryPanel BuildFixedPanel(int count)
+    {
+        var panel = new MasonryPanel
+        {
+            TargetItemWidth = 200,
+            MinItemWidth = 120,
+            MaxItemWidth = 320,
+            MaxColumns = 4,
+            ItemGap = Gap,
+        };
+
+        for (var i = 0; i < count; i++) panel.Children.Add(new Border { Height = BlockHeight });
+
+        return panel;
+    }
+
+    /// <summary>可用宽 → (列数, 列宽)：与面板内部同一套策略，供断言预期值用。</summary>
+    private static (int Columns, double Width) ColumnsFor(double available)
+    {
+        var gap = Gap;
+        var columns = Math.Max(1, (int)Math.Floor((available + gap) / (200 + gap)));
+        columns = Math.Min(columns, 4);
+        var width = (available - (columns - 1) * gap) / columns;
+
+        while (width > 320 && columns < 12)
+        {
+            columns++;
+            width = (available - (columns - 1) * gap) / columns;
+        }
+
+        return (columns, Math.Max(120, width));
+    }
+
+    /// <summary>量一遍布局，返回每块的排布矩形；<paramref name="height"/> 给出面板期望高度。</summary>
+    private static List<Rect> Layout(MasonryPanel panel, double width, out double height)
+    {
+        panel.Measure(new Size(width, double.PositiveInfinity));
+        panel.Arrange(new Rect(0, 0, width, panel.DesiredSize.Height));
+        height = panel.DesiredSize.Height;
+
+        var slots = new List<Rect>();
+        foreach (UIElement child in panel.Children)
+            if (child is FrameworkElement element) slots.Add(LayoutInformation.GetLayoutSlot(element));
+
+        return slots;
     }
 
     /// <summary>造 <paramref name="count"/> 张"像真卡片"的子项（高度按实测比例分布，宽高比 0.9~2.2）。</summary>

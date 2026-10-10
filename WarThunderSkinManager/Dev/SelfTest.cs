@@ -619,7 +619,8 @@ internal static class SelfTest
             // ---- 瀑布流面板（Controls/MasonryPanel）：WT Live 浏览页的布局，断言最短列落位 ----
             MasonrySelfTest.Run(log);
             MasonrySelfTest.CheckCardAspect(log);   // 缩略图按比例占位不得裁边（曾被列宽算高裁掉约 12%）
-            MasonrySelfTest.MeasureThroughput(log); // 卡片上规模后的一次完整布局成本（瀑布流不做虚拟化，需要有数）
+            MasonrySelfTest.CheckWindowTrim(log);   // 窗口外收起（不测量/不渲染）不许动布局：总高与位置都不变
+            MasonrySelfTest.MeasureThroughput(log); // 卡片上规模后的一次完整布局成本（含裁剪后的复测）
 
             // ---- 输入框内边距（BaseTextBox）：**Padding 只能生效一次** ----
             // 模板若把 Padding 又绑给 Border，TextBox 自己再按 Padding 内缩一次 → 内缩两次，
@@ -2273,6 +2274,60 @@ internal static class SelfTest
                          + $"，点一下亮起 = {starAfter}（应 True）、列表里新增 = {starAdded}（应 True）"
                          + $"，列表里删掉即灭 = {starCleared}（应 True）"
                          + $"，空列表提示 = {new WtLiveFavoritesViewModel().IsEmpty}（应 True）");
+
+            // ---- 缩略图随可视窗口释放（滚远就丢位图，滚回来按需重取）----
+            // 卡片上千后"取过就永不释放"是内存与 GC 压力的主项：位图内存 ≈ 解码宽 × 高 × 4 字节，
+            // 滚过几千张能堆到几百 MB。这里钉两件事：窗口外的释放动作，以及"该补取"的判据
+            // （补取一律走磁盘缓存、零网络；失败过的不自动重试，免得又转起圈来）
+            static WtLiveCardItem WindowCard(int index, string? previewUrl) => new(new WTLiveFeedItem(
+                index, "作者", 0, "", $"标题 {index}", "描述", previewUrl, 1.5, 0,
+                "skin.zip", "", 1024, 1, 2, 3,
+                $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()));
+
+            var windowVm = new WtLiveViewModel();
+            var outsideWindow = WindowCard(0, "https://example.com/0.jpg"); // 窗口外 → 应释放
+            var insideWindow = WindowCard(1, "https://example.com/1.jpg");  // 窗口内 → 应保留
+            var failedCard = WindowCard(2, "https://example.com/2.jpg");    // 窗口外的失败态 → 不许被改写
+            windowVm.Items.Add(outsideWindow);
+            windowVm.Items.Add(insideWindow);
+            windowVm.Items.Add(failedCard);
+
+            var fakeImage = new System.Windows.Media.DrawingImage();
+            var outsideLoad = new CancellationTokenSource();
+            outsideWindow.PreviewImage = fakeImage;
+            outsideWindow.ThumbnailCancellation = outsideLoad;
+            outsideWindow.ThumbnailState = WtLiveThumbnailState.Ready;
+
+            insideWindow.PreviewImage = fakeImage;
+            insideWindow.ThumbnailCancellation = new CancellationTokenSource();
+            insideWindow.ThumbnailState = WtLiveThumbnailState.Ready;
+
+            failedCard.ThumbnailState = WtLiveThumbnailState.Missing;
+
+            windowVm.SetVisibleWindow(1, 1); // 只把下标 1 留在窗口内
+
+            var releasedOutside = outsideWindow.PreviewImage == null && outsideWindow.ThumbnailCancellation == null;
+            var releasedLoad = outsideLoad.IsCancellationRequested;
+            var releasedNeedsRefetch = WtLiveViewModel.NeedsThumbnail(outsideWindow);
+            var keptInside = ReferenceEquals(insideWindow.PreviewImage, fakeImage)
+                             && !insideWindow.ThumbnailCancellation!.IsCancellationRequested;
+            var failedKept = failedCard.ThumbnailState == WtLiveThumbnailState.Missing
+                             && !WtLiveViewModel.NeedsThumbnail(failedCard);
+
+            log.AppendLine($"缩略图窗口: 窗口外已释放 = {releasedOutside}（应 True）"
+                         + $"，在途下载已掐断 = {releasedLoad}（应 True）"
+                         + $"，滚回来该补取 = {releasedNeedsRefetch}（应 True：状态回到加载中）"
+                         + $"，窗口内保留 = {keptInside}（应 True：看得见的卡片不能丢图）"
+                         + $"，失败的不自动重试 = {failedKept}（应 True）");
+
+            if (!releasedOutside || !releasedLoad)
+                log.AppendLine("自检异常：窗口外卡片未释放缩略图（滚远后位图会一直堆着）");
+            else if (!keptInside)
+                log.AppendLine("自检异常：窗口内卡片的缩略图被误释放（看得见的卡片不该丢图）");
+            else if (!releasedNeedsRefetch)
+                log.AppendLine("自检异常：被释放的卡片滚回来后不会被补取（状态没回到加载中）");
+            else if (!failedKept)
+                log.AppendLine("自检异常：加载失败的卡片被窗口逻辑改写成加载中（会一直转圈）");
 
             // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
             //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----

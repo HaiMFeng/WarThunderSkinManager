@@ -178,6 +178,12 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>当前清晰度档位（<see cref="WtLiveQualityCatalog"/>；设置页改档时由 <see cref="SetQuality"/> 更新）。</summary>
     private string _quality = WtLiveQualityCatalog.DefaultQuality;
 
+    /// <summary>
+    /// 视图喂进来的"要保留缩略图"的下标窗口（见 <see cref="SetVisibleWindow"/>）；
+    /// <c>null</c> = 还不知道（首屏、列表刚重开）→ 一律照旧"加进来就取"。
+    /// </summary>
+    private (int First, int Last)? _visibleWindow;
+
     public WtLiveViewModel()
     {
         Detail.Owner = this; // 详情浮窗里点作者名 / 头像要跳回本页做「按作者搜索」
@@ -271,6 +277,79 @@ public partial class WtLiveViewModel : ObservableObject
     /// </summary>
     public void SetQuality(string? quality) => _quality = WtLiveQualityCatalog.Normalize(quality);
 
+    /// <summary>
+    /// 视图在滚动时喂进来的**可视窗口**（含面板"保留实体"范围再往外扩的那一圈）：
+    /// 窗口内的卡片保留 / 按需补取缩略图，窗口外的卡片**释放已解码的位图并掐断在途下载**。
+    /// <para>
+    /// 这一条是"越滚越卡"的主因之一：卡片一旦取过图就永不释放，滚过几千张之后
+    /// 几百 MB 的解码位图全挂在卡片上（GC 压力 + 工作集膨胀，且与卡片数一起线性增长）。
+    /// 释放后滚回来会重新取，但**走磁盘缓存（零网络）**，而且窗口比"看得见"的那一圈大得多，
+    /// 正常滚动不会看到"图没了再补"。
+    /// </para>
+    /// <para>
+    /// 视图之所以能给出这个窗口：面板知道每张卡片的排布矩形（<c>MasonryPanel.GetRange</c>），
+    /// 而"看得见的那一圈"与"保留实体的那一圈"用同一个边界 —— 于是**被释放的卡片必定已被收起**
+    /// （不可见），不会出现"看得见的卡片在转圈"。
+    /// </para>
+    /// </summary>
+    public void SetVisibleWindow(int first, int last)
+    {
+        _visibleWindow = (first, last);
+        ApplyVisibleWindow();
+    }
+
+    /// <summary>窗口内的补取、窗口外的释放。卡片上千时这是 O(n) 的遍历，但只做比较与赋值。</summary>
+    private void ApplyVisibleWindow()
+    {
+        if (_visibleWindow is not { } window) return;
+
+        for (var i = 0; i < Items.Count; i++)
+        {
+            var card = Items[i];
+
+            if (i >= window.First && i <= window.Last)
+            {
+                if (NeedsThumbnail(card)) _ = LoadThumbnailAsync(card);
+            }
+            else
+            {
+                ReleaseThumbnail(card);
+            }
+        }
+    }
+
+    /// <summary>这张卡的下标是否落在可视窗口里（窗口未知时一律算"在"）。</summary>
+    private bool InsideVisibleWindow(int index)
+        => _visibleWindow is not { } window || (index >= window.First && index <= window.Last);
+
+    /// <summary>
+    /// 这张卡的缩略图"该取但还没取"：状态是加载中、手上没有在途任务（<see cref="WtLiveCardItem.ThumbnailCancellation"/>
+    /// 为空）、且有预览图 —— 即"从没取过"或"被窗口外释放过"。失败过的卡片是 <c>Missing</c>，不在这里自动重试
+    /// （重试交给卡片上的「重新加载」）。<c>internal</c> 是为了让自检能直接钉住这条判据。
+    /// </summary>
+    internal static bool NeedsThumbnail(WtLiveCardItem card)
+        => card.ThumbnailState == WtLiveThumbnailState.Loading
+           && card.ThumbnailCancellation == null
+           && !string.IsNullOrWhiteSpace(card.PreviewUrl);
+
+    /// <summary>
+    /// 释放这张卡已解码的缩略图、掐断在途下载（滚远了）。状态回到"加载中"：滚回来时
+    /// <see cref="NeedsThumbnail"/> 认得出来，会从磁盘缓存重新取（零网络）。
+    /// 本来就没图的（没预览图 / 加载失败）不动它，免得把"失败"改写成"加载中"、看着像又转起来了。
+    /// </summary>
+    private static void ReleaseThumbnail(WtLiveCardItem card)
+    {
+        if (card.PreviewImage == null && card.ThumbnailCancellation == null) return;
+
+        card.ThumbnailCancellation?.Cancel();
+        card.ThumbnailCancellation?.Dispose();
+        card.ThumbnailCancellation = null;
+        card.CanReloadThumbnail = false;
+        card.PreviewImage = null;
+
+        if (!string.IsNullOrWhiteSpace(card.PreviewUrl)) card.ThumbnailState = WtLiveThumbnailState.Loading;
+    }
+
     partial void OnErrorMessageChanged(string value)
     {
         OnPropertyChanged(nameof(HasError));
@@ -321,6 +400,12 @@ public partial class WtLiveViewModel : ObservableObject
 
         _refreshQueued = false;
         IsSuggestionsOpen = false;
+
+        // 丢弃的卡片要**掐断在途缩略图**：不掐的话它们下完、解码完还是挂在已丢弃的卡片上
+        // （白占内存，而且占着并发闸门，让新一页的图排队）；可视窗口同时作废（新列表还没排布过）
+        foreach (var card in Items) ReleaseThumbnail(card);
+        _visibleWindow = null;
+
         Items.Clear();
         _nextPage = 0;
         IsExhausted = false;
@@ -800,7 +885,10 @@ public partial class WtLiveViewModel : ObservableObject
 
                 var card = new WtLiveCardItem(item);
                 Items.Add(card);
-                _ = LoadThumbnailAsync(card);
+
+                // 缩略图不再"加进来就取"：只取**可视窗口内**的（见 SetVisibleWindow），窗口外的等滚到近处再取
+                // —— 快速翻页时能省掉一大批"下一刻就被释放"的下载与解码
+                if (InsideVisibleWindow(Items.Count - 1)) _ = LoadThumbnailAsync(card);
             }
 
             _nextPage++;
