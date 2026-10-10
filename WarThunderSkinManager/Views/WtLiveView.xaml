@@ -17,45 +17,52 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
+        <!-- 页头两行：① 标题独占一行；② 左边「当前查询摘要」+ 右边「排序 / 搜索 / 刷新」。
+             摘要与搜索框因此**同排同高**（同在第二行、都竖直居中）；
+             而第二行恒被 34 高的工具条撑着 → 摘要出现 / 消失都不改变标题区高度
+             （搜索框自己随胶囊换行长高是另一回事）。 -->
         <Grid x:Name="Header" Grid.Row="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>   <!-- 标题 -->
+                <RowDefinition Height="Auto"/>   <!-- 摘要（左）+ 工具条（右） -->
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                <TextBlock Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+            <TextBlock Grid.Row="0" Grid.ColumnSpan="2" HorizontalAlignment="Left"
+                       Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
 
-                <!-- 当前查询摘要（胶囊在界面上是一块块，这行把它写成人话，也点明走的是哪条通道：
-                     按载具 / 按标签）——放在标题下、**替掉原来那行页面描述**。
-                     两个要点，都是为了"高度不跳"：
-                     ① 用 Hidden 而**不是** Collapsed：这行**始终占住**，有没有筛选都不改变标题区高度
-                        （否则摘要一出现，整页内容就往下窜）；
-                     ② 单行 + 省略号：标签再多也不换行，高度恒为一行 -->
-                <TextBlock Text="{Binding WtLive.ActiveFilterText}" Margin="0,4,0,0"
-                           FontSize="12" HorizontalAlignment="Left" MaxWidth="420"
-                           Foreground="{StaticResource BrushPrimary}"
-                           TextTrimming="CharacterEllipsis">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Hidden"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </StackPanel>
+            <!-- 第二行左：当前查询摘要——胶囊在界面上是一块块，这行把它写成人话，
+                 也点明走的是哪条通道（按载具 / 按标签）；取代了原来那行页面描述。
+                 要点：① 与右边工具条**同排且都竖直居中** → 正好落在搜索框的文字中线上；
+                      ② 单行 + 省略号，标签再多也不换行；
+                      ③ 没有筛选时直接收起：这一行有工具条撑着，收起不会让页头变矮 -->
+            <TextBlock x:Name="FilterSummary" Grid.Row="1" Grid.Column="0" Margin="0,4,0,0"
+                       VerticalAlignment="Center" HorizontalAlignment="Left"
+                       MaxWidth="420" FontSize="12"
+                       Text="{Binding WtLive.ActiveFilterText}"
+                       Foreground="{StaticResource BrushPrimary}"
+                       TextTrimming="CharacterEllipsis">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding WtLive.HasFilter}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
 
-            <!-- 排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
+            <!-- 第二行右：排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
                  搜索框**不只用来选载具**：输入即给下拉——载具、标签、清除三条通道；
                  选中的候选不写回输入框，而是变成**胶囊**（载具最多一个、标签可叠多个），
-                 退格一次删一个（见 WtLiveViewModel / WtLiveSearchChip）。 -->
-            <!-- VerticalAlignment=Top：摘要搬到标题下面后，这里只剩工具条一行，
-                 居中会让工具条相对左边「标题」那一行往下沉，Top 才与标题对齐 -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="16,0,0,0">
+                 退格一次删一个（见 WtLiveViewModel / WtLiveSearchChip）。
+                 顶边距与左边摘要一致（都是 4），两者竖直居中后中线才对齐 -->
+            <StackPanel Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="16,4,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <!-- 排序方式（§5 sort：最近发布 / 热门 / 评论 / 下载）。
                          排在搜索框**左侧**：它是"整份列表怎么排"，先于搜索框这个"要哪些"的入口；

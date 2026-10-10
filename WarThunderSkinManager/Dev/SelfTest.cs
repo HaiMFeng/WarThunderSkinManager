@@ -604,8 +604,9 @@ internal static class SelfTest
                 // ③ 胶囊多了必须**换行**（外框跟着长高），不能横向撑出框外；
                 // ④ 加**第一个**胶囊不能让框变高（空态 == 只有一个胶囊）：胶囊竖直外边距要**对称**、
                 //    并与输入框同一行高；首行胶囊 / 输入框的中线还要落在框的中轴（否则看着"偏上"）。
-                // ⑤ 查询摘要挪到标题下面后，那行要**始终占住**（Hidden 而非 Collapsed）→
-                //    有没有筛选，标题区（进而整页）高度都不变。
+                // ⑤ 页头两行：标题独占第一行，第二行左边摘要 + 右边工具条 →
+                //    摘要与搜索框**同排同高**；第二行恒有 34 高的工具条撑着，
+                //    所以有没有筛选，页头（进而整页）高度都一样。
                 var layoutVm = new WtLiveViewModel();
                 var layoutView = new WarThunderSkinManager.Views.WtLiveView
                 {
@@ -623,9 +624,9 @@ internal static class SelfTest
                 var chipBox = (TextBox)layoutView.FindName("SearchBox");
                 var shellAtEmpty = chipShell.ActualHeight;
 
-                // ⑤ 查询摘要放在标题下面、且**始终占住那一行**（Hidden 而非 Collapsed）→
-                //    有没有筛选，标题区高度都应一样（否则摘要一出现整页就往下窜）
+                // ⑤ 页头高度 / 摘要位置：摘要与搜索框同排，页头高度不随筛选变化
                 var header = (FrameworkElement)layoutView.FindName("Header");
+                var summary = (FrameworkElement)layoutView.FindName("FilterSummary");
                 var headerAtEmpty = header.ActualHeight;
 
                 // ④ 的判据：空态时输入框中线应落在框的中轴上（曾经竖直外边距不对称 → 整体偏上 2px）
@@ -653,8 +654,13 @@ internal static class SelfTest
                 layoutVm.AppendTagChip("cm11");
                 layoutHost.UpdateLayout();
                 var shellAtOneChip = chipShell.ActualHeight;   // 应 == shellAtEmpty
-                // ⑤ 此刻筛选已生效（摘要可见）但搜索框未被撑高 → 标题区高度应仍等于空态
+                // ⑤ 此刻筛选已生效（摘要可见）但搜索框未被撑高 → 页头高度应仍等于空态；
+                //    且摘要中线必须与搜索框中线重合（同排同高，都落在页头第二行）
                 var headerWithFilter = header.ActualHeight;
+                var boxCenterInView = chipBox.TransformToAncestor(layoutView)
+                    .Transform(new System.Windows.Point(0, 0)).Y + chipBox.ActualHeight / 2;
+                var summaryCenterY = summary.TransformToAncestor(layoutView)
+                    .Transform(new System.Windows.Point(0, 0)).Y + summary.ActualHeight / 2;
                 var listOfOneRow = chipList.ActualHeight;
                 var firstChip = chipList.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
                 var firstChipCenterY = firstChip == null ? double.NaN
@@ -682,7 +688,8 @@ internal static class SelfTest
                              + $"，首行竖直居中 = 输入框中线 {boxCenterY:0.##} / 胶囊中线 {firstChipCenterY:0.##}"
                              + $"（都应 == {shellAtEmpty / 2:0.##}）"
                              + $"，输入文字起点 = {textOriginX:0.##}、输入框左边缘 = {boxLeft:0.##}（应仍在框内、跟随胶囊）"
-                             + $"，标题区高 无/有筛选 = {headerAtEmpty:0.##} / {headerWithFilter:0.##}（应相等：摘要在标题下且始终占一行）");
+                             + $"，页头高 无/有筛选 = {headerAtEmpty:0.##} / {headerWithFilter:0.##}（应相等）"
+                             + $"，摘要与搜索框中线 = {summaryCenterY:0.##} / {boxCenterInView:0.##}（应相等：同排同高）");
                 log.AppendLine($"搜索框描边 : 输入框模板会自己加粗描边 = {innerFrame}（应 False：描边只由外壳画，"
                              + $"双层就成了「框里还有一个框」）"
                              + $"，外壳描边 = {chipShell.BorderThickness.Left:0.##}（应 1）");
