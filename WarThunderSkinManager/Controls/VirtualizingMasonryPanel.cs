@@ -46,7 +46,10 @@ namespace WarThunderSkinManager.Controls;
 /// ③ **实测值只在列宽真变了时作废**（<see cref="RebuildLayout"/>）—— 否则一次整表重建就把窗口里
 ///    那几十张的实测值一起丢了，下一轮又逐张重测、逐张重排。
 /// ④ **只测量脏容器**（<c>IsMeasureValid</c>）：卡片子树有绑定 / 动画 / 超链接，实测一次约 0.1 ms，
-///    一屏几十张每轮全量一遍就是几十毫秒。
+///    一屏几十张每轮全量一遍就是几十毫秒。**列宽刚变过的那一轮例外**：必须全量重新交约束 ——
+///    卡片里的换行 / 省略号按可用宽度算，而列宽变化不一定 invalidate 容器本身，只看脏不脏就会
+///    连 Measure 都不调用，容器拿着旧列宽的 DesiredSize 不放（实测：列宽 257→254.7，卡片渲染宽度
+///    还是 257）→ 该换行的卡片没换行 → 卡片高度与按新列宽估的槽位对不上（截断 / 多出空白）。
 /// </para>
 /// <para>
 /// **坑位备忘**（踩过的，改这里前先看一遍）：
@@ -98,6 +101,12 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
     /// <summary>容器的回收通道（生成器一般都实现它；拿不到就退回"移除"）。</summary>
     private IRecyclingItemContainerGenerator? _recycler;
     private bool _recyclerResolved;
+
+    /// <summary>
+    /// 已实体化容器**上次被交付的列宽**（<see cref="WidthKey"/>）。与当前列宽不等时，
+    /// 这一轮要把**所有**容器重新量一遍（理由见 <see cref="RealizeWindow"/> 里的注释）。
+    /// </summary>
+    private int _childrenMeasuredWidthKey = -1;
 
     public VirtualizingMasonryPanel()
     {
@@ -305,6 +314,7 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
     {
         _layoutCount = 0;
         _layoutWidthKey = -1;
+        _childrenMeasuredWidthKey = -1;   // 容器也当作"没交过约束"，下一轮全量重新量
         MeasuredChrome = null;
         _totalHeight = 0;
         RealizedRange = (-1, -1);
@@ -507,6 +517,14 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
         var minChanged = -1;        // 高度表里真正变了的**最早**一项：一轮测量只重排一次
         var chromeChanged = false;  // 文字块高刚标定 → 所有"估算项"的高度都要重算
 
+        // 列宽换过 → 这一轮**所有**实体化容器都要重新交一次约束再量。不能只看"容器脏不脏"：
+        // 卡片里的换行 / 省略号是按可用宽度算的，而列宽变化不一定 invalidate 容器本身（它可能一直
+        // 是 measure-valid）。只看脏不脏就会连 Measure 都不调用，容器拿着**旧列宽**算出的 DesiredSize
+        // 不放 —— 窗口变窄时该换行的卡片不换行，卡片内容比"按新列宽估出来的槽位"矮/高，
+        // 于是截断或多出一段空白（实测：列宽 257 → 254.7，卡片实际渲染宽度还是 257）
+        var widthKey = WidthKey(itemWidth);
+        var remeasureAll = _childrenMeasuredWidthKey != widthKey;
+
         using (generator.StartAt(startPosition, GeneratorDirection.Forward, true))
         {
             for (var i = first; i <= last; i++, insertAt++)
@@ -535,7 +553,8 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
                 // **只在容器确实要重测时才量它**（脏 = 刚插进来，或模板 / 绑定刚落地要重算）。
                 // 一轮把一屏几十张全量一遍是这里最大的性能黑洞：卡片子树有绑定 / 动画 / 超链接，
                 // 实测一次 ~0.1 ms，一屏几十张 × 每步好几轮就是几十毫秒。
-                if (child.IsMeasureValid) continue;
+                // 例外：**列宽刚换过**（remeasureAll）必须全量重新交约束 —— 见上面 remeasureAll 的注释
+                if (!remeasureAll && child.IsMeasureValid) continue;
 
                 child.Measure(new Size(itemWidth, double.PositiveInfinity));
 
@@ -568,6 +587,8 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
                 _measured[i] = true;
             }
         }
+
+        if (remeasureAll) _childrenMeasuredWidthKey = widthKey;
 
         // ③ 重排：整轮只做一次。标定影响的是**全表**的估算值，从头重排；其余从最早变高的那项接着排
         if (chromeChanged) RebuildLayout(0, _layoutColumns, itemWidth, gap);

@@ -930,11 +930,6 @@ internal static class SelfTest
                     Pump(probeWin.Dispatcher);
                     probeWin.UpdateLayout();
 
-                    // 期望图高：框宽（列宽 − 卡片内边距）÷ 宽高比 —— 就是面板推给卡片 ImageHeight 的那个数
-                    var expectedImageHeight = WarThunderSkinManager.Controls.AspectRatioHeightConverter.ImageHeight(
-                        (probePanel?.ColumnWidth ?? 0)
-                        - WarThunderSkinManager.Controls.AspectRatioHeightConverter.DefaultChromeWidth, 1.5);
-
                     var cardsMissingImageBox = 0;   // 框塌了（就是用户报的那个现象）
                     var cardsWrongImageBox = 0;     // 框在，但高度不是按图片比例来的
                     var cardsMissingImage = 0;      // 框在、高度也对，图没铺进去
@@ -951,12 +946,60 @@ internal static class SelfTest
                             var thumb = cardRoot?.FindName("Thumb") as FrameworkElement;
                             var image = FindDescendant<Image>(child);
 
+                            // 期望图高按**这张卡片自己的宽高比**算（探针里逐张不同）
+                            var ratio = (child as FrameworkElement)?.DataContext is WtLiveCardItem dataCard
+                                ? dataCard.Ratio
+                                : 0;
+                            var expectedBox = WarThunderSkinManager.Controls.AspectRatioHeightConverter.ImageHeight(
+                                (probePanel.ColumnWidth)
+                                - WarThunderSkinManager.Controls.AspectRatioHeightConverter.DefaultChromeWidth, ratio);
+
                             if (thumb == null) thumbsNotFound++;
                             else if (thumb.ActualHeight <= 1 || thumb.ActualWidth <= 1) cardsMissingImageBox++;
-                            else if (Math.Abs(thumb.ActualHeight - expectedImageHeight) > 1) cardsWrongImageBox++;
+                            else if (Math.Abs(thumb.ActualHeight - expectedBox) > 1) cardsWrongImageBox++;
                             else if (image == null || image.ActualHeight <= 1) cardsMissingImage++;
                         }
                     }
+
+                    // ⑤ 改窗口大小：列宽变了 → 面板整表按新列宽重算高度（旧列宽量的实测值作废），
+                    //    卡片也要按新列宽重算自己那块缩略图框。两边一旦不同步，就是用户报的
+                    //    "卡片高度错误：截断（被下一张顶掉）或多出一段空白"。
+                    //    **判据不能用"槽位 vs DesiredSize"**：实测过的卡片，槽位就是那个实测值本身，
+                    //    量不出问题（自洽的）。要量**卡片在面板里的实际矩形**：同列相邻两张之间的实际间距
+                    //    必须等于 ItemGap —— 某张高度不对，间距立刻就不对，这才是能发现问题的量
+                    var widthBeforeResize = probePanel?.ColumnWidth ?? 0;
+                    var extentBeforeResize = probePanel?.ContentHeight ?? 0;
+                    probeWin.Width = 820;
+                    probeWin.UpdateLayout();
+                    Pump(probeWin.Dispatcher);
+                    probeWin.UpdateLayout();
+
+                    var laidOut = new List<(double X, double Y, double W, double H)>();
+                    if (probePanel != null)
+                    {
+                        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(probePanel); i++)
+                        {
+                            var child = (FrameworkElement)System.Windows.Media.VisualTreeHelper.GetChild(probePanel, i);
+                            var origin = child.TranslatePoint(new Point(0, 0), probePanel);
+                            laidOut.Add((origin.X, origin.Y, child.ActualWidth, child.ActualHeight));
+                        }
+                    }
+
+                    var badGap = 0;
+                    var worstGapDelta = 0d;
+                    foreach (var column in laidOut.GroupBy(c => Math.Round(c.X)))
+                    {
+                        var ordered = column.OrderBy(c => c.Y).ToList();
+                        for (var i = 1; i < ordered.Count; i++)
+                        {
+                            var gap = ordered[i].Y - (ordered[i - 1].Y + ordered[i - 1].H);
+                            var delta = Math.Abs(gap - (probePanel?.ItemGap ?? 0));
+                            if (delta > 1) badGap++;
+                            if (delta > worstGapDelta) worstGapDelta = delta;
+                        }
+                    }
+
+                    var badWidth = laidOut.Count(c => Math.Abs(c.W - (probePanel?.ColumnWidth ?? 0)) > 1);
 
                     var realized = probePanel?.RealizedItemCount ?? -1;
                     var realizedRange = probePanel?.RealizedRange ?? (-1, -1);
@@ -988,7 +1031,13 @@ internal static class SelfTest
                     log.AppendLine($"回收回来的图框: 实体化 {realized} 张里 —— 框塌了 = {cardsMissingImageBox}、"
                                  + $"框高不对 = {cardsWrongImageBox}、图没铺进去 = {cardsMissingImage}、"
                                  + $"没找到框 = {thumbsNotFound}"
-                                 + $"（前三项都应 0；期望图高 {expectedImageHeight:0.#} px = 列宽 − 内边距 ÷ 宽高比）");
+                                 + "（前三项都应 0；框高逐张对比 (列宽 − 内边距) ÷ 该卡片自己的宽高比）");
+                    log.AppendLine($"改窗口大小 : 列宽 {widthBeforeResize:0.#} → {probePanel?.ColumnWidth ?? 0:0.#}、"
+                                 + $"内容高 {extentBeforeResize:0} → {probePanel?.ContentHeight ?? 0:0} px，"
+                                 + $"同列相邻间距 ≠ {(probePanel?.ItemGap ?? 0):0.#} 的有 {badGap} 对（应 0，"
+                                 + $"最大偏差 {worstGapDelta:0.#} px）、宽度不对的卡片 = {badWidth} 张（应 0）"
+                                 + "（间距不对就是卡片被截断 / 多出一段空白）");
+                    // （排障时才需要）卡片矩形dump：宽范围 / 前几张的位置尺寸，用来定位"哪张高度不对"
 
                     if (probePanel == null)
                         log.AppendLine("自检异常：滚动探针找不到虚拟化面板（浏览页没换成 VirtualizingMasonryPanel？）");
@@ -1008,6 +1057,10 @@ internal static class SelfTest
                         log.AppendLine($"自检异常：回收回来的卡片缩略图框不对（框塌了 {cardsMissingImageBox} 张、"
                                      + $"框高不对 {cardsWrongImageBox} 张、图没铺进去 {cardsMissingImage} 张）"
                                      + " → 卡片会塌成只剩文字");
+                    else if (badGap > 0 || badWidth > 0)
+                        log.AppendLine($"自检异常：改窗口大小后卡片几何不对（同列相邻间距不对 {badGap} 对、"
+                                     + $"最大偏差 {worstGapDelta:0.#} px；宽度不对 {badWidth} 张）"
+                                     + " → 卡片会被截断 / 多出一段空白");
                     else if (largeStep.Layout > smallStep.Layout + 4)
                         log.AppendLine($"自检异常：滚动每一步的布局成本仍随卡片总数增长"
                                      + $"（400 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
@@ -1098,9 +1151,11 @@ internal static class SelfTest
                 }
 
                 // 造一张卡片撑出列表高度（没有预览图 URL → 缩略图走"缺图"占位，**不发网络请求**）：
-                // 用来验「列表清空重拉 → 瀑布流回到顶部」
+                // 用来验「列表清空重拉 → 瀑布流回到顶部」。
+                // **宽高比故意逐张不同**（1.0 ~ 2.0 循环）：真实数据就是这样，高度一致的话
+                // "某几张高度算错"根本看不出来（每张一样高，错也是整齐地错）
                 static WtLiveCardItem Card(int index) => new(new WTLiveFeedItem(
-                    index, "作者", 0, "", $"标题 {index}", "描述", null, 1.5, 0,
+                    index, "作者", 0, "", $"标题 {index}", "描述", null, 1.0 + index % 5 * 0.25, 0,
                     "skin.zip", "", 1024, 1, 2, 3,
                     $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()));
 
