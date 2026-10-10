@@ -32,6 +32,9 @@ public partial class WtLiveView : UserControl
     /// <summary>列表重开的监听是否已挂上（挂一次就够，<see cref="HookListReset"/>）。</summary>
     private bool _listResetHooked;
 
+    /// <summary>"这一档到底"是否已经请求过下一页（由 <see cref="ShouldPrefetch"/> 维护）。</summary>
+    private bool _prefetchOnCooldown;
+
     public WtLiveView()
     {
         InitializeComponent();
@@ -98,7 +101,12 @@ public partial class WtLiveView : UserControl
 
         ((INotifyCollectionChanged)CardList.Items).CollectionChanged += (_, e) =>
         {
-            if (e.Action == NotifyCollectionChangedAction.Reset) ListScroll.ScrollToTop();
+            if (e.Action != NotifyCollectionChangedAction.Reset) return;
+
+            ListScroll.ScrollToTop();
+
+            // 新列表 = 新的一轮："到底预取"的冷却一并清掉（否则上一轮在底部攒下的冷却会拦住首屏补页）
+            _prefetchOnCooldown = false;
         };
     }
 
@@ -316,9 +324,7 @@ public partial class WtLiveView : UserControl
     }
 
     /// <summary>
-    /// 滚动时只看一件事：接近底部就请求下一页（<see cref="WtLiveViewModel.RequestMore"/> 是幂等的
-    /// ——加载中 / 已到底 / 失败态都直接忽略，所以不必自己去重，反复触发是安全的；
-    /// 首屏内容不足一屏时，列表撑高会再次触发它，直到铺满或到底）。
+    /// 滚动时只看一件事：接近底部就请求下一页。判定逻辑在 <see cref="ShouldPrefetch"/>（纯函数，自检直接钉）。
     /// <para>
     /// 保留实体 / 释放缩略图那一套**不在这里**：面板自己订阅了同一个 ScrollChanged（见
     /// <see cref="VirtualizingMasonryPanel"/>），窗口算完再通知 VM —— 视图少转一手，就少一处可能静默失效的环节。
@@ -326,10 +332,48 @@ public partial class WtLiveView : UserControl
     /// </summary>
     private void ListScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (e.ExtentHeight <= 0) return;
-        if (e.VerticalOffset + e.ViewportHeight < e.ExtentHeight - PrefetchDistance) return;
+        if (ShouldPrefetch(e.ExtentHeight, e.ViewportHeight, e.VerticalOffset, e.VerticalChange,
+                           PrefetchDistance, ref _prefetchOnCooldown))
+        {
+            ViewModel?.RequestMore();
+        }
+    }
 
-        ViewModel?.RequestMore();
+    /// <summary>
+    /// 到底预取的判定：**一次到底只请求一页**。
+    /// <para>
+    /// 为什么不能只看"距底 &lt; 400px"：请求本身是幂等的（<see cref="WtLiveViewModel.RequestMore"/>
+    /// 在加载中 / 已到底 / 失败态直接忽略），但**换页不会改变滚动偏移**（新内容在下面），
+    /// 所以下一页一落地就又命中"接近底部"，滚到底就变成"连续好几波"。瀑布流还会放大它：
+    /// 新页的部分卡片落在**较短的那一列**里（位置在视口上方甚至看不到），总量只涨一点点、
+    /// 用户还留在 400px 区间内 —— 不设冷却就会一直连打，而且看着就是"卡在最下面什么都不动"。
+    /// </para>
+    /// <para>
+    /// 规则：进入底部区间请求一次并进入冷却；**"往下滚"（<paramref name="verticalChange"/> &gt; 0）
+    /// 或离开区间**才解除冷却 —— 换页只改 <c>ExtentHeight</c>、不改偏移，所以不会自己解除。
+    /// 两个刻意的例外：① 内容**撑不满视口**（没滚动条）时允许连补到铺满（首屏不足一屏就是这种情况）；
+    /// ② 偏移被"内容变短"夹到边界（<paramref name="verticalChange"/> &lt; 0）**不算**用户在滚，
+    /// 不解除冷却 —— 那是高度修订在动布局（虚拟化面板会边滚边修订实测高度），不是用户想要更多。
+    /// </para>
+    /// </summary>
+    internal static bool ShouldPrefetch(double extentHeight, double viewportHeight, double verticalOffset,
+        double verticalChange, double prefetchDistance, ref bool onCooldown)
+    {
+        if (extentHeight <= 0) return false;
+
+        var distanceToBottom = extentHeight - (verticalOffset + viewportHeight);
+        if (distanceToBottom > prefetchDistance)
+        {
+            onCooldown = false;   // 离开底部区间（往上滚远了）→ 下次进来可以再要一页
+            return false;
+        }
+
+        if (verticalChange > 0) onCooldown = false;
+
+        if (onCooldown && extentHeight > viewportHeight) return false;
+
+        onCooldown = true;
+        return true;
     }
 
     /// <summary>

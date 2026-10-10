@@ -2574,6 +2574,46 @@ internal static class SelfTest
             else if (!complete || !bounded)
                 log.AppendLine("自检异常：缩略图补取顺序重复、漏项或越界");
 
+            // ---- 到底预取：**一次到底只请求一页**（曾经滚到底会连着打好几波、看着像卡在最下面）----
+            // 关键背景：换页**不会改滚动偏移**（新内容在下面），所以下一页落地后仍会命中"距底 400px"；
+            // 瀑布流更麻烦 —— 新页的部分卡片会落进**较短的那一列**（位置在视口上方、用户根本看不到），
+            // 总量只涨一点点、用户一直留在区间内，不设冷却就会一直连打
+            var prefetchCooldown = false;
+            var firstHit = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(10000, 700, 9000, 200, 400, ref prefetchCooldown);
+            var sameSpot = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(10000, 700, 9000, 0, 400, ref prefetchCooldown);
+            var pageLandedAbove = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(10100, 700, 9000, 0, 400, ref prefetchCooldown);
+            var userScrolledDown = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(10100, 700, 9000, 150, 400, ref prefetchCooldown);
+            var bigPagePushedOut = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(12000, 700, 9000, 0, 400, ref prefetchCooldown);
+
+            // 内容变短把偏移夹到边界：VerticalChange < 0，**不算**用户在滚，不该解除冷却
+            var clampCooldown = true;
+            var shrunkClamp = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(9900, 700, 9000, -100, 400, ref clampCooldown);
+
+            // 内容还撑不满视口：允许连补，铺满即止
+            var shortListCooldown = true;
+            var shortListHalf = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(500, 700, 0, 0, 400, ref shortListCooldown);
+            var shortListMore = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(600, 700, 0, 0, 400, ref shortListCooldown);
+            var shortListFull = WarThunderSkinManager.Views.WtLiveView.ShouldPrefetch(900, 700, 0, 0, 400, ref shortListCooldown);
+
+            var onePagePerBottom = firstHit && !sameSpot && !pageLandedAbove;
+            var userScrollReArms = userScrolledDown && !bigPagePushedOut;
+            var shortListFills = shortListHalf && shortListMore && !shortListFull;
+
+            log.AppendLine($"到底预取   : 一次到底只请求一页 = {onePagePerBottom}"
+                         + $"（应 True：原地不动 / 新页落在上方都不该再请求）、"
+                         + $"往下滚才再要一页、离开区间就不再要 = {userScrollReArms}（应 True）、"
+                         + $"内容变短夹到边界不算用户滚 = {!shrunkClamp}（应 True）、"
+                         + $"不足视口时连补到铺满即止 = {shortListFills}（应 True）");
+
+            if (!onePagePerBottom)
+                log.AppendLine("自检异常：滚到底会连续请求好几页（换页不改偏移，用户会一直留在底部区间）");
+            else if (!userScrollReArms)
+                log.AppendLine("自检异常：用户继续往下滚之后没能再请求下一页（到底后就再也加载不出内容）");
+            else if (shrunkClamp)
+                log.AppendLine("自检异常：内容变短把偏移夹到边界时被当成用户滚到底（会凭空多打好几波）");
+            else if (!shortListFills)
+                log.AppendLine("自检异常：内容不足视口时没能连补到铺满（首屏会一直是半屏空白）");
+
             // ---- XAML 绑定路径：**写错不会编译报错**，只在运行时静默失效（按钮点下去毫无反应）。
             //      卡片模板 / 详情浮窗用到的命令与状态成员在这里钉一遍，VM 改名或挪位置时先报出来 ----
             var bindingPaths = new (Type Owner, string Name)[]
