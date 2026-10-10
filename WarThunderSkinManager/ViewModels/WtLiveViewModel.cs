@@ -241,6 +241,11 @@ public partial class WtLiveViewModel : ObservableObject
 
         foreach (var chip in Chips) chip.RefreshTexts();
         Favorites.ApplyLanguageChange();               // 收藏浮窗的「共 N 位」
+
+        // 卡片副标题（「 · 1.5 MB · 下载 10」）是构造时拼好的 → 逐张重拼
+        foreach (var card in Items) card.RefreshTexts();
+
+        Detail.ApplyLanguageChange();                  // 详情浮窗的统计行（打开期间切语言）
         OnPropertyChanged(nameof(ActiveFilterText));   // 空态的「所有涂装」也要跟着换语言
     }
 

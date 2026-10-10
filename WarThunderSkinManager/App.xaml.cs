@@ -28,10 +28,10 @@ public partial class App : Application
         // 只能用运行时构造的 file URI 形式（见 IconFontLoader 的说明）
         Resources["IconFont"] = IconFontLoader.IconFamily;
 
-        // 开发自检：--selftest <源文件夹> <工作目录>（跑完即退出，不建窗口；门禁保证 GUI 模式绝不触发）
+        // 开发自检：--selftest <源文件夹> <工作目录> [仓库根]（跑完即退出，不建窗口；门禁保证 GUI 模式绝不触发）
         if (e.Args.Length >= 3 && e.Args[0] == "--selftest")
         {
-            Dev.SelfTest.Run(e.Args[1], e.Args[2]);
+            Dev.SelfTest.Run(e.Args[1], e.Args[2], e.Args.Length > 3 ? e.Args[3] : null);
             Shutdown(0);
             return;
         }
@@ -40,7 +40,8 @@ public partial class App : Application
         if (!EnsureSingleInstance())
         {
             MessageBox.Show(
-                "WarThunderSkinManager 已在运行。\nWarThunderSkinManager is already running.",
+                Text("app.alreadyRunning",
+                    "WarThunderSkinManager 已在运行。\nWarThunderSkinManager is already running."),
                 "WarThunderSkinManager", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown(0);
             return;
@@ -142,14 +143,27 @@ public partial class App : Application
 
             dispatcher.Invoke(() =>
                 MessageBox.Show(
-                    $"发生未处理的错误，程序已记录到日志但继续运行。\n\n{exception.Message}\n\n" +
-                    "An unhandled error occurred and was logged; the app keeps running.",
+                    string.Format(
+                        Text("app.error.unhandled",
+                            "发生未处理的错误，程序已记录到日志但继续运行。\n\n{0}\n\n" +
+                            "An unhandled error occurred and was logged; the app keeps running."),
+                        exception.Message),
                     "WarThunderSkinManager", MessageBoxButton.OK, MessageBoxImage.Warning));
         }
         catch
         {
             // 应用正在关闭 / 无窗口 → 放弃提示
         }
+    }
+
+    /// <summary>
+    /// 语言表文案；**语言表还没就绪**（启动早期、或语言文件加载失败）时回退到内置的双语提示 ——
+    /// 启动期的提示不能依赖配置目录与语言文件（见 §3.9）。
+    /// </summary>
+    private static string Text(string key, string fallback)
+    {
+        var text = LocalizationManager.Instance[key];
+        return text.StartsWith('⟦') ? fallback : text;
     }
 
     /// <summary>

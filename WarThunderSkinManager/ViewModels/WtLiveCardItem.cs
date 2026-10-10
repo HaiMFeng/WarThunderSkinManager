@@ -120,7 +120,7 @@ public partial class WtLiveCardItem : ObservableObject
     /// （缺项自动省略；全缺就是空串）。作者名是超链接、在视图里单独一个 <c>Run</c>，
     /// 拼在同一个流式行里，所以这里自己带上前导分隔符；没有作者时就不带。
     /// </summary>
-    public string MetaSuffix { get; }
+    [ObservableProperty] private string _metaSuffix = "";
 
     /// <summary>是否有站内可下载的附件（无附件时后续只能引导去浏览器下载）。</summary>
     public bool HasFile => FileLink.Length > 0;
@@ -185,4 +185,7 @@ public partial class WtLiveCardItem : ObservableObject
         var body = string.Join(" · ", parts);
         return Author.Length > 0 ? " · " + body : body;
     }
+
+    /// <summary>界面语言切换后重拼副标题（「下载 N」是语言键文案，由 WtLiveViewModel 触发）。</summary>
+    public void RefreshTexts() => MetaSuffix = BuildMetaSuffix();
 }

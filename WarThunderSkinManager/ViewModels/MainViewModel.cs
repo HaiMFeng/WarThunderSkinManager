@@ -38,31 +38,55 @@ public sealed class LanguageOption
     public override string ToString() => DisplayName;
 }
 
-/// <summary>主题下拉项（名称走语言文件 theme.* 键）。</summary>
-public sealed class ThemeItem
+/// <summary>主题下拉项（名称走语言文件 theme.* 键；界面语言切换后由 <see cref="RefreshTexts"/> 重取）。</summary>
+public sealed partial class ThemeItem : ObservableObject
 {
     public string Id { get; }
-    public string DisplayName { get; }
+
+    [ObservableProperty] private string _displayName;
 
     public ThemeItem(string id)
     {
         Id = id;
-        DisplayName = LocalizationManager.Instance[$"theme.{id.ToLowerInvariant()}"];
+        _displayName = LocalizationManager.Instance[$"theme.{id.ToLowerInvariant()}"];
     }
+
+    /// <summary>界面语言切换后重取显示名（由 MainViewModel 触发）。</summary>
+    public void RefreshTexts() => DisplayName = LocalizationManager.Instance[$"theme.{Id.ToLowerInvariant()}"];
 
     public override string ToString() => DisplayName;
 }
 
-/// <summary>WT Live 的下拉项（清晰度档位 / 预览图缓存上限 / 浏览页排序方式共用；显示名由各自的目录算好传进来）。</summary>
-public sealed class WtLiveOptionItem
+/// <summary>
+/// WT Live 的下拉项（清晰度档位 / 预览图缓存上限 / 浏览页排序方式共用）。
+/// 显示名由各自的目录算好传进来；需要跟随界面语言的档位改用**工厂重载**构造，
+/// 切语言时由 <see cref="RefreshTexts"/> 重取（缓存上限是纯数字 MB/GB，不走工厂）。
+/// </summary>
+public sealed partial class WtLiveOptionItem : ObservableObject
 {
+    private readonly Func<string>? _nameFactory;
+
     public string Id { get; }
-    public string DisplayName { get; }
+
+    [ObservableProperty] private string _displayName;
 
     public WtLiveOptionItem(string id, string displayName)
     {
         Id = id;
-        DisplayName = displayName;
+        _displayName = displayName;
+    }
+
+    public WtLiveOptionItem(string id, Func<string> nameFactory)
+    {
+        Id = id;
+        _nameFactory = nameFactory;
+        _displayName = nameFactory();
+    }
+
+    /// <summary>界面语言切换后重取显示名（无工厂的项原样不变）。</summary>
+    public void RefreshTexts()
+    {
+        if (_nameFactory != null) DisplayName = _nameFactory();
     }
 
     public override string ToString() => DisplayName;
@@ -341,7 +365,7 @@ public partial class MainViewModel : ObservableObject
 
         // 清晰度 / 缓存上限下拉：同上，当前档位直接写字段（未知值回落默认档）
         WtLiveQualities = WtLiveQualityCatalog.QualityIds
-            .Select(id => new WtLiveOptionItem(id, WtLiveQualityCatalog.DisplayName(id))).ToList();
+            .Select(id => new WtLiveOptionItem(id, () => WtLiveQualityCatalog.DisplayName(id))).ToList();
         _selectedWtLiveQuality = WtLiveQualities.FirstOrDefault(
             q => string.Equals(q.Id, config.WtLiveImageQuality, StringComparison.OrdinalIgnoreCase))
             ?? WtLiveQualities[0];
@@ -1197,7 +1221,20 @@ public partial class MainViewModel : ObservableObject
         Vehicles.ApplyLanguageChange();
 
         // WT Live 浏览页的排序下拉文案跟随语言（搜索框占位文案走 loc:Loc 绑定，本就自动刷新）
+        // ——同时把已渲染卡片副标题、详情浮窗统计行一起换过来
         WtLive.ApplyLanguageChange();
+
+        // 主题 / 清晰度下拉的档位名是构造时算好的字符串 → 手动重取
+        foreach (var theme in Themes)
+            theme.RefreshTexts();
+        foreach (var quality in WtLiveQualities)
+            quality.RefreshTexts();
+
+        // 「多源复用」页的派生文案（载具名列表、成员数、分组提示）重算
+        PartReuse.ApplyLanguageChange();
+
+        // 「更新应用」卡片的状态行 / 版本摘要 / 进度行按记下的语言键重建
+        RefreshAppUpdateTexts();
 
         // 「更新资源」行条目的显示名与状态文案跟随语言（§3.15）
         foreach (var item in ResourceItems)
@@ -1605,6 +1642,89 @@ public partial class MainViewModel : ObservableObject
 
     private DispatcherTimer? _appUpdateTimer;
 
+    // 状态行 / 版本摘要最近一次用的语言键 + 参数：界面语言切换后据此重建
+    // （null = 直接给定的原文，如服务端 / 预检错误，切语言时原样保留）
+    private string? _appUpdateTextKey;
+    private object[] _appUpdateTextArgs = Array.Empty<object>();
+    private string? _appUpdateVersionTextKey;
+    private object[] _appUpdateVersionTextArgs = Array.Empty<object>();
+
+    // 进度行最近一次的数值：下载可能长跑，切语言后不等下一次回调也能立刻换过来
+    private bool _hasAppUpdateProgress;
+    private double _appUpdateProgressMb;
+    private double _appUpdateProgressTotalMb;
+    private double _appUpdateProgressSpeed;
+
+    /// <summary>设置状态行文案（语言键 + 可选参数），并记住以便界面语言切换后重建。</summary>
+    private void SetAppUpdateText(string key, params object[] args)
+    {
+        _appUpdateTextKey = key;
+        _appUpdateTextArgs = args;
+        AppUpdateText = args.Length == 0 ? Loc[key] : Loc.Format(key, args);
+    }
+
+    /// <summary>状态行文案改为**外部给定的原文**（服务端 / 预检错误，非语言键）——切语言时原样保留。</summary>
+    private void SetAppUpdateTextRaw(string text)
+    {
+        _appUpdateTextKey = null;
+        _appUpdateTextArgs = Array.Empty<object>();
+        AppUpdateText = text;
+    }
+
+    /// <summary>设置新版本摘要（语言键 + 参数），并记住。</summary>
+    private void SetAppUpdateVersionText(string key, params object[] args)
+    {
+        _appUpdateVersionTextKey = key;
+        _appUpdateVersionTextArgs = args;
+        AppUpdateVersionText = args.Length == 0 ? Loc[key] : Loc.Format(key, args);
+    }
+
+    /// <summary>清空版本摘要与发布说明（回到「无新版本信息」）。</summary>
+    private void ClearAppUpdateDetails()
+    {
+        _appUpdateVersionTextKey = null;
+        _appUpdateVersionTextArgs = Array.Empty<object>();
+        AppUpdateVersionText = "";
+        AppUpdateNotesText = "";
+    }
+
+    /// <summary>设置下载进度行（已下载 / 总量 MB、速度），并记住最近一次的数值。</summary>
+    private void SetAppUpdateProgressText(double receivedMb, double totalMb, double mbPerSecond)
+    {
+        _hasAppUpdateProgress = true;
+        _appUpdateProgressMb = receivedMb;
+        _appUpdateProgressTotalMb = totalMb;
+        _appUpdateProgressSpeed = mbPerSecond;
+        AppUpdateProgressText = Loc.Format("settings.appUpdate.progress", receivedMb, totalMb, mbPerSecond);
+    }
+
+    private void ClearAppUpdateProgressText()
+    {
+        _hasAppUpdateProgress = false;
+        AppUpdateProgressText = "";
+    }
+
+    /// <summary>
+    /// 界面语言切换后重建「更新应用」卡片里的拼接文案（状态行 / 版本摘要 / 进度行）。
+    /// 这些都只在状态变化时写一次，不像 <c>loc:Loc</c> 会自己刷新。
+    /// </summary>
+    private void RefreshAppUpdateTexts()
+    {
+        if (_appUpdateTextKey != null)
+            AppUpdateText = _appUpdateTextArgs.Length == 0
+                ? Loc[_appUpdateTextKey]
+                : Loc.Format(_appUpdateTextKey, _appUpdateTextArgs);
+
+        if (_appUpdateVersionTextKey != null)
+            AppUpdateVersionText = _appUpdateVersionTextArgs.Length == 0
+                ? Loc[_appUpdateVersionTextKey]
+                : Loc.Format(_appUpdateVersionTextKey, _appUpdateVersionTextArgs);
+
+        if (_hasAppUpdateProgress)
+            AppUpdateProgressText = Loc.Format("settings.appUpdate.progress",
+                _appUpdateProgressMb, _appUpdateProgressTotalMb, _appUpdateProgressSpeed);
+    }
+
     partial void OnAppUpdateStateChanged(AppUpdateUiState value)
     {
         OnPropertyChanged(nameof(AppUpdateCanCheck));
@@ -1660,14 +1780,14 @@ public partial class MainViewModel : ObservableObject
         if (!AppUpdateService.IsInstalled())
         {
             AppUpdateState = AppUpdateUiState.NotInstalled;
-            AppUpdateText = Loc["settings.appUpdate.notInstalled"];
+            SetAppUpdateText("settings.appUpdate.notInstalled");
             return;
         }
 
         if (!Config.AutoCheckAppUpdate)
         {
             AppUpdateState = AppUpdateUiState.Idle;
-            AppUpdateText = Loc["settings.appUpdate.notChecked"];
+            SetAppUpdateText("settings.appUpdate.notChecked");
             return;
         }
 
@@ -1676,14 +1796,14 @@ public partial class MainViewModel : ObservableObject
             && DateTime.UtcNow - last.ToUniversalTime() < TimeSpan.FromHours(24))
         {
             AppUpdateState = AppUpdateUiState.Idle;
-            AppUpdateText = Loc.Format("settings.appUpdate.lastChecked", last.ToLocalTime().ToString("g"));
+            SetAppUpdateText("settings.appUpdate.lastChecked", last.ToLocalTime().ToString("g"));
             return;
         }
 
         // 启动后延迟检查（避开启动期扫描 / 同步的争抢，§6.1 第 1 步）
         // —— 但**先把提示写上**：卡片不能空白等 45 秒
         AppUpdateState = AppUpdateUiState.Idle;
-        AppUpdateText = Loc["settings.appUpdate.autoPending"];
+        SetAppUpdateText("settings.appUpdate.autoPending");
 
         _appUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
         _appUpdateTimer.Tick += (_, _) =>
@@ -1773,14 +1893,13 @@ public partial class MainViewModel : ObservableObject
         if (!AppUpdateService.IsInstalled())
         {
             AppUpdateState = AppUpdateUiState.NotInstalled;
-            AppUpdateText = Loc["settings.appUpdate.notInstalled"];
-            AppUpdateVersionText = "";
-            AppUpdateNotesText = "";
+            SetAppUpdateText("settings.appUpdate.notInstalled");
+            ClearAppUpdateDetails();
             return;
         }
 
         AppUpdateState = AppUpdateUiState.Checking;
-        AppUpdateText = Loc["settings.appUpdate.checking"]; // 自动检查也要有提示——不能留空白
+        SetAppUpdateText("settings.appUpdate.checking"); // 自动检查也要有提示——不能留空白
 
         try
         {
@@ -1790,7 +1909,7 @@ public partial class MainViewModel : ObservableObject
             {
                 // 网络不可达 / 限流（国内常见）→ 卡片给出可重试的结论（不弹窗，不算"打扰"）
                 AppUpdateState = AppUpdateUiState.Failed;
-                AppUpdateText = Loc["settings.appUpdate.failNetwork"];
+                SetAppUpdateText("settings.appUpdate.failNetwork");
                 return;
             }
 
@@ -1805,33 +1924,31 @@ public partial class MainViewModel : ObservableObject
             if (pick == null)
             {
                 AppUpdateState = AppUpdateUiState.UpToDate;
-                AppUpdateText = Loc.Format("settings.appUpdate.upToDate", AppInfo.Version);
-                AppUpdateVersionText = "";
-                AppUpdateNotesText = "";
+                SetAppUpdateText("settings.appUpdate.upToDate", AppInfo.Version);
+                ClearAppUpdateDetails();
                 return;
             }
 
             _appUpdateRelease = pick;
-            AppUpdateVersionText = Loc.Format("settings.appUpdate.versionSummary",
+            SetAppUpdateVersionText("settings.appUpdate.versionSummary",
                 "v" + pick.Version, pick.AssetSize / 1024d / 1024d, pick.PublishedAt?.ToLocalTime().ToString("d") ?? "");
             AppUpdateNotesText = PlainNotes(pick.Notes);
 
             if (string.Equals(pick.Version, Config.SkippedAppVersion, StringComparison.OrdinalIgnoreCase))
             {
                 AppUpdateState = AppUpdateUiState.Skipped;
-                AppUpdateText = Loc.Format("settings.appUpdate.skipped", "v" + pick.Version);
+                SetAppUpdateText("settings.appUpdate.skipped", "v" + pick.Version);
                 return;
             }
 
             AppUpdateState = AppUpdateUiState.Available;
-            AppUpdateText = Loc["settings.appUpdate.available"];
+            SetAppUpdateText("settings.appUpdate.available");
         }
         catch (Exception ex)
         {
             AppUpdateState = AppUpdateUiState.Failed;
-            AppUpdateText = silent
-                ? Loc["settings.appUpdate.failNetwork"]
-                : Loc.Format("settings.appUpdate.failed", ex.Message);
+            if (silent) SetAppUpdateText("settings.appUpdate.failNetwork");
+            else SetAppUpdateText("settings.appUpdate.failed", ex.Message);
         }
     }
 
@@ -1871,9 +1988,9 @@ public partial class MainViewModel : ObservableObject
         // 按钮（实测踩过：取消入口完全不可达）。所以下载改为**卡片内反馈**（进度条 + 速度 + 取消），
         // 其它重操作由 `IsMaintenance` / `SettingsEnabled` 闸门挡住（「更新资源」卡等已在 XAML 绑定）。
         AppUpdateState = AppUpdateUiState.Downloading;
-        AppUpdateText = Loc["settings.appUpdate.downloading"];
+        SetAppUpdateText("settings.appUpdate.downloading");
         AppUpdateProgress = 0;
-        AppUpdateProgressText = "";
+        ClearAppUpdateProgressText();
 
         _appUpdateCts = new CancellationTokenSource();
 
@@ -1886,14 +2003,14 @@ public partial class MainViewModel : ObservableObject
             if (!AppUpdateService.CheckPrerequisites(updatesDir, release.AssetSize, out var precheckError))
             {
                 AppUpdateState = AppUpdateUiState.Failed;
-                AppUpdateText = precheckError;
+                SetAppUpdateTextRaw(precheckError);
                 return;
             }
 
             var progress = new Progress<AppUpdateService.DownloadProgress>(report =>
             {
                 AppUpdateProgress = report.Total > 0 ? (double)report.Received / report.Total : 0;
-                AppUpdateProgressText = Loc.Format("settings.appUpdate.progress",
+                SetAppUpdateProgressText(
                     report.Received / 1024d / 1024d, report.Total / 1024d / 1024d, report.MegaBytesPerSecond);
             });
 
@@ -1903,20 +2020,20 @@ public partial class MainViewModel : ObservableObject
             if (!downloaded)
             {
                 AppUpdateState = AppUpdateUiState.Failed;
-                AppUpdateText = _appUpdateCts.IsCancellationRequested
-                    ? Loc["settings.appUpdate.canceled"]
-                    : Loc["settings.appUpdate.failDownload"];
+                SetAppUpdateText(_appUpdateCts.IsCancellationRequested
+                    ? "settings.appUpdate.canceled"
+                    : "settings.appUpdate.failDownload");
                 return;
             }
 
-            AppUpdateText = Loc["settings.appUpdate.verifying"];
+            SetAppUpdateText("settings.appUpdate.verifying");
 
             if (!AppUpdateService.VerifyFile(installerPath, release.AssetSize, release.Sha256, out var actual))
             {
                 try { File.Delete(installerPath); } catch { /* 删不掉也无所谓：下次下载覆盖 */ }
 
                 AppUpdateState = AppUpdateUiState.Failed;
-                AppUpdateText = Loc.Format("settings.appUpdate.failChecksum", actual);
+                SetAppUpdateText("settings.appUpdate.failChecksum", actual);
                 return;
             }
 
@@ -1931,13 +2048,13 @@ public partial class MainViewModel : ObservableObject
             });
 
             AppUpdateState = AppUpdateUiState.Ready;
-            AppUpdateText = Loc.Format("settings.appUpdate.ready", "v" + release.Version);
-            AppUpdateProgressText = "";
+            SetAppUpdateText("settings.appUpdate.ready", "v" + release.Version);
+            ClearAppUpdateProgressText();
         }
         catch (Exception ex)
         {
             AppUpdateState = AppUpdateUiState.Failed;
-            AppUpdateText = Loc.Format("settings.appUpdate.failed", ex.Message);
+            SetAppUpdateText("settings.appUpdate.failed", ex.Message);
         }
         finally
         {
@@ -1967,7 +2084,7 @@ public partial class MainViewModel : ObservableObject
         AutoSave();
 
         AppUpdateState = AppUpdateUiState.Skipped;
-        AppUpdateText = Loc.Format("settings.appUpdate.skipped", "v" + _appUpdateRelease.Version);
+        SetAppUpdateText("settings.appUpdate.skipped", "v" + _appUpdateRelease.Version);
     }
 
     /// <summary>撤销「跳过此版本」。</summary>
@@ -1978,7 +2095,7 @@ public partial class MainViewModel : ObservableObject
         AutoSave();
 
         AppUpdateState = _appUpdateRelease == null ? AppUpdateUiState.Idle : AppUpdateUiState.Available;
-        AppUpdateText = Loc[_appUpdateRelease == null ? "settings.appUpdate.notChecked" : "settings.appUpdate.available"];
+        SetAppUpdateText(_appUpdateRelease == null ? "settings.appUpdate.notChecked" : "settings.appUpdate.available");
     }
 
     /// <summary>
@@ -1994,7 +2111,7 @@ public partial class MainViewModel : ObservableObject
         if (state.InstallerPath.Length == 0 || !File.Exists(state.InstallerPath))
         {
             AppUpdateState = AppUpdateUiState.Failed;
-            AppUpdateText = Loc["settings.appUpdate.failInstallerMissing"];
+            SetAppUpdateText("settings.appUpdate.failInstallerMissing");
             return;
         }
 
@@ -2016,7 +2133,7 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             AppUpdateState = AppUpdateUiState.Failed;
-            AppUpdateText = Loc.Format("settings.appUpdate.failInstall", ex.Message);
+            SetAppUpdateText("settings.appUpdate.failInstall", ex.Message);
         }
     }
 

@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
+using WarThunderSkinManager.Services;
 
 namespace WarThunderSkinManager.ViewModels;
 
@@ -67,6 +68,27 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
     /// 不会出现两轮并发下载（并发会重复导入同一份压缩包 → 生成重复涂装包）。
     /// </summary>
     internal SemaphoreSlim Gate { get; } = new(1, 1);
+
+    // 最近一次状态文案的语言键 + 参数：界面语言切换后据此重建
+    private string? _stateTextKey;
+    private object[] _stateTextArgs = Array.Empty<object>();
+
+    private static LocalizationManager Loc => LocalizationManager.Instance;
+
+    /// <summary>设置状态文案（语言键 + 可选参数），并记住以便界面语言切换后重建。</summary>
+    internal void SetStateText(string key, params object[] args)
+    {
+        _stateTextKey = key;
+        _stateTextArgs = args;
+        StateText = args.Length == 0 ? Loc[key] : Loc.Format(key, args);
+    }
+
+    /// <summary>界面语言切换后重取状态文案（由 SkinsViewModel 触发）。</summary>
+    public void RefreshTexts()
+    {
+        if (_stateTextKey == null) return;
+        StateText = _stateTextArgs.Length == 0 ? Loc[_stateTextKey] : Loc.Format(_stateTextKey, _stateTextArgs);
+    }
 
     /// <summary>
     /// 是否显示「重试」按钮：**下载中 / 失败 / 已取消**时都常驻

@@ -135,7 +135,8 @@ public partial class WTLiveImportWindow : Window
         // 预览图不在确认窗内联加载（国内访问 CDN 慢会卡住界面）——
         // 导入完成后由 StartWtLiveDownload 在后台取原图设为涂装包预览
         AuthorText.Text = post.Author;
-        FileText.Text = $"{post.File.Name}（{DataResetService.FormatSize(post.File.Size)}）";
+        FileText.Text = Loc.Format("wtlive.fileWithSize", post.File.Name,
+            DataResetService.FormatSize(post.File.Size));
         DownloadsText.Text = post.Downloads.ToString();
         DisplayNameBox.Text = post.DisplayName;
         DescriptionText.Text = post.DescriptionText;

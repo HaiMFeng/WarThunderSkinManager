@@ -65,14 +65,14 @@ public static class ShortcutService
             var target = TargetExecutable();
             if (target.Length == 0 || !File.Exists(target))
             {
-                error = "找不到程序自身路径";
+                error = LocalizationManager.Instance["settings.about.shortcut.errNoPath"];
                 return false;
             }
 
             var shellType = Type.GetTypeFromProgID("WScript.Shell");
             if (shellType == null)
             {
-                error = "系统未提供 WScript.Shell";
+                error = LocalizationManager.Instance["settings.about.shortcut.errNoShell"];
                 return false;
             }
 
@@ -87,7 +87,7 @@ public static class ShortcutService
 
             if (File.Exists(ShortcutPath())) return true;
 
-            error = "快捷方式未生成";
+            error = LocalizationManager.Instance["settings.about.shortcut.errNotCreated"];
             return false;
         }
         catch (Exception ex)

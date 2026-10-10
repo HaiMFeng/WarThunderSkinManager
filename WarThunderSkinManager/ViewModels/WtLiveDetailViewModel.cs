@@ -123,6 +123,12 @@ public partial class WtLiveDetailViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private string _statsText = "";
 
+    // 统计行的原始数值：界面语言切换后据此重拼（StatsText 是拼接快照，不会自己刷新）
+    private long _statsSize;
+    private long _statsDownloads;
+    private long _statsLikes;
+    private long _statsViews;
+
     [ObservableProperty] private string _description = "";
     [ObservableProperty] private string _postUrl = "";
 
@@ -180,7 +186,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         Description = card.Description;
         SetTags(card.Tags);
         HasFile = card.HasFile;
-        StatsText = BuildStats(card.FileSize, card.Downloads, card.Likes, card.Views);
+        SetStats(card.FileSize, card.Downloads, card.Likes, card.Views);
 
         IsOpen = true;
         _ = LoadAvatarAsync(card.AuthorAvatarUrl, card);
@@ -342,7 +348,7 @@ public partial class WtLiveDetailViewModel : ObservableObject
         if (post.Tags.Count > 0) SetTags(post.Tags);
 
         HasFile = post.File != null;
-        StatsText = BuildStats(
+        SetStats(
             post.File?.Size ?? card.FileSize,
             post.Downloads > 0 ? post.Downloads : card.Downloads,
             card.Likes,
@@ -470,6 +476,23 @@ public partial class WtLiveDetailViewModel : ObservableObject
         _avatarCancellation?.Cancel();
         _avatarCancellation?.Dispose();
         _avatarCancellation = null;
+    }
+
+    /// <summary>记录统计行的原始数值并重拼文案（打开浮窗 / 详情接口回来后调用）。</summary>
+    private void SetStats(long size, long downloads, long likes, long views)
+    {
+        _statsSize = size;
+        _statsDownloads = downloads;
+        _statsLikes = likes;
+        _statsViews = views;
+        StatsText = BuildStats(size, downloads, likes, views);
+    }
+
+    /// <summary>界面语言切换后重拼统计行（浮窗打开期间；关着就不用管，下次打开自会取新文案）。</summary>
+    public void ApplyLanguageChange()
+    {
+        if (!IsOpen) return;
+        StatsText = BuildStats(_statsSize, _statsDownloads, _statsLikes, _statsViews);
     }
 
     private static string BuildStats(long size, long downloads, long likes, long views)

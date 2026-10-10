@@ -159,10 +159,10 @@ public static class WTLiveService
         var dto = JsonSerializer.Deserialize<PostResponse>(json);
 
         if (dto == null || !string.IsNullOrEmpty(dto.Status))
-            throw new InvalidDataException("涂装不存在或服务端拒绝（status=ERR）");
+            throw new InvalidDataException(LocalizationManager.Instance["wtlive.error.postUnavailable"]);
 
         if (!string.Equals(dto.Type, "camouflage", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"该帖子类型为 {dto.Type}，不是涂装（camouflage）");
+            throw new InvalidDataException(LocalizationManager.Instance["wtlive.error.notSkin"]);
 
         var images = (dto.Images ?? new List<ImageDto>())
             .Where(i => !string.IsNullOrWhiteSpace(i.Orig?.Src))
@@ -266,10 +266,11 @@ public static class WTLiveService
 
         // 站点参数错误/被风控时仍回 HTTP 200，成败看 status（实测正常为 "OK"）
         if (dto == null || (dto.Status?.Length > 0 && !string.Equals(dto.Status, "OK", StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidDataException($"涂装列表被服务端拒绝（status={dto?.Status ?? "无响应体"}）");
+            throw new InvalidDataException(LocalizationManager.Instance.Format("wtlive.error.listRejected",
+                string.IsNullOrWhiteSpace(dto?.Status) ? "-" : dto.Status));
 
         var raw = dto.Data?.List;
-        if (raw == null) throw new InvalidDataException("涂装列表返回异常（缺 data.list，站点可能改版）");
+        if (raw == null) throw new InvalidDataException(LocalizationManager.Instance["wtlive.error.listMalformed"]);
 
         var items = new List<WTLiveFeedItem>(raw.Count);
         foreach (var one in raw)

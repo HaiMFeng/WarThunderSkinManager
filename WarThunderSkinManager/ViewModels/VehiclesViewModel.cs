@@ -321,6 +321,11 @@ public partial class VehiclesViewModel : ObservableObject
         _sortedVehicles = Vehicles.OrderBy(v => v.CountryId, StringComparer.OrdinalIgnoreCase)
                                   .ThenBy(v => v.DisplayName, StringComparer.Ordinal).ToList();
         ApplyVehicleFilter();
+
+        // 计数文案（载具 / 涂装包 / 部件）是文案拼接：依赖的集合没变就不会自己刷新 → 手动补
+        OnPropertyChanged(nameof(VehicleCountText));
+        OnPropertyChanged(nameof(PackageCountText));
+        OnPropertyChanged(nameof(PartCountText));
     }
 
     /// <summary>
@@ -447,7 +452,7 @@ public partial class VehiclesViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ShowStatus(ex.Message);
+            ShowStatus(Loc.Format("vehicles.names.saveFailed", ex.Message));
         }
     }
 
@@ -462,7 +467,7 @@ public partial class VehiclesViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ShowStatus(ex.Message);
+            ShowStatus(Loc.Format("vehicles.countries.saveFailed", ex.Message));
         }
     }
 

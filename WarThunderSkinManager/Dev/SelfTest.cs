@@ -17,13 +17,18 @@ using WarThunderSkinManager.ViewModels;
 namespace WarThunderSkinManager.Dev;
 
 /// <summary>
-/// 开发用自检入口（命令行：<c>--selftest &lt;源文件夹&gt; &lt;工作目录&gt;</c>）。
+/// 开发用自检入口（命令行：<c>--selftest &lt;源文件夹&gt; &lt;工作目录&gt; [仓库根]</c>）。
 /// 对真实数据跑一遍「导入 → 解构 → blob 落盘 → 部件聚合 → 激活输出」，并写入 &lt;工作目录&gt;/report.txt。
 /// 仅供开发期验证，不影响正常 GUI 启动。
+/// <para>
+/// <c>仓库根</c>是**可选**的：给了它才能做"扫 XAML 源码"那几条静态检查（写死的用户可见文本、
+/// <c>{loc:Loc}</c> 的 key 是否都在语言表里）。发布脚本把 exe 放在临时目录跑，从 exe 位置回溯不到仓库，
+/// 所以由脚本显式传进来；没传就跳过那几条（不误报）。
+/// </para>
 /// </summary>
 internal static class SelfTest
 {
-    public static void Run(string sourceFolder, string workDir)
+    public static void Run(string sourceFolder, string workDir, string? repoRoot = null)
     {
         var log = new StringBuilder();
         var resourceDir = Path.Combine(workDir, "lib");
@@ -1061,7 +1066,10 @@ internal static class SelfTest
                         log.AppendLine($"自检异常：改窗口大小后卡片几何不对（同列相邻间距不对 {badGap} 对、"
                                      + $"最大偏差 {worstGapDelta:0.#} px；宽度不对 {badWidth} 张）"
                                      + " → 卡片会被截断 / 多出一段空白");
-                    else if (largeStep.Layout > smallStep.Layout + 4)
+                    else if (largeStep.Layout > smallStep.Layout + 8)
+                        // 允许 8ms 余量：这条量的是**整窗布局**（含渲染与卡片模板实例化），本机噪声就在 ±3~4ms，
+                        // 阈值卡到 4ms 会随机误报。真出现"随总数增长"的回归时（每步重排整表）会到几十毫秒量级，
+                        // 8ms 一样能抓住
                         log.AppendLine($"自检异常：滚动每一步的布局成本仍随卡片总数增长"
                                      + $"（400 张 {smallStep.Layout:0.##} ms → 1320 张 {largeStep.Layout:0.##} ms）");
 
@@ -2180,8 +2188,93 @@ internal static class SelfTest
             var enLangKeys = JsonSerializer.Deserialize<Dictionary<string, string>>(
                 File.ReadAllText(Path.Combine(langEnRoot, "lang", "en-US.json"), Encoding.UTF8))!.Keys;
             var missingKeys = zhLangKeys.Except(enLangKeys).OrderBy(k => k, StringComparer.Ordinal).ToList();
-            log.AppendLine($"键覆盖    : en-US {enLangKeys.Count} / zh-CN {zhLangKeys.Count}，缺失 {missingKeys.Count} 个"
-                         + (missingKeys.Count > 0 ? "：" + string.Join(", ", missingKeys) : ""));
+            var enOnlyKeys = enLangKeys.Except(zhLangKeys).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            log.AppendLine($"键覆盖    : en-US {enLangKeys.Count} / zh-CN {zhLangKeys.Count}"
+                         + $"，en 缺 {missingKeys.Count} 个、zh 缺 {enOnlyKeys.Count} 个（都应 0）"
+                         + (missingKeys.Count > 0 ? "\n  en 缺：" + string.Join(", ", missingKeys) : "")
+                         + (enOnlyKeys.Count > 0 ? "\n  zh 缺：" + string.Join(", ", enOnlyKeys) : ""));
+
+            // **键必须中英齐平**：缺的那一侧会回落另一种语言（英文界面冒出中文就是缺陷），判失败
+            if (missingKeys.Count > 0 || enOnlyKeys.Count > 0)
+                log.AppendLine($"自检异常：语言表键不齐平（en 缺 {missingKeys.Count}、zh 缺 {enOnlyKeys.Count}）"
+                             + " → 缺失侧会显示成另一种语言");
+
+            // ---- 文案体检（静态扫语言表 + XAML 源码）----
+            // ① XAML 里 {loc:Loc key} 用到的 key 必须在语言表里：拼错 / 改名没同步 → 界面显示 ⟦key⟧，判失败
+            // ② XAML 里不该有**写死的用户可见文本**（Text="中文" 这种），判失败
+            // ③ 措辞体检（括号补充 / 内部术语）：**只报告不判失败** —— 这类要靠人工斟酌，先让规模可见
+            var zhTable = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                File.ReadAllText(Path.Combine(workDir, "cfg-lang", "lang", "zh-CN.json"), Encoding.UTF8))!;
+
+            // 仓库根：优先用命令行传进来的（发布脚本知道仓库在哪）；没传就从程序集目录往上找
+            // （发布自检把 exe 放在临时目录 → 两种都找不到 → 跳过这几条静态检查，不让它误报）
+            var viewsRoot = "";
+            if (!string.IsNullOrWhiteSpace(repoRoot))
+            {
+                var candidate = Path.Combine(repoRoot, "WarThunderSkinManager", "Views");
+                if (Directory.Exists(candidate)) viewsRoot = candidate;
+            }
+
+            if (viewsRoot.Length == 0)
+            {
+                for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+                {
+                    var candidate = Path.Combine(dir.FullName, "WarThunderSkinManager", "Views");
+                    if (Directory.Exists(candidate)) { viewsRoot = candidate; break; }
+                }
+            }
+
+            var missingLocKeys = new List<string>();
+            var hardcodedTexts = new List<string>();
+            var xamlScanned = 0;
+
+            if (Directory.Exists(viewsRoot))
+            {
+                // 属性值里**不含** {} 与 []（排除绑定 / 资源引用），且含字母或汉字（排除纯符号与图标字形）。
+                // 前面的 (?<![\w:.-]) 是**属性名边界**：否则 SizeToContent="Height" 里的 Content="Height" 会被误判
+                var literalAttribute = new System.Text.RegularExpressions.Regex(
+                    @"(?<![\w:.-])(?:Text|Content|Header|ToolTip|Watermark|PlaceholderText|Title)=""([^""{}\[\]]*[\p{L}][^""{}\[\]]*)""");
+
+                foreach (var file in Directory.EnumerateFiles(viewsRoot, "*.xaml", SearchOption.AllDirectories))
+                {
+                    xamlScanned++;
+                    var text = File.ReadAllText(file, Encoding.UTF8);
+
+                    foreach (System.Text.RegularExpressions.Match m in
+                             System.Text.RegularExpressions.Regex.Matches(text, @"\{loc:Loc\s+([A-Za-z0-9_.]+)\}"))
+                    {
+                        if (!zhTable.ContainsKey(m.Groups[1].Value))
+                            missingLocKeys.Add($"{Path.GetFileName(file)}·{m.Groups[1].Value}");
+                    }
+
+                    foreach (System.Text.RegularExpressions.Match m in literalAttribute.Matches(text))
+                    {
+                        if (m.Groups[1].Value.TrimStart().StartsWith("&#")) continue; // 图标字形实体
+                        hardcodedTexts.Add($"{Path.GetFileName(file)}·{m.Groups[1].Value.Trim()}");
+                    }
+                }
+            }
+
+            // 措辞体检：括号补充（「（…）」/「 (…)」）与内部术语（数据文件名 / 协议字段 / 章节号）
+            var parenZh = zhTable.Where(p => p.Value.Contains('（')).Select(p => p.Key).ToList();
+            var devTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, @"\.json|\.csv|§|status=|lang_group|<语言代码>")).Select(p => p.Key).ToList();
+            var blkTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, @"replace_tex|set_tex|\bparam\b")).Select(p => p.Key).ToList();
+
+            log.AppendLine($"XAML 文案 : 扫了 {xamlScanned} 个文件，写死的用户可见文本 = {hardcodedTexts.Count}（应 0）"
+                         + $"，loc 标记里查不到的 key = {missingLocKeys.Count}（应 0）"
+                         + (hardcodedTexts.Count > 0 ? "\n  写死：" + string.Join(" / ", hardcodedTexts.Take(8)) : "")
+                         + (missingLocKeys.Count > 0 ? "\n  缺 key：" + string.Join(" / ", missingLocKeys.Take(8)) : ""));
+            log.AppendLine($"措辞体检  : 中文表 括号补充 {parenZh.Count} 条、内部术语 {devTermZh.Count} 条、"
+                         + $"进阶 blk 术语 {blkTermZh.Count} 条（后两类里文件/协议名要清掉，blk 术语是进阶功能本身的概念）"
+                         + (devTermZh.Count > 0 ? "\n  内部术语：" + string.Join(" / ", devTermZh.Take(8)) : "")
+                         + $"\n  括号举例：{string.Join(" / ", parenZh.Take(6))}");
+
+            if (hardcodedTexts.Count > 0)
+                log.AppendLine($"自检异常：XAML 里有写死的用户可见文本（{hardcodedTexts.Count} 处）→ 其它语言下不会翻译");
+            else if (missingLocKeys.Count > 0)
+                log.AppendLine($"自检异常：XAML 用了语言表里没有的 key（{missingLocKeys.Count} 处）→ 界面会显示 ⟦key⟧");
 
             LocalizationManager.Instance.Load(Path.Combine(workDir, "cfg-lang"), "zh-CN"); // 恢复中文，避免影响后续输出
 

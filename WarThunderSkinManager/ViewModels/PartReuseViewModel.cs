@@ -330,6 +330,17 @@ public partial class PartReuseViewModel : ObservableObject
         SearchResults = results;
     }
 
+    /// <summary>
+    /// 界面语言切换后重算派生文案（由 <see cref="MainViewModel"/> 触发）：组成员行与搜索结果里的
+    /// 载具名列表、「XX 等 N 台载具」「无」「已在组 X」都是构造 / 计算时拼好的字符串，不会自己刷新。
+    /// 直接重建这两处投影（LoadEntries 按名保住当前选中组，RebuildSearch 保住当前筛选词）。
+    /// </summary>
+    public void ApplyLanguageChange()
+    {
+        LoadEntries();
+        RebuildSearch();
+    }
+
     private Dictionary<string, string> GroupByFrom()
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

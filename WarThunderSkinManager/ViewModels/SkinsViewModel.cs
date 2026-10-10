@@ -374,23 +374,24 @@ public partial class SkinsViewModel : ObservableObject
             item.Progress = WTLiveService.CombinedProgress(zipFraction, previewFraction, hasPreview);
             var percent = $"{item.Progress:P0}";
 
-            item.StateText = zipFraction >= 1 && hasPreview && previewFraction < 1
-                ? Loc.Format("wtlive.state.downloadingPreview", percent)
-                : Loc.Format("wtlive.state.downloading", percent);
+            if (zipFraction >= 1 && hasPreview && previewFraction < 1)
+                item.SetStateText("wtlive.state.downloadingPreview", percent);
+            else
+                item.SetStateText("wtlive.state.downloading", percent);
         }
 
         // 自动重试不静默：第 N 次尝试写进状态文字（列表右侧也有常驻「重试」可随时掐断）
         void ReportAttempt(int attempt)
         {
             if (attempt > 1 && item.State == WtLiveDownloadState.Downloading)
-                item.StateText = Loc.Format("wtlive.state.retrying", attempt, WTLiveService.DownloadAttempts);
+                item.SetStateText("wtlive.state.retrying", attempt, WTLiveService.DownloadAttempts);
         }
 
         try
         {
             item.State = WtLiveDownloadState.Downloading;
             item.Progress = 0;
-            item.StateText = Loc["wtlive.state.downloading0"];
+            item.SetStateText("wtlive.state.downloading0");
 
             if (previewFromCache)
             {
@@ -416,7 +417,7 @@ public partial class SkinsViewModel : ObservableObject
 
             // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
             item.State = WtLiveDownloadState.Importing;
-            item.StateText = Loc["wtlive.state.importing"];
+            item.SetStateText("wtlive.state.importing");
 
             extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir), runToken);
 
@@ -448,13 +449,13 @@ public partial class SkinsViewModel : ObservableObject
                 }
 
                 item.State = WtLiveDownloadState.Completed;
-                item.StateText = Loc.Format("wtlive.state.completed", result.Packages.Count);
+                item.SetStateText("wtlive.state.completed", result.Packages.Count);
                 ShowStatus(Loc.Format("wtlive.imported", result.Packages.Count));
             }
             else
             {
                 item.State = WtLiveDownloadState.Completed;
-                item.StateText = Loc["wtlive.state.nothing"];
+                item.SetStateText("wtlive.state.nothing");
             }
         }
         catch (OperationCanceledException) when (_downloadsCts.IsCancellationRequested)
@@ -471,7 +472,7 @@ public partial class SkinsViewModel : ObservableObject
         {
             // 读取停滞 / 服务器超时，且自动重试用尽
             item.State = WtLiveDownloadState.Failed;
-            item.StateText = Loc.Format("wtlive.state.failed", Loc["wtlive.state.stalled"]);
+            item.SetStateText("wtlive.state.failed", Loc["wtlive.state.stalled"]);
         }
         catch (Exception ex)
         {
@@ -481,9 +482,8 @@ public partial class SkinsViewModel : ObservableObject
             var previewOnly = hasPreview && previewTaskFailed();
 
             item.State = WtLiveDownloadState.Failed;
-            item.StateText = previewOnly
-                ? Loc.Format("wtlive.state.previewFailed", reason)
-                : Loc.Format("wtlive.state.failed", reason);
+            if (previewOnly) item.SetStateText("wtlive.state.previewFailed", reason);
+            else item.SetStateText("wtlive.state.failed", reason);
 
             ShowStatus(previewOnly ? Loc["wtlive.previewFailed"] : Loc.Format("wtlive.downloadFailed", reason));
 
@@ -516,7 +516,7 @@ public partial class SkinsViewModel : ObservableObject
     private static void MarkCanceled(WtLiveDownloadItem item)
     {
         item.State = WtLiveDownloadState.Canceled;
-        item.StateText = Loc["wtlive.state.canceled"];
+        item.SetStateText("wtlive.state.canceled");
         item.Progress = 0;
     }
 
@@ -1435,6 +1435,14 @@ public partial class SkinsViewModel : ObservableObject
         // 选中载具的标题 / 副标题派生自显示名与国家名，属性变更无人可代播报 → 手动补
         OnPropertyChanged(nameof(SelectedVehicleTitle));
         OnPropertyChanged(nameof(SelectedVehicleSubtitle));
+
+        // 涂装包计数标题与「当前激活」说明是文案拼接，集合 / 激活态没变就不会自己刷新
+        OnPropertyChanged(nameof(PackagesTitle));
+        OnPropertyChanged(nameof(ActivePackageText));
+
+        // 下载列表里每条的「下载中 / 导入中 / 已完成…」按记下的语言键重建
+        foreach (var item in WtLiveDownloads)
+            item.RefreshTexts();
 
         RefreshPartTags();
     }

@@ -226,7 +226,7 @@ public static class DataTables
     public static void ApplyUpdatedTable(string fileName, string configDir, byte[] content)
     {
         if (string.IsNullOrWhiteSpace(configDir))
-            throw new InvalidOperationException("配置目录未就绪");
+            throw new InvalidOperationException(LocalizationManager.Instance["common.configDirNotReady"]);
 
         System.IO.Directory.CreateDirectory(UserDirectory(configDir));
         AtomicFile.WriteAllBytes(UserFile(fileName, configDir), content);
