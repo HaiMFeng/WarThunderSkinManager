@@ -200,6 +200,8 @@
   "skins.firstOutput": "Completed skin output for '{0}'.\n\nThis is the first time a user skin has been generated for this vehicle and it must be selected once in the game: open the vehicle's 'Appearance → User Skins' and select this skin ({1}).\n\nAfter that, switching skins in the program takes effect automatically; when deactivating, the program keeps an empty blk so no reselection is needed.",
   "skins.col.candidates": "Candidate Textures",
   "skins.noSelection": "Please select a country above and a vehicle on the left",
+  "skins.searchOnWtLive": "Search on WT Live",
+  "skins.searchOnWtLive.hint": "Open WT Live filtered by this vehicle",
   "import.title": "Import Preview",
   "import.hint": "Confirm the skin packages to import; package names can be modified before importing and duplicates are allowed",
   "import.col.vehicle": "Vehicle",

@@ -294,6 +294,23 @@ public partial class WtLiveViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>
+    /// 从**别处**按载具筛选（涂装管理页页头的「在 WT Live 中搜索」）：
+    /// 走与下拉选中载具**同一条路径**（<see cref="ApplySuggestion"/>），
+    /// 因此搜索框文本 / 筛选摘要 / 列表状态与手动筛选完全一致。
+    /// </summary>
+    public void SearchVehicle(string vehicleId, string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(vehicleId)) return;
+
+        ApplySuggestion(new WtLiveSearchSuggestion
+        {
+            Kind = WtLiveSearchKind.Vehicle,
+            VehicleId = vehicleId,
+            Display = string.IsNullOrWhiteSpace(displayName) ? vehicleId : displayName
+        });
+    }
+
     /// <summary>清空搜索框与筛选（搜索框右侧「×」）。已筛选时重拉列表；只是打了字则仅清空。</summary>
     [RelayCommand]
     private void ClearSearch()

@@ -325,6 +325,10 @@
                                            Foreground="{StaticResource BrushTextMuted}" Margin="0,2,0,0"/>
                                 <Button Content="{loc:Loc pkg.create}" Style="{StaticResource SecondaryButton}"
                                         Margin="12,-4,0,0" Command="{Binding Skins.CreateBlankPackageCommand}"/>
+                                <!-- 跳到 WT Live 并按**本载具**筛选：与在 WT Live 页从搜索下拉里选中该载具等价 -->
+                                <Button Content="{loc:Loc skins.searchOnWtLive}" Style="{StaticResource SecondaryButton}"
+                                        Margin="8,-4,0,0" ToolTip="{loc:Loc skins.searchOnWtLive.hint}"
+                                        Command="{Binding SearchOnWtLiveCommand}"/>
                             </StackPanel>
                         </Grid>
 

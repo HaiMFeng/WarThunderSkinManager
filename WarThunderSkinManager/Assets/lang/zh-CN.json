@@ -200,6 +200,8 @@
   "skins.firstOutput": "已完成「{0}」的涂装输出。\n\n这是该载具第一次生成用户涂装，需要在游戏内手动选中一次：请打开该载具的「外观 → 用户涂装」，选择这套涂装（{1}）。\n\n此后在程序内切换涂装将自动生效；取消激活时程序会保留空 blk，因此无需重新选择。",
   "skins.col.candidates": "候选贴图",
   "skins.noSelection": "请在上方选择国家，并在左侧选择载具",
+  "skins.searchOnWtLive": "在 WT Live 中搜索",
+  "skins.searchOnWtLive.hint": "打开 WT Live，并按该载具筛选公开涂装",
   "import.title": "导入预览",
   "import.hint": "确认要导入的涂装包，可在导入前修改包名，允许重名",
   "import.col.vehicle": "载具",

@@ -1253,6 +1253,23 @@ public partial class MainViewModel : ObservableObject
             }));
     }
 
+    /// <summary>
+    /// 涂装管理页页头「在 WT Live 中搜索」：切到「WT Live」页并按当前载具筛选（§4 <c>vehicle=</c>）。
+    /// <para>
+    /// **先设筛选、再切页**：切页会让该页首次可见并触发首屏加载，筛选若已就位就直接拉该载具的列表，
+    /// 省掉一次"先拉全部、再被筛选打断"的请求。
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void SearchOnWtLive()
+    {
+        var vehicle = Skins.SelectedVehicle;
+        if (vehicle == null || string.IsNullOrWhiteSpace(vehicle.Id)) return;
+
+        WtLive.SearchVehicle(vehicle.Id, vehicle.DisplayName);
+        Navigate(TabKey.WtLive);
+    }
+
     [RelayCommand]
     private void BrowseUserSkins() => ChangeDirectory(Config.UserSkinsDirectory,
         "migrate.scope.userSkins", picked => Config.UserSkinsDirectory = picked);

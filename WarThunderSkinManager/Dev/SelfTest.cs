@@ -1668,6 +1668,9 @@ internal static class SelfTest
             {
                 (typeof(MainViewModel), nameof(MainViewModel.WtLive)),
                 (typeof(MainViewModel), nameof(MainViewModel.Skins)),
+                // 涂装管理页页头「在 WT Live 中搜索」（跳页 + 按载具筛选）
+                (typeof(MainViewModel), nameof(MainViewModel.SearchOnWtLiveCommand)),
+                (typeof(MainViewModel), nameof(MainViewModel.NavigateCommand)),
                 (typeof(MainViewModel), nameof(MainViewModel.OpenLinkCommand)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ReloadThumbnailCommand)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.Detail)),
