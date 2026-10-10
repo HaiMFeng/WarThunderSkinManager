@@ -838,6 +838,73 @@ internal static class SelfTest
                         ? $"列表回顶部 : 清空重拉后位置 = {listScroll.VerticalOffset:0.##}（应 0），回顶 = {backToTop}（应 True）"
                         : "列表回顶部 : 跳过（列表没撑出可滚动高度）");
 
+                    // ⑥ 滚动成本探针（真窗口 + 真卡片模板 + 真 ScrollViewer）：
+                    //    ① 窗口裁剪到底有没有生效（面板收起了多少张实体）；② 每步滚动成本是否仍随卡片数增长。
+                    //    只在有窗口时测得了：滚动事件 → 视图算窗口 → 面板收起 → 布局，这一串全在 UI 线程上。
+                    var probeVm = new WtLiveViewModel();
+                    var probeView = new WarThunderSkinManager.Views.WtLiveView { DataContext = new { WtLive = probeVm } };
+                    var probeWin = new Window
+                    {
+                        Width = 1100,
+                        Height = 700,
+                        WindowStyle = WindowStyle.None,
+                        ShowInTaskbar = false,
+                        ShowActivated = false,
+                        Left = -4000,
+                        Top = -4000,
+                        Content = probeView,
+                    };
+                    probeWin.Show();
+                    Pump(probeWin.Dispatcher); // 让视图那些 Loaded 优先级的挂载回调跑掉（不然拿不到面板）
+                    probeWin.UpdateLayout();
+
+                    var probeScroll = (ScrollViewer)probeView.FindName("ListScroll");
+                    var probePanel = FindDescendant<WarThunderSkinManager.Controls.MasonryPanel>(probeView);
+
+                    for (var i = 0; i < 120; i++) probeVm.Items.Add(Card(i));
+                    probeWin.UpdateLayout();
+                    Pump(probeWin.Dispatcher);
+                    var smallStep = ScrollSteps(probeScroll, probeWin, 40);
+
+                    for (var i = 120; i < 1320; i++) probeVm.Items.Add(Card(i));
+                    probeWin.UpdateLayout();
+                    Pump(probeWin.Dispatcher);
+
+                    // 打开面板自带的计时（只统计调用次数与耗时，不改行为）
+                    WarThunderSkinManager.Controls.MasonryPanel.Profiling = true;
+                    WarThunderSkinManager.Controls.MasonryPanel.MeasureCalls = 0;
+                    WarThunderSkinManager.Controls.MasonryPanel.ArrangeCalls = 0;
+                    WarThunderSkinManager.Controls.MasonryPanel.MeasureMs = 0;
+                    WarThunderSkinManager.Controls.MasonryPanel.ArrangeMs = 0;
+
+                    var largeStep = ScrollSteps(probeScroll, probeWin, 40);
+                    var calls = (WarThunderSkinManager.Controls.MasonryPanel.MeasureCalls,
+                                 WarThunderSkinManager.Controls.MasonryPanel.ArrangeCalls);
+                    var ownMs = (WarThunderSkinManager.Controls.MasonryPanel.MeasureMs,
+                                 WarThunderSkinManager.Controls.MasonryPanel.ArrangeMs);
+                    WarThunderSkinManager.Controls.MasonryPanel.Profiling = false;
+
+                    var materialized = probePanel?.Children.Count ?? -1;
+                    var collapsed = probePanel?.CollapsedCount ?? -1;
+
+                    log.AppendLine($"滚动成本   : 120 张 → 每步 滚 {smallStep.Scroll:0.##} + 布局 {smallStep.Layout:0.##} ms；"
+                                 + $"1200 张 → 每步 滚 {largeStep.Scroll:0.##} + 布局 {largeStep.Layout:0.##} ms"
+                                 + $"（每步 = 滚 200px + 走完一轮布局，UI 线程侧）");
+                    log.AppendLine($"滚动耗时归属: 40 步里面板 Measure {calls.Item1} 次 / {ownMs.Item1:0.##} ms、"
+                                 + $"Arrange {calls.Item2} 次 / {ownMs.Item2:0.##} ms"
+                                 + $"（面板外的部分 = 布局 {largeStep.Layout * 40 - ownMs.Item1 - ownMs.Item2:0.##} ms）");
+                    log.AppendLine($"滚动分配   : 每步分配 {largeStep.AllocKb:0} KB"
+                                 + $"，40 步 GC 次数 = Gen0 {largeStep.Gen0} / Gen1 {largeStep.Gen1} / Gen2 {largeStep.Gen2}"
+                                 + (smallStep.AllocKb > 0 ? $"（120 张时每步 {smallStep.AllocKb:0} KB）" : ""));
+                    log.AppendLine($"滚动窗口   : 面板子项 = {materialized}，已收起 = {collapsed}"
+                                 + $"（收起应为「子项数 − 视口附近那几张」，若为 0 说明窗口裁剪没生效）");
+
+                    if (probePanel != null && collapsed <= 0)
+                        log.AppendLine("自检异常：滚动窗口裁剪没生效（面板一张都没收起）");
+
+                    probeWin.Content = null;
+                    probeWin.Close();
+
                     win.Content = null;
                     win.Close();
                 }
@@ -872,6 +939,52 @@ internal static class SelfTest
                     }
 
                     return null;
+                }
+
+                // 把消息队列跑到空（含 Loaded 优先级的挂载回调）：不泵的话"找面板"那类回调根本不会执行，
+                // 窗口裁剪在自检里就会静默失效、量出来的数全是"没生效"的那一份
+                static void Pump(System.Windows.Threading.Dispatcher dispatcher)
+                {
+                    var frame = new System.Windows.Threading.DispatcherFrame();
+                    dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() => frame.Continue = false));
+                    System.Windows.Threading.Dispatcher.PushFrame(frame);
+                }
+
+                /// <summary>
+                /// 滚 <paramref name="steps"/> 步（每步 200px），返回每步平均耗时：
+                /// <c>Scroll</c> = 滚动调用本身（含 ScrollChanged 里那些事），<c>Layout</c> = <c>UpdateLayout</c>。
+                /// </summary>
+                static (double Scroll, double Layout, double AllocKb, int Gen0, int Gen1, int Gen2) ScrollSteps(
+                    ScrollViewer scroll, Window host, int steps)
+                {
+                    var scrollWatch = new System.Diagnostics.Stopwatch();
+                    var layoutWatch = new System.Diagnostics.Stopwatch();
+
+                    var allocBefore = GC.GetTotalAllocatedBytes(precise: false);
+                    var gen0 = GC.CollectionCount(0);
+                    var gen1 = GC.CollectionCount(1);
+                    var gen2 = GC.CollectionCount(2);
+
+                    for (var step = 1; step <= steps; step++)
+                    {
+                        scrollWatch.Start();
+                        scroll.ScrollToVerticalOffset(step * 200);
+                        scrollWatch.Stop();
+
+                        layoutWatch.Start();
+                        host.UpdateLayout();
+                        layoutWatch.Stop();
+                    }
+
+                    var allocKb = (GC.GetTotalAllocatedBytes(precise: false) - allocBefore) / 1024.0 / steps;
+
+                    return (scrollWatch.Elapsed.TotalMilliseconds / steps,
+                            layoutWatch.Elapsed.TotalMilliseconds / steps,
+                            allocKb,
+                            GC.CollectionCount(0) - gen0,
+                            GC.CollectionCount(1) - gen1,
+                            GC.CollectionCount(2) - gen2);
                 }
 
                 // 造一张卡片撑出列表高度（没有预览图 URL → 缩略图走"缺图"占位，**不发网络请求**）：

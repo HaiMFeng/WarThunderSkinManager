@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace WarThunderSkinManager.Controls;
 
@@ -141,7 +143,100 @@ public class MasonryPanel : Panel
     /// <summary>当前被"收起"（窗口外，不参与测量 / 渲染）的子项数——自检与诊断用。</summary>
     internal int CollapsedCount { get; private set; }
 
+    /// <summary>常驻实体时，视野外再保留实体的半径（屏数）——窗口裁剪的"收起圈"。</summary>
+    public double RealizeMarginScreens { get; set; } = 1.5;
+
+    /// <summary>
+    /// 上报给宿主的窗口半径（屏数）：宿主据此保留 / 释放缩略图位图。**必须 ≥ <see cref="RealizeMarginScreens"/>**
+    /// ——否则会出现"看得见的卡片位图已被释放"（图没了再补，反而更抖）。
+    /// </summary>
+    public double PreloadMarginScreens { get; set; } = 3;
+
+    /// <summary>
+    /// 可视窗口变了（面板已按收起圈收拾好子项）：<c>Keep</c> 是保留实体的范围，
+    /// <c>Preload</c> 是给宿主的更大一圈（保留位图）。宿主据此决定保留 / 释放缩略图。
+    /// </summary>
+    public event EventHandler<(int KeepFirst, int KeepLast, int PreloadFirst, int PreloadLast)>? WindowChanged;
+
+    /// <summary>祖先滚动容器：窗口裁剪要知道"现在滚到哪儿"，面板是唯一同时知道排布矩形与可视区的地方。</summary>
+    private ScrollViewer? _scroll;
+
+    /// <summary>布局被重建过（列宽 / 子项数变了）→ 排布结束后要重算一次窗口。</summary>
+    private bool _windowDirty;
+
+    public MasonryPanel()
+    {
+        // 面板在可视树里才找得到祖先 ScrollViewer，所以挂 Loaded。
+        // 这一手特意**不交给视图转发**：视图那层一旦漏挂（拿不到 VM / 面板解析失败），
+        // 裁剪会整条静默失效——面板自驱就绕开了这类"静默不生效"。
+        Loaded += (_, _) => HookScroll();
+    }
+
+    /// <summary>挂上祖先 ScrollViewer 的滚动通知，并立刻按当前位置收一次。</summary>
+    private void HookScroll()
+    {
+        if (_scroll != null) return;
+
+        for (DependencyObject? node = VisualTreeHelper.GetParent(this);
+             node != null;
+             node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is not ScrollViewer scroll) continue;
+
+            _scroll = scroll;
+            scroll.ScrollChanged += (_, _) => ApplyWindow();
+            ApplyWindow();
+            return;
+        }
+    }
+
+    /// <summary>
+    /// 按当前滚动位置重算窗口：视口 ±<see cref="RealizeMarginScreens"/> 屏保留实体，其余收起；
+    /// 再把更大的 <see cref="PreloadMarginScreens"/> 圈报给宿主（缩略图位图保留范围）。
+    /// </summary>
+    private void ApplyWindow()
+    {
+        if (_scroll == null) return;
+
+        var viewport = _scroll.ViewportHeight;
+        var offset = _scroll.VerticalOffset;
+        if (viewport <= 0) return;
+
+        if (GetRange(offset, viewport, viewport * RealizeMarginScreens) is not { } realize) return;
+
+        SetRealizedRange(realize.First, realize.Last);
+
+        if (GetRange(offset, viewport, viewport * PreloadMarginScreens) is { } preload)
+            WindowChanged?.Invoke(this, (realize.First, realize.Last, preload.First, preload.Last));
+    }
+
+    /// <summary>
+    /// 诊断开关（自检用）：开着时统计测量 / 排列的调用次数与耗时（见 <see cref="MeasureCalls"/> 等）。
+    /// 默认关——生产路径上只剩一次布尔判断。排查"滚动卡顿花在哪一层"时很有用。
+    /// </summary>
+    internal static bool Profiling;
+
+    /// <summary><see cref="Profiling"/> 期间的测量 / 排列调用次数与累计耗时（毫秒）。</summary>
+    internal static int MeasureCalls;
+    internal static int ArrangeCalls;
+    internal static double MeasureMs;
+    internal static double ArrangeMs;
+
     protected override Size MeasureOverride(Size availableSize)
+    {
+        if (!Profiling) return MeasureLayout(availableSize);
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var size = MeasureLayout(availableSize);
+        watch.Stop();
+
+        MeasureCalls++;
+        MeasureMs += watch.Elapsed.TotalMilliseconds;
+
+        return size;
+    }
+
+    private Size MeasureLayout(Size availableSize)
     {
         var children = InternalChildren;
         if (children.Count == 0)
@@ -178,7 +273,10 @@ public class MasonryPanel : Panel
             for (var i = 0; i < children.Count; i++) children[i].Visibility = Visibility.Visible;
 
             CollapsedCount = 0; // 唤醒后确实没有收起的了：计数器得跟着实际走
+            _windowDirty = true; // 全都实体了 → 排布完要按当前滚动位置重新收一次
         }
+
+        if (_rectCount != children.Count) _windowDirty = true; // 子项增减（翻页 / 清空重开）同理
 
         var gap = ItemGap;
         var columnHeights = new double[columns]; // 列数 ≤ 12：这个小数组不值得缓存
@@ -208,6 +306,20 @@ public class MasonryPanel : Panel
     }
 
     protected override Size ArrangeOverride(Size finalSize)
+    {
+        if (!Profiling) return ArrangeLayout(finalSize);
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var size = ArrangeLayout(finalSize);
+        watch.Stop();
+
+        ArrangeCalls++;
+        ArrangeMs += watch.Elapsed.TotalMilliseconds;
+
+        return size;
+    }
+
+    private Size ArrangeLayout(Size finalSize)
     {
         var children = InternalChildren;
         if (children.Count == 0)
@@ -251,6 +363,16 @@ public class MasonryPanel : Panel
         }
 
         _rectCount = children.Count;
+
+        if (_windowDirty)
+        {
+            _windowDirty = false;
+
+            // 布局刚被重建（翻页 / 清空重开 / 换列宽）→ 按当前滚动位置重收一次。
+            // 不能在 ArrangeOverride 里直接收：那会在排列过程中改子项可见性 → 又触发测量（嵌套布局）。
+            // 排到空闲优先级再收，期间只是"多留了几屏实体"，布局与滚动范围都不动
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ApplyWindow));
+        }
 
         return finalSize;
     }
