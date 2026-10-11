@@ -228,8 +228,12 @@
                                                     <StackPanel Grid.Column="0">
                                                         <StackPanel Orientation="Horizontal">
                                                             <!-- 部件名只显示末段（去掉可能写死的作者机器路径）；悬停看原文。
-                                                                 已排除的部件（§3.10）**留在列表里**、字体转灰 -->
+                                                                 已排除的部件（§3.10）**留在列表里**、字体转灰。
+                                                                 **间距只由各元素自己的右边距给**（名 6 / 标记与胶囊各 4）：
+                                                                 曾经把「名 → 后面」的 6 挂在胶囊容器左边距上，
+                                                                 于是「标记 → 胶囊」= 4 + 6 = 10，比胶囊之间的 4 宽出一截 -->
                                                             <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
+                                                                       Margin="0,0,6,0"
                                                                        VerticalAlignment="Center" ToolTip="{Binding From}">
                                                                 <TextBlock.Style>
                                                                     <Style TargetType="TextBlock">
@@ -248,7 +252,7 @@
                                                                  浅底 + 同色描边 + 同色深字），色调用**紫**（§5.10「跨载具 = 紫」，
                                                                  与属性页里跨载具候选的标注同色）：语义一致 —— 这一行的贴图
                                                                  正是要靠跨载具候选来补 -->
-                                                            <Border Margin="6,0,4,0" VerticalAlignment="Center">
+                                                            <Border Margin="0,0,4,0" VerticalAlignment="Center">
                                                                 <Border.Style>
                                                                     <Style TargetType="Border" BasedOn="{StaticResource Tag}">
                                                                         <Setter Property="Background" Value="{StaticResource BrushTagCrossBg}"/>
@@ -265,10 +269,11 @@
                                                                            Foreground="{StaticResource BrushTagCrossText}"/>
                                                             </Border>
 
-                                                            <!-- 部件标签胶囊：应用级共享模板 PartTagTemplate（§3.6） -->
+                                                            <!-- 部件标签胶囊：应用级共享模板 PartTagTemplate（§3.6）。
+                                                                 容器自己不留边距：左边距已经由前面的元素（名 / 标记）的右边距给足 -->
                                                             <ItemsControl ItemsSource="{Binding Tags}"
                                                                           ItemTemplate="{StaticResource PartTagTemplate}"
-                                                                          Margin="6,0,0,0" VerticalAlignment="Center" IsTabStop="False">
+                                                                          VerticalAlignment="Center" IsTabStop="False">
                                                                 <ItemsControl.ItemsPanel>
                                                                     <ItemsPanelTemplate>
                                                                         <StackPanel Orientation="Horizontal"/>
