@@ -32,10 +32,11 @@
                         <Grid>
                             <!-- 文案靠自身 Margin 撑出内边距（Border **不设 Padding**，
                                  这样进度条才能直接顶到内边框上）。
-                                 **上下边距必须相等**：气泡高度 = 文案高 + 上下各 10 → 文字天然垂直居中；
-                                 曾经把下边距写成 12（想给进度条"让位"），结果文字被顶得偏上。 -->
+                                 中文行框**底部**留的空白（descent）比顶部多 ~1.5px，所以等距内边距会让墨迹
+                                 看着偏上 —— 这里**上边距比下边距多 2px** 抵消它，让墨迹真正居中。
+                                 （曾写成「上 10 / 下 12」，方向反了，越修越偏上。） -->
                             <TextBlock Text="{Binding Message}" TextWrapping="Wrap" MaxWidth="520"
-                                       Margin="16,10"
+                                       Margin="16,11,16,9"
                                        Foreground="{StaticResource BrushText}"/>
                             <!-- 进度条：与文案**同层叠放** + `VerticalAlignment=Bottom` → 贴着内底边，
                                  完全不增加气泡高度。`Margin=0` → 满宽铺到内边框（两端会落在气泡的

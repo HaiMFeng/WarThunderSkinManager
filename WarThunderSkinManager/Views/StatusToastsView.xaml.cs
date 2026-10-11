@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using WarThunderSkinManager.Services;
 using WarThunderSkinManager.ViewModels;
 
@@ -32,13 +33,50 @@ public partial class StatusToastsView : UserControl
         ToastService.Instance.Items.CollectionChanged += OnItemsChanged;
     }
 
-    /// <summary>新条目挂上"退场"监听；条目被移除时不必退订（监听随条目一并回收）。</summary>
+    /// <summary>气泡圆角半径（与 XAML 里的 <c>CornerRadius</c> 保持一致）。</summary>
+    private const double CardCornerRadius = 10;
+
+    /// <summary>新条目挂上"退场"监听与圆角裁剪；条目被移除时不必退订（监听随条目一并回收）。</summary>
     private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.Action != NotifyCollectionChangedAction.Add || e.NewItems == null) return;
 
         foreach (StatusToast toast in e.NewItems)
+        {
             toast.PropertyChanged += OnToastPropertyChanged;
+
+            // 卡片容器是异步生成的 → 等这一轮布局过去再取
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => HookRoundedClip(toast)));
+        }
+    }
+
+    /// <summary>
+    /// 给卡片套上**圆角裁剪**：气泡底部的进度条是满宽的，两端必须跟着圆角轮廓**收进去**，
+    /// 否则看着像"浮"在圆角外面。WPF 没有内建的圆角 <c>Clip</c>，只能自己建一个
+    /// <see cref="RectangleGeometry"/>，并且要随尺寸变化更新。
+    /// <para>
+    /// 作用在气泡 <see cref="Border"/> 自身：<c>Clip</c> 在 <c>Effect</c> **之前**生效，
+    /// 所以投影不受影响（阴影沿裁剪后的圆角轮廓投）。
+    /// </para>
+    /// </summary>
+    private void HookRoundedClip(StatusToast toast)
+    {
+        if (ToastList.ItemContainerGenerator.ContainerFromItem(toast) is not FrameworkElement container) return;
+        if (VisualTreeHelper.GetChildrenCount(container) == 0) return;
+        if (VisualTreeHelper.GetChild(container, 0) is not Grid root) return;   // 模板根 Grid
+        if (VisualTreeHelper.GetChildrenCount(root) == 0) return;
+        if (VisualTreeHelper.GetChild(root, 0) is not Border card) return;      // 气泡本体
+
+        card.SizeChanged += (_, _) => ApplyRoundedClip(card);
+        ApplyRoundedClip(card);
+    }
+
+    private static void ApplyRoundedClip(FrameworkElement card)
+    {
+        if (card.ActualWidth <= 0 || card.ActualHeight <= 0) return;
+
+        card.Clip = new RectangleGeometry(
+            new Rect(0, 0, card.ActualWidth, card.ActualHeight), CardCornerRadius, CardCornerRadius);
     }
 
     /// <summary>
