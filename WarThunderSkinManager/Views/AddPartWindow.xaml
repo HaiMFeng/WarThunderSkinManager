@@ -32,15 +32,15 @@
             <TextBlock x:Name="HintText" Grid.Row="1" Margin="20,16,20,0" TextWrapping="Wrap"
                        FontSize="12" LineHeight="19" Foreground="{StaticResource BrushTextSecondary}"/>
 
-            <!-- 输入 + 候选：**可编辑 ComboBox** —— 输入框与下拉本就是同一个控件，
-                 选中候选即回填文本；没有候选时照常手输。
-                 用 KeyUp 而不是 TextChanged：ComboBox 没有 TextChanged，
-                 输入必然伴随按键，够用；下拉被重新拉开时再刷一次候选（DropDownOpened）。 -->
-            <ComboBox x:Name="PartInput" Grid.Row="2" Margin="20,12,20,0"
-                      Style="{StaticResource BaseComboBox}"
-                      IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
-                      KeyUp="PartInput_KeyUp"
-                      DropDownOpened="PartInput_DropDownOpened"/>
+            <!-- 本体 = **输入框**（原来那个 IsEditable="True" 的 ComboBox 是个坑：
+                 BaseComboBox 的模板里根本没有 PART_EditableTextBox，而铺满整格的 ToggleButton 又把
+                 按下全吃掉 —— 于是点不进去、也打不了字。候选交给下面的气泡浮层之后，
+                 输入本身就回归最普通的 TextBox：光标、选中、回车、输入法全是原生的。 -->
+            <TextBox x:Name="PartInput" Grid.Row="2" Margin="20,12,20,0"
+                     Style="{StaticResource BaseTextBox}" FontSize="13"
+                     TextChanged="PartInput_TextChanged"
+                     PreviewKeyDown="PartInput_PreviewKeyDown"
+                     LostKeyboardFocus="PartInput_LostKeyboardFocus"/>
 
             <!-- 校验提示（空输入 / 该载具已有这个位置） -->
             <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="20,8,20,0" TextWrapping="Wrap"
@@ -51,6 +51,73 @@
                 <Button x:Name="ConfirmButton" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
                         Click="Ok_Click"/>
             </StackPanel>
+
+            <!-- 候选**气泡**浮层（同 WT Live 搜索框那一路：贴在外壳下沿、点一项即用）。
+                 **锚在输入框自己身上**（PlacementTarget 直接指向它）：不用 RelativeSource AncestorType
+                 那种"按树找"，也不用 x:Reference（在这里会构成循环依赖，见界面设计规范 §5.7）。
+                 **StaysOpen=True + 气泡 Focusable=False**：点气泡不会把焦点从输入框抢走，
+                 所以不会出现"先关掉浮层、这次点击落空"。
+                 用 Popup 而不是内联面板：Popup 不吃布局高度 → 候选出现 / 消失**不会让窗口跳动**。 -->
+            <Popup x:Name="SuggestionPopup"
+                   PlacementTarget="{Binding ElementName=PartInput}"
+                   Placement="Bottom" VerticalOffset="4"
+                   StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
+                <!-- 与主题 ComboBox 下拉同一套外观（底 + 描边 + 圆角 8 + 投影）。
+                     宽度跟着输入框走（左边缘对齐，整个浮层正好压在输入框下面） -->
+                <Border Background="{StaticResource BrushBackground}"
+                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                        CornerRadius="8" Padding="6" SnapsToDevicePixels="True"
+                        Width="{Binding ActualWidth, ElementName=PartInput}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270"
+                                          Opacity="0.14" Color="{StaticResource ColorShadow}"/>
+                    </Border.Effect>
+
+                    <ScrollViewer MaxHeight="132" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="SuggestionList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <!-- 候选排成一片"气泡云"：放不下就换行 -->
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Click="Suggestion_Click" Focusable="False" Cursor="Hand"
+                                            Margin="0,0,6,6" Content="{Binding}">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="FontSize" Value="12"/>
+                                                <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
+                                                <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
+                                                <Setter Property="Padding" Value="10,3"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="bd" CornerRadius="10" SnapsToDevicePixels="True"
+                                                                    Background="{TemplateBinding Background}"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="bd" Property="Background"
+                                                                            Value="{StaticResource BrushSurface}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Popup>
         </Grid>
     </Border>
 </Window>

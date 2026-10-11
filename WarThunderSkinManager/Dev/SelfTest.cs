@@ -2322,6 +2322,38 @@ internal static class SelfTest
                 }
             }
 
+            // ④ **C# 里按字符串取的语言键**同样要在语言表里：上面那条只扫 XAML 的 {loc:Loc}，
+            //    代码里 Loc[…] / Loc.Format(…) 拼错一样会让界面显示 ⟦key⟧（实测踩过：
+            //    确认按钮取了 common.confirm，而表里只有 common.ok —— 那条扫描看不见它）。判失败。
+            var sourceRoot = Path.GetDirectoryName(viewsRoot);
+            var missingCodeKeys = new List<string>();
+            var codeScanned = 0;
+
+            if (Directory.Exists(sourceRoot))
+            {
+                // 只认 Loc / loc / LocalizationManager.Instance 这三个取键入口；
+                // Format 也只认 Loc.Format —— 不然 string.Format 会被一起扫进来
+                var keyInIndexer = new System.Text.RegularExpressions.Regex(
+                    @"(?:LocalizationManager\.Instance|Loc|loc)\s*\[\s*""([A-Za-z0-9_.]+)""\s*\]");
+                var keyInFormat = new System.Text.RegularExpressions.Regex(
+                    @"(?:Loc|loc)\.Format\(\s*""([A-Za-z0-9_.]+)""");
+                var codeKeySeen = new HashSet<string>(StringComparer.Ordinal);
+
+                foreach (var file in Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+                {
+                    codeScanned++;
+                    var text = File.ReadAllText(file, Encoding.UTF8);
+
+                    foreach (System.Text.RegularExpressions.Match m in keyInIndexer.Matches(text))
+                        codeKeySeen.Add(m.Groups[1].Value);
+
+                    foreach (System.Text.RegularExpressions.Match m in keyInFormat.Matches(text))
+                        codeKeySeen.Add(m.Groups[1].Value);
+                }
+
+                missingCodeKeys.AddRange(codeKeySeen.Where(k => !zhTable.ContainsKey(k)).OrderBy(k => k, StringComparer.Ordinal));
+            }
+
             // 措辞体检：括号补充（「（…）」/「 (…)」）与内部术语（数据文件名 / 协议字段 / 章节号）
             var parenZh = zhTable.Where(p => p.Value.Contains('（')).Select(p => p.Key).ToList();
             var devTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
@@ -2384,10 +2416,39 @@ internal static class SelfTest
                 }
             }
 
+            // ---- 「输入 + 候选」窗不得退回**可编辑 ComboBox**（界面设计规范 §5.11）----
+            // 实测踩过：BaseComboBox 的模板里没有 PART_EditableTextBox，而铺满整格的 ToggleButton
+            // 又把按下全吃掉 → IsEditable=True 形同虚设，**点不进去、也打不了字**。
+            // 这条只能在静态文本上钉（真实"点得进去"要建窗 + 命中面，自检不建窗）。
+            var inputWindowPath = Path.Combine(viewsRoot, "AddPartWindow.xaml");
+            if (File.Exists(inputWindowPath))
+            {
+                // 先剥掉 XML 注释：说明文字里会提到这些控件名，不剥就会把解释当成用法
+                var inputXaml = System.Text.RegularExpressions.Regex.Replace(
+                    File.ReadAllText(inputWindowPath, Encoding.UTF8), "<!--.*?-->", "",
+                    System.Text.RegularExpressions.RegexOptions.Singleline);
+
+                var bodyIsTextBox = inputXaml.Contains("<TextBox x:Name=\"PartInput\"", StringComparison.Ordinal);
+                var usesEditableCombo = inputXaml.Contains("BaseComboBox", StringComparison.Ordinal)
+                                        || inputXaml.Contains("IsEditable", StringComparison.Ordinal);
+                var hasBubblePopup = inputXaml.Contains("x:Name=\"SuggestionPopup\"", StringComparison.Ordinal)
+                                     && inputXaml.Contains("<WrapPanel/>", StringComparison.Ordinal);
+
+                log.AppendLine($"部件输入窗 : 本体是输入框 = {bodyIsTextBox}（应 True）、"
+                             + $"没退回可编辑 ComboBox = {!usesEditableCombo}（应 True：那个模板没有 PART_EditableTextBox，点不进去）、"
+                             + $"候选是气泡浮层 = {hasBubblePopup}（应 True：Popup + WrapPanel）");
+
+                if (!bodyIsTextBox || usesEditableCombo || !hasBubblePopup)
+                    log.AppendLine("自检异常：「手动添加部件」窗不是「输入框 + 气泡候选」了"
+                                 + "（退回去就会点不进去 / 打不了字，见界面设计规范 §5.11）");
+            }
+
             log.AppendLine($"XAML 文案 : 扫了 {xamlScanned} 个文件，写死的用户可见文本 = {hardcodedTexts.Count}（应 0）"
                          + $"，loc 标记里查不到的 key = {missingLocKeys.Count}（应 0）"
                          + (hardcodedTexts.Count > 0 ? "\n  写死：" + string.Join(" / ", hardcodedTexts.Take(8)) : "")
                          + (missingLocKeys.Count > 0 ? "\n  缺 key：" + string.Join(" / ", missingLocKeys.Take(8)) : ""));
+            log.AppendLine($"代码文案  : 扫了 {codeScanned} 个 .cs 文件，Loc[...] / Loc.Format(...) 里查不到的 key = {missingCodeKeys.Count}（应 0）"
+                         + (missingCodeKeys.Count > 0 ? "\n  缺 key：" + string.Join(" / ", missingCodeKeys.Take(8)) : ""));
             log.AppendLine($"措辞体检  : 中文表 括号补充 {parenZh.Count} 条、内部术语 {devTermZh.Count} 条、"
                          + $"进阶 blk 术语 {blkTermZh.Count} 条（后两类里文件/协议名要清掉，blk 术语是进阶功能本身的概念）"
                          + (devTermZh.Count > 0 ? "\n  内部术语：" + string.Join(" / ", devTermZh.Take(8)) : "")
@@ -2397,6 +2458,8 @@ internal static class SelfTest
                 log.AppendLine($"自检异常：XAML 里有写死的用户可见文本（{hardcodedTexts.Count} 处）→ 其它语言下不会翻译");
             else if (missingLocKeys.Count > 0)
                 log.AppendLine($"自检异常：XAML 用了语言表里没有的 key（{missingLocKeys.Count} 处）→ 界面会显示 ⟦key⟧");
+            else if (missingCodeKeys.Count > 0)
+                log.AppendLine($"自检异常：C# 用了语言表里没有的 key（{missingCodeKeys.Count} 处）→ 界面会显示 ⟦key⟧");
 
             LocalizationManager.Instance.Load(Path.Combine(workDir, "cfg-lang"), "zh-CN"); // 恢复中文，避免影响后续输出
 
