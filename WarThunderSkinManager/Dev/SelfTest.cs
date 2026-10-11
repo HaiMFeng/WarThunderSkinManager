@@ -1507,6 +1507,23 @@ internal static class SelfTest
                          + $"候选为空 = {extraPart?.Candidates.Count == 0}（应 True：贴图要另去属性页配）、"
                          + $"持久化可查 = {VehicleExtraPartsService.IsExtra(extraVehicleId, extraFrom)}（应 True）");
 
+            // 补出来的位置**被配上贴图之后**（典型：去属性页选了跨载具候选）：包映射里因此有了这个 from，
+            // 聚合行就由包映射构建 —— 但**补齐记录还在**，「手动」标记必须跟着记录走。
+            // 曾经这里只认"没有任何包映射的行"（既 `if (parts.ContainsKey) continue`），
+            // 于是一配贴图标记就凭空消失，用户会以为"我补的那行被改回去了"
+            var filledPackage = new SkinPackage { Id = "self-extra-filled", VehicleId = extraVehicleId, Name = "补过贴图的包" };
+            filledPackage.Mappings.Add(new TexMapping
+            {
+                FromModule = extraFrom,
+                ToFile = "extra_filled.dds",
+                TextureRef = "deadbeef.dds" // 有可用贴图，才算"配上了"
+            });
+            var filledPart = VehicleAggregator.Build(extraVehicleId, new[] { filledPackage })
+                .Parts.FirstOrDefault(p => string.Equals(p.From, extraFrom, StringComparison.OrdinalIgnoreCase));
+            log.AppendLine($"新增部件/配贴图后: 仍标手动 = {filledPart?.IsManuallyAdded}（应 True：记录还在，标记就得留着）、"
+                         + $"候选不再为空 = {filledPart?.Candidates.Count > 0}（应 True：行归包映射所有）、"
+                         + $"排除态 = {filledPart?.IsExcluded}（应 False）");
+
             // 与排除清单**互斥**：万一同一个 from 两边都有（清单可被手工编辑），约定**排除优先** ——
             // 用户明确删过的东西不该自己冒回来，也不能同时既"已排除"又"手动补齐"
             PartExclusionService.Configure(extraDir);

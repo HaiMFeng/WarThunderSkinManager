@@ -241,14 +241,18 @@
                                                                     </Style>
                                                                 </TextBlock.Style>
                                                             </TextBlock>
-                                                            <!-- 「手动」标记（§3.10）：这行不是包里的，是用户手动补出来的位置
-                                                                 （候选必然为空，要等去属性页配贴图）——
-                                                                 不标的话用户会奇怪"这行哪来的、怎么没贴图" -->
-                                                            <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="3"
-                                                                    VerticalAlignment="Center"
-                                                                    Background="{StaticResource BrushSurface2}">
+                                                            <!-- 「手动」标记（§3.10）：这个位置是用户**手动补出来的**
+                                                                 （作者没适配、用户明确知道"这车也有"，见标题右侧的「+」）——
+                                                                 不标的话用户会奇怪"这行哪来的"。
+                                                                 **与其它标签同一套胶囊样式**（`Tag` 样式，字号 11 / 圆角 9 /
+                                                                 浅底 + 同色描边 + 同色深字），色调用**紫**（§5.10「跨载具 = 紫」，
+                                                                 与属性页里跨载具候选的标注同色）：语义一致 —— 这一行的贴图
+                                                                 正是要靠跨载具候选来补 -->
+                                                            <Border Margin="6,0,4,0" VerticalAlignment="Center">
                                                                 <Border.Style>
-                                                                    <Style TargetType="Border">
+                                                                    <Style TargetType="Border" BasedOn="{StaticResource Tag}">
+                                                                        <Setter Property="Background" Value="{StaticResource BrushTagCrossBg}"/>
+                                                                        <Setter Property="BorderBrush" Value="{StaticResource BrushTagCrossBorder}"/>
                                                                         <Setter Property="Visibility" Value="Collapsed"/>
                                                                         <Style.Triggers>
                                                                             <DataTrigger Binding="{Binding IsManuallyAdded}" Value="True">
@@ -258,7 +262,7 @@
                                                                     </Style>
                                                                 </Border.Style>
                                                                 <TextBlock Text="{loc:Loc vehicles.part.manual}" FontSize="11"
-                                                                           Foreground="{StaticResource BrushPrimary}"/>
+                                                                           Foreground="{StaticResource BrushTagCrossText}"/>
                                                             </Border>
 
                                                             <!-- 部件标签胶囊：应用级共享模板 PartTagTemplate（§3.6） -->
