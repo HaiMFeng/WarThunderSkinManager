@@ -31,17 +31,20 @@
                         </Border.Effect>
                         <Grid>
                             <!-- 文案靠自身 Margin 撑出内边距（Border **不设 Padding**，
-                                 这样进度条才能直接顶到内边框上） -->
+                                 这样进度条才能直接顶到内边框上）。
+                                 **上下边距必须相等**：气泡高度 = 文案高 + 上下各 10 → 文字天然垂直居中；
+                                 曾经把下边距写成 12（想给进度条"让位"），结果文字被顶得偏上。 -->
                             <TextBlock Text="{Binding Message}" TextWrapping="Wrap" MaxWidth="520"
-                                       Margin="16,10,16,12"
+                                       Margin="16,10"
                                        Foreground="{StaticResource BrushText}"/>
                             <!-- 进度条：与文案**同层叠放** + `VerticalAlignment=Bottom` → 贴着内底边，
-                                 完全不增加气泡高度。左右各让出 10（= 气泡圆角半径），免得两端探到圆角外。
-                             从左端（0）长到满（1）。Duration 取服务里的同一个值（x:Static，不走 Binding ——
+                                 完全不增加气泡高度。`Margin=0` → 满宽铺到内边框（两端会落在气泡的
+                                 圆角区域内，这是刻意的：不做圆角裁剪，让这条线真正横贯底边）。
+                                 从左端（0）长到满（1）。Duration 取服务里的同一个值（x:Static，不走 Binding ——
                                  动画属性上的 Binding 依赖 DataContext 继承链，在模板里容易失效）。
                                  动画跑在**合成线程**，不占 UI 线程：多条并发也不增加刷新负担。 -->
-                            <Border x:Name="ToastBar" Height="2" CornerRadius="1"
-                                    VerticalAlignment="Bottom" Margin="10,0,10,1"
+                            <Border x:Name="ToastBar" Height="2"
+                                    VerticalAlignment="Bottom"
                                     Background="{StaticResource BrushPrimary}"
                                     RenderTransformOrigin="0,0.5">
                                 <Border.RenderTransform>
@@ -74,22 +77,10 @@
                         </BeginStoryboard>
                     </EventTrigger>
 
-                    <!-- **退出**：被标记退场（点击消除，或到期）后淡出 + 微微上移；
-                         动画放完由服务按 ExitGrace 把它移出队列（见 ToastService.ExpireDue） -->
-                    <DataTrigger Binding="{Binding IsDismissing}" Value="True">
-                        <DataTrigger.EnterActions>
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="ToastRoot"
-                                                     Storyboard.TargetProperty="Opacity"
-                                                     To="0" Duration="0:0:0.15"/>
-                                    <DoubleAnimation Storyboard.TargetName="ToastShift"
-                                                     Storyboard.TargetProperty="Y"
-                                                     To="-6" Duration="0:0:0.15"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </DataTrigger.EnterActions>
-                    </DataTrigger>
+                    <!-- **退出动画不在这里**：模板触发器里的 `DataTrigger.EnterActions` 实测不生效
+                         （`EventTrigger.Loaded` 这类"元素自身事件"能起，但"属性变化驱动"的 EnterActions
+                         在这条路径上起不来）。退场动画改由 code-behind 直接驱动，
+                         见 StatusToastsView.xaml.cs 的 OnToastPropertyChanged。 -->
                 </DataTemplate.Triggers>
             </DataTemplate>
         </ItemsControl.ItemTemplate>
