@@ -2833,6 +2833,17 @@ internal static class SelfTest
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.ApplySuggestionCommand)),
                 (typeof(WtLiveViewModel), nameof(WtLiveViewModel.SubmitSearchCommand)),
                 (typeof(WtLiveSearchSuggestion), nameof(WtLiveSearchSuggestion.IsHighlighted)),
+                // WT Live 下载列表（涂装管理页页头与 WT Live 页工具栏**共用** Views/WtLiveDownloadsButton，
+                // 浮窗内的条目 / 着色 / 重试与取消语义都绑这些成员）
+                (typeof(SkinsViewModel), nameof(SkinsViewModel.WtLiveDownloads)),
+                (typeof(SkinsViewModel), nameof(SkinsViewModel.HasActiveDownloads)),
+                (typeof(SkinsViewModel), nameof(SkinsViewModel.RetryWtLiveDownloadCommand)),
+                (typeof(SkinsViewModel), nameof(SkinsViewModel.CancelOrRemoveWtLiveDownloadCommand)),
+                (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.FileName)),
+                (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.StateText)),
+                (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.Progress)),
+                (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.CanRetry)),
+                (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.IsCancelable)),
             };
             var missingBindings = string.Join(", ", bindingPaths
                 .Where(p => p.Owner.GetProperty(p.Name) is null)

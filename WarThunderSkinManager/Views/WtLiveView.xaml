@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
              xmlns:ctrl="clr-namespace:WarThunderSkinManager.Controls"
-             xmlns:vm="clr-namespace:WarThunderSkinManager.ViewModels">
+             xmlns:vm="clr-namespace:WarThunderSkinManager.ViewModels"
+             xmlns:views="clr-namespace:WarThunderSkinManager.Views">
     <!-- WT Live 涂装浏览：瀑布流（等宽卡片 / 高度随图片比例 / 最短列优先，见 Controls/MasonryPanel.cs）
          + 滚动到底自动加载下一页。接口依据见 docs/WTLive_涂装_API.md。 -->
     <!-- 缩略图框的高度不再由模板自己算（那要靠 RelativeSource 找祖先面板拿列宽，容器回收复用时
@@ -401,9 +402,9 @@
                             FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.favorites.open}"
                             Command="{Binding WtLive.Favorites.OpenCommand}"/>
 
-                    <Button Content="&#xF021;" Style="{StaticResource IconButton}" Width="34" Height="34"
-                            FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.refresh}"
-                            Command="{Binding WtLive.RefreshCommand}"/>
+                    <!-- 下载列表入口：与涂装管理页页头**共用同一控件**（按钮样式 / 悬停展开浮窗
+                         / 重试与取消语义都一致）。刷新已迁到内容区右下角的圆形悬浮按钮 -->
+                    <views:WtLiveDownloadsButton Margin="8,0,0,0"/>
                 </StackPanel>
             </Grid>
         </Grid>
@@ -773,6 +774,15 @@
                 <TextBlock Text="{loc:Loc wtlive.list.emptyHint}" Margin="0,6,0,0" TextWrapping="Wrap"
                            TextAlignment="Center" Style="{StaticResource PageSubtitle}"/>
             </StackPanel>
+
+            <!-- 刷新：内容区右下角的**圆形悬浮按钮**。与 ScrollViewer **同级**（叠在其后 = 盖在内容之上），
+                 所以它固定在右下角，**不随瀑布流滚动移动**；空态（没结果 / 加载失败）时同样可用。
+                 圆形 + 主色实底见 Themes 的 FabButton（反馈节奏与 PrimaryButton 同一套） -->
+            <Button Style="{StaticResource FabButton}"
+                    Content="&#xF021;"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20"
+                    ToolTip="{loc:Loc wtlive.refresh}"
+                    Command="{Binding WtLive.RefreshCommand}"/>
         </Grid>
     </Grid>
 </UserControl>
