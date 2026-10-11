@@ -778,11 +778,11 @@
 
             <!-- 刷新：内容区右下角的**圆形悬浮按钮**。与 ScrollViewer **同级**（叠在其后 = 盖在内容之上），
                  所以它固定在右下角，**不随瀑布流滚动移动**；空态（没结果 / 加载失败）时同样可用。
-                 外观 = **圆形的次级按钮**（主题白底 + 主色描边），见 Themes 的 FabButton；
-                 外边距压到 12：右下角常驻件应当贴着内容区的角，别再往里收 -->
+                 外观 = **圆形的次级按钮**（主题白底 + 主色描边），见 Themes 的 FabButton。
+                 外边距 10,6：右侧**留出滚动条的 10px**（再往里收会压住滚动条、拖不动），底部贴角 -->
             <Button Style="{StaticResource FabButton}"
                     Content="&#xF021;"
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,12,12"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,6"
                     ToolTip="{loc:Loc wtlive.refresh}"
                     Command="{Binding WtLive.RefreshCommand}"/>
         </Grid>

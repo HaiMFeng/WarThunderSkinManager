@@ -14,21 +14,29 @@
             <Button.Style>
                 <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
                     <!-- 无边框变体（WT Live 页工具栏的语言：与相邻的「收藏的作者」图标按钮同一种观感）：
-                         透明底 + 无描边 + 34×34 紧凑尺寸；悬停的浅底反馈沿用次级按钮的触发器。
+                         透明底 + 无描边 + 高 34 的紧凑尺寸；悬停的浅底反馈沿用次级按钮的触发器。
                          由宿主用 Borderless="True" 打开（涂装管理页页头保持默认的次级按钮外观） -->
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding Borderless, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                      Value="True">
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Width" Value="34"/>
                             <Setter Property="Height" Value="34"/>
-                            <Setter Property="Padding" Value="0"/>
+                            <!-- 宽度**不写死**：自适应"图标 + 左右各 8"，最小 34 与相邻的图标按钮齐平。
+                                 写死 34 时，只要字体度量让墨迹宽一点（如继承到 SemiBold 触发合成加粗），
+                                 图标就会被容器挤掉右侧 —— 让容器跟着内容走，这类问题从根上不存在 -->
+                            <Setter Property="MinWidth" Value="34"/>
+                            <Setter Property="Padding" Value="8,0"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Button.Style>
-            <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14">
+            <!-- FontWeight 必须显式 Normal：本按钮的基底样式（ButtonBase）带 `SemiBold`，而图标字体
+                 FA Solid **只有一个字重** → 继承 SemiBold 会让 WPF 做"合成加粗"，墨迹沿书写方向向右
+                 扩出、边缘发虚；在 34 宽的紧凑变体里看着就像"右侧被切掉一截"。
+                 对照：工具栏里相邻的「收藏的作者」用独立样式 IconButton（不继承 ButtonBase），没有这个污染 -->
+            <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                       FontWeight="Normal" HorizontalAlignment="Center">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
