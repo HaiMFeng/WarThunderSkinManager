@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading;
+using System.Windows.Input;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WarThunderSkinManager.Services;
@@ -32,8 +33,19 @@ public partial class WtLiveCardItem : ObservableObject
 {
     private static LocalizationManager Loc => LocalizationManager.Instance;
 
-    public WtLiveCardItem(WTLiveFeedItem item)
+    /// <summary>
+    /// 三个动作命令由容器（<see cref="WtLiveViewModel"/>）在创建卡片时注入 —— 不要改成
+    /// 模板里用 <c>RelativeSource</c> 往上够 VM，原因见下面命令属性的说明。
+    /// </summary>
+    public WtLiveCardItem(WTLiveFeedItem item,
+        ICommand downloadCommand,
+        ICommand searchAuthorCommand,
+        ICommand reloadThumbnailCommand)
     {
+        DownloadCommand = downloadCommand;
+        SearchAuthorCommand = searchAuthorCommand;
+        ReloadThumbnailCommand = reloadThumbnailCommand;
+
         LangGroup = item.LangGroup;
         Title = item.Title;
         Author = item.Author;
@@ -114,6 +126,25 @@ public partial class WtLiveCardItem : ObservableObject
 
     /// <summary>帖子网址（「在浏览器中打开」用）。</summary>
     public string PostUrl { get; }
+
+    // ---------- 卡片上的动作：**命令挂在数据项上**，模板用普通 {Binding} 取 ----------
+    //
+    // 为什么不学页面别处那样用 `RelativeSource AncestorType=ItemsControl` 去够 VM：
+    // 瀑布流是**虚拟化**的 —— 容器滚出视口时会被回收（脱离视觉树、那一刻"没有祖先"），
+    // 滚回来再复用（重新挂回时解析时机也不定）。那条链**会踩空**，表现为"按钮偶发点了没反应"
+    // （命令解析成 null）。缩略图高度当初就踩过同一个坑（见 ImageHeight 的说明），
+    // 这里的解法与它一样：把命令**推到数据项上**，模板只做纯数据绑定 ——
+    // 这条链上不存在"可能解析不到"的环节。
+    // 参数仍由模板从卡片**自身属性**取（PostUrl / 卡片本身），不涉及祖先查找。
+
+    /// <summary>卡片右下角「下载」→ 打开下载确认窗（预填本帖链接）。参数 = <see cref="PostUrl"/>。</summary>
+    public ICommand DownloadCommand { get; }
+
+    /// <summary>点作者名 → 搜这个作者的涂装。参数 = 本卡片。</summary>
+    public ICommand SearchAuthorCommand { get; }
+
+    /// <summary>缩略图久候未出时的「重新加载」。参数 = 本卡片。</summary>
+    public ICommand ReloadThumbnailCommand { get; }
 
     /// <summary>
     /// 卡片副标题里**作者之后**的那一段：<c> · 1.5 MB · 下载 10</c>

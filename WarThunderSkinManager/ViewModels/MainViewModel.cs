@@ -335,6 +335,7 @@ public partial class MainViewModel : ObservableObject
         PartReuse = new PartReuseViewModel(config);
         WtLive = new WtLiveViewModel(); // 列表数据全部来自站点，进页面才拉（首屏懒加载）
         WtLive.SetQuality(config.WtLiveImageQuality); // 卡片缩略图清晰度档位（设置页可改）
+        WtLive.Skins = Skins; // 卡片右下角的「下载」转发给涂装管理页那条命令（§3.17）
 
         // 预览图磁盘缓存：目录跟随配置目录，上限来自设置（启动时按上限回收一次，
         // 上次调小过上限、或手工往目录里塞过文件，这里就归位）

@@ -32,8 +32,8 @@ public sealed class ToastService
     /// <summary>最多同时显示的气泡数；超出时顶掉最早的一条。</summary>
     public const int MaxVisible = 4;
 
-    /// <summary>每条气泡的默认展示时长。</summary>
-    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromSeconds(2);
+    /// <summary>每条气泡的默认展示时长（底部进度条动画也取它，见 <see cref="DefaultLifetimeDuration"/>）。</summary>
+    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// 默认展示时长的 <see cref="Duration"/> 形式：给 XAML 用（<c>{x:Static}</c> 直接取，

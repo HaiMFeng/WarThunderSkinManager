@@ -619,6 +619,28 @@ public partial class WtLiveViewModel : ObservableObject
         SearchUser(card.AuthorId.ToString(CultureInfo.InvariantCulture), card.Author);
     }
 
+    /// <summary>
+    /// 涂装管理页视图模型：卡片右下角的「下载」要转发到它的 <c>OpenWtLiveImportCommand</c>
+    /// （与页头那个下载入口共用同一套确认窗与下载流程）。由 <see cref="MainViewModel"/> 在
+    /// 两个 VM 都构造完之后注入 —— 与 <c>Detail.Owner</c> / <c>Favorites.Owner</c> 同一种做法。
+    /// </summary>
+    public SkinsViewModel? Skins { get; set; }
+
+    /// <summary>
+    /// 卡片右下角「下载」（参数 = 帖子链接）：转发给涂装管理页那条命令。
+    /// <para>
+    /// 做成常驻命令、而不是把 Skins 那条约命令直接塞给卡片：卡片只依赖本 VM，
+    /// 注入顺序再怎么变也不会出现"按钮点了没反应"。
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void DownloadCard(string? postUrl)
+    {
+        if (Skins is null || string.IsNullOrWhiteSpace(postUrl)) return;
+
+        Skins.OpenWtLiveImportCommand.Execute(postUrl);
+    }
+
     /// <summary>清空搜索框与全部条件（搜索框右侧「×」）。有胶囊时重拉列表；只是打了字则仅清空。</summary>
     [RelayCommand]
     private void ClearSearch()
@@ -919,7 +941,11 @@ public partial class WtLiveViewModel : ObservableObject
                 // 跨页去重：lang_group 唯一（同一帖子多语言版本已在接口侧归并，§10）
                 if (Items.Any(existing => existing.LangGroup == item.LangGroup)) continue;
 
-                var card = new WtLiveCardItem(item);
+                // 三个动作命令**注入到卡片上**：模板因此只用普通 {Binding}，不做祖先查找 ——
+                // 虚拟化容器被回收 / 复用时 `RelativeSource` 那条链会踩空（命令解析成 null），
+                // 表现就是"卡片上的按钮偶发点了没反应"（§3.17）
+                var card = new WtLiveCardItem(item, DownloadCardCommand, SearchUserByCardCommand,
+                    ReloadThumbnailCommand);
                 Items.Add(card);
 
                 // 缩略图不再"加进来就取"：只取**可视窗口内**的（见 SetVisibleWindow），窗口外的等滚到近处再取

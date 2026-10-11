@@ -1163,10 +1163,11 @@ internal static class SelfTest
                 // 用来验「列表清空重拉 → 瀑布流回到顶部」。
                 // **宽高比故意逐张不同**（1.0 ~ 2.0 循环）：真实数据就是这样，高度一致的话
                 // "某几张高度算错"根本看不出来（每张一样高，错也是整齐地错）
+                // 三个动作命令由容器注入（见 WtLiveCardItem 的说明）；这里只测布局，给 null 即可
                 static WtLiveCardItem Card(int index) => new(new WTLiveFeedItem(
                     index, "作者", 0, "", $"标题 {index}", "描述", null, 1.0 + index % 5 * 0.25, 0,
                     "skin.zip", "", 1024, 1, 2, 3,
-                    $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()));
+                    $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()), null!, null!, null!);
 
                 // 输入框**自带描边**是"框里还有一个框"的根源：BaseTextBox 的模板聚焦时把内框硬改成
                 // 1.5px 蓝色（ControlTemplate.Triggers 里的 Setter，外面设 BorderThickness=0 也压不住），
@@ -2538,9 +2539,17 @@ internal static class SelfTest
                 $"https://live.warthunder.com/post/{id}/en/",
                 new[] { "anime", "9dds" });
 
+            // 卡片的三个动作命令由容器注入（**命令挂在数据项上**，模板不做祖先查找 ——
+            // 虚拟化容器回收时 `RelativeSource` 那条链会踩空）。这里只测卡片自身属性，给个空命令即可
+            var cardNoop = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { });
             var cardWithFile = new WtLiveCardItem(MakeFeedItem(
-                1189546, sampleThumb, "https://live.warthunder.com/dl/845e4034/"));
-            var cardNoFile = new WtLiveCardItem(MakeFeedItem(1189547, null, ""));
+                1189546, sampleThumb, "https://live.warthunder.com/dl/845e4034/"), cardNoop, cardNoop, cardNoop);
+            var cardNoFile = new WtLiveCardItem(MakeFeedItem(1189547, null, ""), cardNoop, cardNoop, cardNoop);
+
+            log.AppendLine($"卡片命令   : 下载 = {cardWithFile.DownloadCommand != null}（应 True）、"
+                         + $"搜作者 = {cardWithFile.SearchAuthorCommand != null}（应 True）、"
+                         + $"重载缩略图 = {cardWithFile.ReloadThumbnailCommand != null}（应 True）"
+                         + "—— 钉住「命令挂在数据项上、模板不靠祖先查找」：虚拟化容器回收 / 复用时那条链会踩空");
 
             log.AppendLine($"卡片下载入口: PostUrl 可解析 = {WTLiveService.IsPostUrl(cardWithFile.PostUrl) == 1189546}（应 True：预填打开才读得出来），"
                          + $"有站内附件 → 显示按钮 = {cardWithFile.HasFile}（应 True），"
@@ -2686,10 +2695,11 @@ internal static class SelfTest
             // 卡片上千后"取过就永不释放"是内存与 GC 压力的主项：位图内存 ≈ 解码宽 × 高 × 4 字节，
             // 滚过几千张能堆到几百 MB。这里钉两件事：窗口外的释放动作，以及"该补取"的判据
             // （补取一律走磁盘缓存、零网络；失败过的不自动重试，免得又转起圈来）
+            // 同上：动作命令由容器注入，这里只测窗口释放，给 null 即可
             static WtLiveCardItem WindowCard(int index, string? previewUrl) => new(new WTLiveFeedItem(
                 index, "作者", 0, "", $"标题 {index}", "描述", previewUrl, 1.5, 0,
                 "skin.zip", "", 1024, 1, 2, 3,
-                $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()));
+                $"https://live.warthunder.com/post/{index}/en/", Array.Empty<string>()), null!, null!, null!);
 
             var windowVm = new WtLiveViewModel();
             var outsideWindow = WindowCard(0, "https://example.com/0.jpg"); // 窗口外 → 应释放
@@ -3076,7 +3086,7 @@ internal static class SelfTest
             toasts.Dismiss(toDismiss);                                        // 重复点击应幂等
             var dismissingCount = toasts.Items.Count(t => t.IsDismissing);     // 应 1
 
-            log.AppendLine($"气泡提示   : 上限 = {ToastService.MaxVisible} 条 / 每条 {ToastService.DefaultLifetime.TotalSeconds} 秒（应 4 / 2），"
+            log.AppendLine($"气泡提示   : 上限 = {ToastService.MaxVisible} 条 / 每条 {ToastService.DefaultLifetime.TotalSeconds} 秒（应 4 / 3），"
                          + $"满 4 条后最早 = {toastOldestAtLimit}（应 第 1 条，共 {toastCountAtLimit}）；"
                          + $"再来一条顶掉最早 = {toastCountAfterOverflow} 条、最早变 {toastOldestAfterOverflow}（应 4 / 第 2 条）、"
                          + $"最新 = {toastNewest}（应 第 5 条）；"
