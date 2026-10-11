@@ -1,4 +1,5 @@
 using System;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -11,6 +12,21 @@ namespace WarThunderSkinManager.Views;
 /// </summary>
 public partial class WtLiveDownloadsButton : UserControl
 {
+    /// <summary>
+    /// 无边框变体：透明底 + 无描边 + 34×34 紧凑尺寸（与 WT Live 页工具栏里相邻的图标按钮同一种观感）。
+    /// 默认 <c>false</c> = 次级按钮外观（涂装管理页页头，与相邻的「导入…」按钮同族）。
+    /// </summary>
+    public static readonly DependencyProperty BorderlessProperty =
+        DependencyProperty.Register(nameof(Borderless), typeof(bool), typeof(WtLiveDownloadsButton),
+            new PropertyMetadata(false));
+
+    /// <summary>见 <see cref="BorderlessProperty"/>：由宿主用 <c>Borderless="True"</c> 打开无边框变体。</summary>
+    public bool Borderless
+    {
+        get => (bool)GetValue(BorderlessProperty);
+        set => SetValue(BorderlessProperty, value);
+    }
+
     /// <summary>移出后的延时关闭计时器（给鼠标从按钮移入浮窗留出间隙）。</summary>
     private DispatcherTimer? _closeTimer;
 

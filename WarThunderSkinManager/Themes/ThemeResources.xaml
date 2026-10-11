@@ -459,20 +459,23 @@
         </Setter>
     </Style>
 
-    <!-- ============ 悬浮操作按钮（FAB：圆形主色） ============
+    <!-- ============ 悬浮操作按钮（FAB：圆形描边） ============
          用于"**固定在内容之上**的单个主操作"——如 WT Live 浏览页右下角的刷新按钮：
          它与滚动容器**同级叠放**（声明在滚动容器之后），因此不随内容滚动移动。
-         圆形 + 主色实底 + 白字图标 + 投影；悬停 / 按下的反馈节奏与 PrimaryButton 同一套。
+         观感 = **圆形的次级按钮**：主题白底 + 主色描边 + 主色图标 + 轻投影。
+         **不用主色实底**：右下角常驻的悬浮件用高饱和实底会过于抢眼，与页面其余控件不在一个语汇里；
+         悬停 / 按下的反馈节奏与 `SecondaryButton` 同一套。
          调用方只给 `Content`（字形，走统一图标字体）——**没有文字就必须给 `ToolTip`**。 -->
     <Style x:Key="FabButton" TargetType="Button">
-        <Setter Property="Width" Value="52"/>
-        <Setter Property="Height" Value="52"/>
-        <Setter Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
-        <Setter Property="Foreground" Value="{StaticResource BrushOnAccent}"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Width" Value="44"/>
+        <Setter Property="Height" Value="44"/>
+        <Setter Property="Background" Value="{StaticResource BrushBackground}"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BrushPrimary}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
-        <Setter Property="FontSize" Value="18"/>
+        <Setter Property="FontSize" Value="16"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -481,23 +484,31 @@
                         <Grid.RenderTransform>
                             <ScaleTransform x:Name="sc" ScaleX="1" ScaleY="1"/>
                         </Grid.RenderTransform>
-                        <!-- 圆底与图标是**兄弟节点**：投影只加在圆底这层，图标不会跟着发糊 -->
-                        <Border x:Name="bd" CornerRadius="26" Background="{TemplateBinding Background}">
+                        <!-- 圆形底与图标是**兄弟节点**：投影只加在圆底这层，图标不会跟着发糊 -->
+                        <Border x:Name="bd" CornerRadius="22"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
                             <Border.Effect>
-                                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270"
-                                                  Opacity="0.28" Color="{StaticResource ColorShadow}"/>
+                                <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270"
+                                                  Opacity="0.18" Color="{StaticResource ColorShadow}"/>
                             </Border.Effect>
                         </Border>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushHover}"/>
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource BrushBorderFocus}"/>
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
                                         <ColorAnimation Storyboard.TargetName="bd"
                                             Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="{StaticResource ColorPrimaryFillHover}" Duration="0:0:0.15"/>
+                                            To="{StaticResource ColorHover}" Duration="0:0:0.15"/>
+                                        <ColorAnimation Storyboard.TargetName="bd"
+                                            Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                            To="{StaticResource ColorBorderFocus}" Duration="0:0:0.15"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.EnterActions>
@@ -506,13 +517,16 @@
                                     <Storyboard>
                                         <ColorAnimation Storyboard.TargetName="bd"
                                             Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="{StaticResource ColorPrimaryFill}" Duration="0:0:0.2"/>
+                                            To="{StaticResource ColorBackground}" Duration="0:0:0.2"/>
+                                        <ColorAnimation Storyboard.TargetName="bd"
+                                            Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                            To="{StaticResource ColorPrimary}" Duration="0:0:0.2"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushPrimaryFillPressed}"/>
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushSurface2}"/>
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>

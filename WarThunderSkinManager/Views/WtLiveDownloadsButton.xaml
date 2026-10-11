@@ -9,8 +9,25 @@
          复制两份迟早会改一处漏一处。宿主只给 Margin，DataContext 继承外层（同一窗口内是 MainViewModel），
          所以内部照常按 Skins.* 绑定。 -->
     <Grid>
-        <Button x:Name="ListButton" Style="{StaticResource SecondaryButton}" Padding="10,6"
+        <Button x:Name="ListButton" Padding="10,6"
                 MouseEnter="ListButton_MouseEnter" MouseLeave="ListButton_MouseLeave">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                    <!-- 无边框变体（WT Live 页工具栏的语言：与相邻的「收藏的作者」图标按钮同一种观感）：
+                         透明底 + 无描边 + 34×34 紧凑尺寸；悬停的浅底反馈沿用次级按钮的触发器。
+                         由宿主用 Borderless="True" 打开（涂装管理页页头保持默认的次级按钮外观） -->
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Borderless, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                     Value="True">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Width" Value="34"/>
+                            <Setter Property="Height" Value="34"/>
+                            <Setter Property="Padding" Value="0"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
             <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
