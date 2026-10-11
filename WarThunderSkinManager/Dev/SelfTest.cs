@@ -1981,11 +1981,13 @@ internal static class SelfTest
             {
                 ImportDeleteSourceUserSkins = false,
                 ImportDeleteSourceFolder = true,
-                ImportDeleteArchive = true
+                ImportDeleteArchive = true,
+                WtLiveAutoImport = true
             });
             var optionCfg = ConfigService.Load(optionCfgDir);
             log.AppendLine($"config.json 往返: UserSkins={optionCfg.ImportDeleteSourceUserSkins}"
-                         + $"、文件夹={optionCfg.ImportDeleteSourceFolder}、压缩包={optionCfg.ImportDeleteArchive}");
+                         + $"、文件夹={optionCfg.ImportDeleteSourceFolder}、压缩包={optionCfg.ImportDeleteArchive}"
+                         + $"、WT Live 一键导入={optionCfg.WtLiveAutoImport}（应 True）");
 
             // ---- 取消激活 → 清空该载具在 UserSkins 下的输出（保留空 blk，§3.8）----
             log.AppendLine();

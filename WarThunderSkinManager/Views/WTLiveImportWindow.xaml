@@ -104,10 +104,17 @@
                 <StackPanel Grid.Row="3" Margin="0,14,0,0">
                     <TextBlock x:Name="StartHint" HorizontalAlignment="Right"
                                Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button x:Name="StartButton" Content="{loc:Loc wtlive.start}"
+                    <!-- 「一键导入」与「开始下载」同排：左边是"下载完怎么办"的选项，右边是动作，
+                         主按钮贴右仍是视觉终点。勾选状态由宿主按**上次的记忆**预置（默认不勾），
+                         关窗后回写（见 code-behind 的 AutoImport 与 SkinsViewModel.OpenWtLiveImport） -->
+                    <Grid>
+                        <CheckBox x:Name="AutoImportCheck" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                  Content="{loc:Loc wtlive.autoImport}"
+                                  ToolTip="{loc:Loc wtlive.autoImport.hint}"/>
+                        <Button x:Name="StartButton" HorizontalAlignment="Right"
+                                Content="{loc:Loc wtlive.start}"
                                 Style="{StaticResource PrimaryButton}" Click="Start_Click" IsEnabled="False"/>
-                    </StackPanel>
+                    </Grid>
                 </StackPanel>
             </Grid>
         </Grid>

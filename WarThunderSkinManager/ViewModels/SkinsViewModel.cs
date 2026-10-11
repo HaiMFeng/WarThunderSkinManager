@@ -162,8 +162,16 @@ public partial class SkinsViewModel : ObservableObject
             ? new WTLiveImportWindow()
             : new WTLiveImportWindow(postUrl);
 
+        window.AutoImport = _config.WtLiveAutoImport; // 预置上次的「一键导入」选择（默认不勾）
         window.Owner = Application.Current?.MainWindow;
         if (window.ShowDialog() != true || window.Post == null) return;
+
+        // 记住本次的勾选，下次开窗按它预置（取消关窗走不到这里，记忆保持原样）
+        if (_config.WtLiveAutoImport != window.AutoImport)
+        {
+            _config.WtLiveAutoImport = window.AutoImport;
+            PersistConfig();
+        }
 
         if (entryPostId == null)
         {
@@ -176,7 +184,7 @@ public partial class SkinsViewModel : ObservableObject
             if (!await ConfirmNotDownloaded(post.LangGroup, display)) return;
         }
 
-        StartWtLiveDownload(window.Post);
+        StartWtLiveDownload(window.Post, window.AutoImport);
     }
 
     /// <summary>
@@ -219,8 +227,10 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 创建下载项并开始下载（压缩包 + 预览图；两者都完成才进入导入，§3.15）。
+    /// <paramref name="autoImport"/> = 下载确认窗的「一键导入」勾选：下载完**静默**导入、不弹导入预览窗；
+    /// 它记在**条目**上，所以点「重试」整条重跑时仍然沿用当初的选择。
     /// </summary>
-    private void StartWtLiveDownload(WTLivePost post)
+    private void StartWtLiveDownload(WTLivePost post, bool autoImport = false)
     {
         if (post.File == null) return; // 弹窗侧已拦截
 
@@ -228,7 +238,10 @@ public partial class SkinsViewModel : ObservableObject
             WtLiveLink.PostUrl(post.LangGroup),
             post.File.Name, post.Author, post.DisplayName,
             post.File.Link, post.File.Size,
-            post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null);
+            post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null)
+        {
+            AutoImport = autoImport
+        };
 
         WtLiveDownloads.Add(item);
 
@@ -443,7 +456,9 @@ public partial class SkinsViewModel : ObservableObject
             ImportService.AssignGroupKey(candidates, zipPath, ImportSourceType.Archive);
 
             // 帖子链接随包落盘（item.Url）：属性页可打开，下次下载同一帖可提示「已下载」
-            var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath, sourceUrl: item.Url);
+            // 「一键导入」（item.AutoImport）→ 静默解构、不弹导入预览窗（§3.15）
+            var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath,
+                sourceUrl: item.Url, silent: item.AutoImport);
 
             // 导入成功 → 预览图（已下载完）应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
@@ -1715,10 +1730,12 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 「预览 → 解构」流程（功能设计 §3.1）。<paramref name="archives"/> 非空时，
     /// 预览里提供「导入成功后删除压缩包」选项（默认不勾，见 <see cref="ImportPreviewViewModel"/>）。
+    /// <paramref name="silent"/> = <c>true</c> 时**跳过预览窗**直接解构（WT Live 的「一键导入」，§3.15）：
+    /// 用扫描出的默认命名，且**不**记录任何「删除源 / 删除压缩包」勾选（用户没在预览里确认过）。
     /// </summary>
     private async Task<ImportResult?> RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
         string sourcePath, bool canDeleteArchive = false, IReadOnlyList<string>? archives = null,
-        string extraStatus = "", string? sourceUrl = null)
+        string extraStatus = "", string? sourceUrl = null, bool silent = false)
     {
         try
         {
@@ -1737,15 +1754,25 @@ public partial class SkinsViewModel : ObservableObject
                 deleteSourceDefault: RememberedDeleteSource(sourceType),
                 deleteArchiveDefault: _config.ImportDeleteArchive));
 
-            var window = new ImportPreviewWindow
+            if (silent)
             {
-                DataContext = preview,
-                Owner = Application.Current?.MainWindow
-            };
+                // 「一键导入」（§3.15）：跳过预览窗，直接用扫描出的默认命名解构。
+                // **不**调用 RememberImportChoices —— 用户没在预览里确认过任何勾选，
+                // 不该让这里的默认值覆盖他上次在预览窗里做出的选择。
+            }
+            else
+            {
+                var window = new ImportPreviewWindow
+                {
+                    DataContext = preview,
+                    Owner = Application.Current?.MainWindow
+                };
 
-            if (window.ShowDialog() != true) return null;
+                if (window.ShowDialog() != true) return null;
 
-            RememberImportChoices(sourceType, preview);
+                RememberImportChoices(sourceType, preview);
+            }
+
             preview.ApplyNames();
 
             // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，

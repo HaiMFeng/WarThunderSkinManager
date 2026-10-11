@@ -105,6 +105,13 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
     /// </summary>
     public bool IsCancelable => State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Importing;
 
+    /// <summary>
+    /// 「一键导入」：本项下载完成后**静默**进入导入（跳过导入预览窗），只在顶部提示导入结果。
+    /// 取自下载确认窗的勾选（§3.15）。放在**条目**上而不是下载方法的参数上：点「重试」整条重跑时
+    /// 仍沿用当初的选择，不会因为重试就退回"弹预览窗"。
+    /// </summary>
+    public bool AutoImport { get; init; }
+
     partial void OnStateChanged(WtLiveDownloadState value)
     {
         OnPropertyChanged(nameof(CanRetry));

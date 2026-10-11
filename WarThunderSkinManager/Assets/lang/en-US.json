@@ -626,6 +626,8 @@
   "wtlive.displayName": "Display name (confirm or edit below)",
   "wtlive.description": "Description",
   "wtlive.start": "Start Download",
+  "wtlive.autoImport": "Import right after download (no confirmation)",
+  "wtlive.autoImport.hint": "When checked, the import starts as soon as the download finishes — the import preview window is skipped and the result appears only in the top status line. The choice is remembered and reused next time.",
   "wtlive.started": "Downloading {0}; import starts automatically when finished",
   "wtlive.startHint": "Once confirmed, click 'Start Download' to fetch {0} ({1}); the import flow starts automatically afterwards",
   "wtlive.fileWithSize": "{0} ({1})",

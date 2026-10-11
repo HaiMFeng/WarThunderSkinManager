@@ -26,6 +26,12 @@ public partial class WTLiveImportWindow : Window
     /// <summary>用户确认后要下载的涂装（ShowDialog 返回 true 时非空）。</summary>
     public WTLivePost? Post { get; private set; }
 
+    /// <summary>
+    /// 「一键导入」：宿主在开窗前写入**上次的记忆**作为初值（默认 <c>false</c>），窗口据此预置复选框；
+    /// 用户点「开始下载」后由 <see cref="Start_Click"/> 回读，宿主再落盘成下次的默认值（§3.15）。
+    /// </summary>
+    public bool AutoImport { get; set; }
+
     private bool _closed; // 窗口已关 → 异步读取完成的回调不再触碰界面
 
     /// <summary>要预填并自动读取的帖子链接（见带参构造）；null = 空白等用户粘贴 / 输入。</summary>
@@ -35,6 +41,7 @@ public partial class WTLiveImportWindow : Window
     {
         InitializeComponent();
         Closed += (_, _) => _closed = true;
+        AutoImportCheck.IsChecked = AutoImport; // 初值 = 上次的记忆（宿主在 ShowDialog 前写入；默认不勾）
         UrlBox.Focus();
 
         // 预填链接（见带参构造）：等窗口显示出来再读——读取时要显示「正在读取涂装信息…」，
@@ -186,6 +193,9 @@ public partial class WTLiveImportWindow : Window
         var name = DisplayNameBox.Text.Trim();
         if (name.Length > 0 && !string.Equals(name, Post.DisplayName, StringComparison.Ordinal))
             Post = Post with { DisplayName = name };
+
+        // 回读「一键导入」，由宿主落盘成下次默认值（用户取消关窗则不落盘，记忆保持原样）
+        AutoImport = AutoImportCheck.IsChecked == true;
 
         DialogResult = true;
     }
