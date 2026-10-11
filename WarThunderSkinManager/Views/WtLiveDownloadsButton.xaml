@@ -12,7 +12,11 @@
          复制两份迟早会改一处漏一处。宿主只给 Margin，DataContext 继承外层（同一窗口内是 MainViewModel），
          所以内部照常按 Skins.* 绑定。 -->
     <Grid>
-        <Button x:Name="ListButton" Padding="10,6"
+        <!-- 尺寸**不随字形走**：按钮固定 34×34（正方形），图标内容区是 14×14 的正方形（见下方 Grid），
+             两侧内边距对称。此前宽度由字形 advance 决定 —— 换成窄字形（`arrow-down` 在 FA 里是 448×512，
+             比原先的云朵窄约 5px）后整个按钮跟着缩水，与相邻的「导入…」「在 WT Live 中下载」不再齐平。
+             34 与 14 都是**设备无关单位**：WPF 按 DPI 等比缩放，任何缩放比例下都保持正方形、不变形。 -->
+        <Button x:Name="ListButton" Width="34" Padding="9,0"
                 MouseEnter="ListButton_MouseEnter" MouseLeave="ListButton_MouseLeave">
             <Button.Style>
                 <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
@@ -24,12 +28,8 @@
                                      Value="True">
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Height" Value="34"/>
-                            <!-- 宽度**不写死**：自适应"图标 + 左右各 8"，最小 34 与相邻的图标按钮齐平。
-                                 写死 34 时，只要字体度量让墨迹宽一点（如继承到 SemiBold 触发合成加粗），
-                                 图标就会被容器挤掉右侧 —— 让容器跟着内容走，这类问题从根上不存在 -->
-                            <Setter Property="MinWidth" Value="34"/>
-                            <Setter Property="Padding" Value="8,0"/>
+                            <!-- 尺寸不在变体里覆盖：宽高由基础的 34×34 统一管住。
+                                 去掉 1px 边框后内容区反而宽 2px，图标居中所以看不出差别 -->
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
@@ -38,19 +38,25 @@
                  FA Solid **只有一个字重** → 继承 SemiBold 会让 WPF 做"合成加粗"，墨迹沿书写方向向右
                  扩出、边缘发虚；在 34 宽的紧凑变体里看着就像"右侧被切掉一截"。
                  对照：工具栏里相邻的「收藏的作者」用独立样式 IconButton（不继承 ButtonBase），没有这个污染 -->
-            <TextBlock Text="&#xF063;" FontFamily="{StaticResource IconFont}" FontSize="14"
-                       FontWeight="Normal" HorizontalAlignment="Center">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Skins.HasActiveDownloads}" Value="True">
-                                <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+            <!-- 图标内容区固定成 **14×14 的正方形**（宽高一致），字形在其中**水平 + 垂直居中**：
+                 这样按钮宽度就与字形 advance 彻底脱钩 —— 不管换成哪个图标、字体度量怎么变，
+                 内容区都是同一个正方形，按钮都是 34×34。
+                 （`arrow-down` 这个字形本身是竖长条，放进正方形后两侧自然留白；那是字体设计，不是布局问题。） -->
+            <Grid Width="14" Height="14">
+                <TextBlock Text="&#xF063;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                           FontWeight="Normal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Skins.HasActiveDownloads}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
         </Button>
 
         <!-- VerticalOffset：与按钮之间留出间距（贴太紧像按钮的一部分）；
