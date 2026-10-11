@@ -45,12 +45,37 @@
             <Grid Width="14" Height="14">
                 <TextBlock Text="&#xF063;" FontFamily="{StaticResource IconFont}" FontSize="14"
                            FontWeight="Normal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- 三态着色（§3.17）：状态只有**一个来源** —— `Skins.ButtonState`（枚举，天然互斥），
+                         优先级**失败 > 下载中 > 默认**由 ViewModel 侧算定（SkinsViewModel.EvaluateButtonState）：
+                           ① Failed      → 红色**常亮**（用户主动取消不算失败）
+                           ② Downloading → 主题主色 + **呼吸**（Opacity 脉冲渐隐渐显）
+                           ③ Idle        → 次要色（走基值 Setter）
+                         两个 DataTrigger 的 Value 互斥，所以任意时刻只会命中一个；
+                         退出 Downloading 时 ExitActions 移除呼吸动画（Opacity 回落到 1，不会卡在半透明） -->
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding Skins.HasActiveDownloads}" Value="True">
+                                <DataTrigger Binding="{Binding Skins.ButtonState}" Value="Downloading">
                                     <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                    <DataTrigger.EnterActions>
+                                        <!-- 呼吸：1.5 秒一个来回（0.75 正 + 0.75 反），Forever 循环 -->
+                                        <BeginStoryboard x:Name="DownloadBreath">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                 From="1" To="0.3"
+                                                                 Duration="0:0:0.75"
+                                                                 AutoReverse="True" RepeatBehavior="Forever"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                    <DataTrigger.ExitActions>
+                                        <RemoveStoryboard BeginStoryboardName="DownloadBreath"/>
+                                    </DataTrigger.ExitActions>
+                                </DataTrigger>
+
+                                <DataTrigger Binding="{Binding Skins.ButtonState}" Value="Failed">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushDanger}"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>

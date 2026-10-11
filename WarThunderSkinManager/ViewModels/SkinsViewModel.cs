@@ -94,12 +94,45 @@ public partial class SkinsViewModel : ObservableObject
     private readonly CancellationTokenSource _downloadsCts = new();
 
     /// <summary>
-    /// 是否有进行中的 WT Live 下载 / 导入：**退出前须确认**，界面侧也据此给「下载列表」按钮的
-    /// 图标着色（有任务 = 主题主色，无任务 / 全部结束 = 次要色）。
+    /// 是否有进行中的 WT Live 下载 / 导入：**退出前须确认**，界面侧据此给「下载列表」按钮的
+    /// 图标着色（进行中 = 主题主色 + 呼吸）。
     /// 变化时会发通知（见 <see cref="HookDownloadNotifications"/>）。
     /// </summary>
     public bool HasActiveDownloads
         => WtLiveDownloads.Any(d => d.State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Importing);
+
+    /// <summary>
+    /// 「下载列表」按钮的**整体状态**（§3.17）：三态互斥，优先级 **失败 &gt; 下载中 &gt; 默认**。
+    /// 界面据此着色 —— <c>Failed</c> 红色常亮 / <c>Downloading</c> 主色 + 呼吸 / <c>Idle</c> 次要色。
+    /// </summary>
+    public DownloadButtonState ButtonState => EvaluateButtonState(WtLiveDownloads);
+
+    /// <summary>
+    /// 从下载列表算出按钮状态：**失败优先** —— 只要有没被重试的失败项就是 <c>Failed</c>，
+    /// 哪怕同时有别项在下载；否则有进行中的就是 <c>Downloading</c>；否则 <c>Idle</c>。
+    /// <para>
+    /// **用户主动取消**（<see cref="WtLiveDownloadState.Canceled"/>）既不进失败、也不进下载中 ——
+    /// 取消是用户的决定，不该被标成故障。
+    /// </para>
+    /// <para>
+    /// 抽成**静态纯函数**是为了能被自检直接覆盖：<see cref="SkinsViewModel"/> 需要配置才能构造，
+    /// 而这个函数可以钉住三态的互斥与优先级（含"取消不算失败""失败项被重试后退出红色"）。
+    /// </para>
+    /// </summary>
+    public static DownloadButtonState EvaluateButtonState(IEnumerable<WtLiveDownloadItem> items)
+    {
+        var hasFailed = false;
+        var hasActive = false;
+
+        foreach (var item in items)
+        {
+            if (item.State == WtLiveDownloadState.Failed) hasFailed = true;
+            else if (item.State is WtLiveDownloadState.Downloading or WtLiveDownloadState.Importing) hasActive = true;
+        }
+
+        if (hasFailed) return DownloadButtonState.Failed;
+        return hasActive ? DownloadButtonState.Downloading : DownloadButtonState.Idle;
+    }
 
     /// <summary>
     /// 让 <see cref="HasActiveDownloads"/> 随下载列表**实时通知界面**：
@@ -127,7 +160,12 @@ public partial class SkinsViewModel : ObservableObject
             NotifyActiveDownloadsChanged();
     }
 
-    private void NotifyActiveDownloadsChanged() => OnPropertyChanged(nameof(HasActiveDownloads));
+    /// <summary>下载列表的「整体状态」变了（增删条目 / 任一条目状态变化）→ 两个派生属性一起重算。</summary>
+    private void NotifyActiveDownloadsChanged()
+    {
+        OnPropertyChanged(nameof(HasActiveDownloads));
+        OnPropertyChanged(nameof(ButtonState));
+    }
 
     /// <summary>退出清理（主窗口 Closing 确认退出后调用）：取消下载 + 清空暂存区不留残留。</summary>
     public void CleanupOnExit()

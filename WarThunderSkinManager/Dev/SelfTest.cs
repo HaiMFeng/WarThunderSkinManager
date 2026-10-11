@@ -2848,6 +2848,7 @@ internal static class SelfTest
                 // 浮窗内的条目 / 着色 / 重试与取消语义都绑这些成员）
                 (typeof(SkinsViewModel), nameof(SkinsViewModel.WtLiveDownloads)),
                 (typeof(SkinsViewModel), nameof(SkinsViewModel.HasActiveDownloads)),
+                (typeof(SkinsViewModel), nameof(SkinsViewModel.ButtonState)),
                 (typeof(SkinsViewModel), nameof(SkinsViewModel.RetryWtLiveDownloadCommand)),
                 (typeof(SkinsViewModel), nameof(SkinsViewModel.CancelOrRemoveWtLiveDownloadCommand)),
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.FileName)),
@@ -2899,6 +2900,25 @@ internal static class SelfTest
                          + $"已取消 → 取消 = {canceled.IsCancelable}、重试 = {canceled.CanRetry}（应 False/True：按钮变「移除」），"
                          + $"已完成 → 移除 = {!completed.IsCancelable}、重试 = {completed.CanRetry}（应 True/False），"
                          + $"失败 → 重试 = {failed.CanRetry}、取消 = {failed.IsCancelable}（应 True/False）");
+
+            // ---- 「下载列表」按钮的三态着色（§3.17）：失败 > 下载中 > 默认，任意时刻互斥 ----
+            // 用的是界面绑定的同一个静态纯函数（SkinsViewModel.EvaluateButtonState），钉住的就是真实规则
+            var stateDownloading = SkinsViewModel.EvaluateButtonState(new[] { downloading });
+            var stateFailedOnly = SkinsViewModel.EvaluateButtonState(new[] { failed });
+            var stateMixed = SkinsViewModel.EvaluateButtonState(new[] { downloading, failed });
+            var stateCanceledOnly = SkinsViewModel.EvaluateButtonState(new[] { canceled });
+            var stateCompletedOnly = SkinsViewModel.EvaluateButtonState(new[] { completed });
+            var stateEmpty = SkinsViewModel.EvaluateButtonState(Array.Empty<WtLiveDownloadItem>());
+
+            // 失败项点「重试」→ 被置回 Downloading ⇒ 失败集合清空才退出红色
+            failed.State = WtLiveDownloadState.Downloading;
+            var stateAfterRetry = SkinsViewModel.EvaluateButtonState(new[] { downloading, failed });
+            failed.State = WtLiveDownloadState.Failed; // 还原（后面的用例可能还要用）
+
+            log.AppendLine($"按钮三态   : 仅下载中 = {stateDownloading}（应 Downloading）、仅失败 = {stateFailedOnly}（应 Failed）、"
+                         + $"失败 + 下载中 = {stateMixed}（应 Failed：失败优先）、仅已取消 = {stateCanceledOnly}（应 Idle：取消不算失败）、"
+                         + $"仅已完成 = {stateCompletedOnly}（应 Idle）、空列表 = {stateEmpty}（应 Idle）、"
+                         + $"失败项全被重试后 = {stateAfterRetry}（应 Downloading）");
 
             // ---- 「处理中」指示（§2.6）：可嵌套、文案取最外层、计数归零才隐藏、重复释放无害 ----
             var busyIndicator = BusyIndicator.Instance;

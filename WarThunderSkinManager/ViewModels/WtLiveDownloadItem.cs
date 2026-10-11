@@ -6,6 +6,23 @@ using WarThunderSkinManager.Services;
 
 namespace WarThunderSkinManager.ViewModels;
 
+/// <summary>
+/// 「下载列表」按钮的整体状态（§3.17）：**三态互斥**，优先级 **失败 &gt; 下载中 &gt; 默认**。
+/// 由 <see cref="SkinsViewModel.EvaluateButtonState"/> 从下载列表算出来
+/// （静态纯函数，便于自检直接覆盖）。
+/// </summary>
+public enum DownloadButtonState
+{
+    /// <summary>全部完成 / 列表为空 / 只剩已取消项 → 次要色。</summary>
+    Idle,
+
+    /// <summary>有下载 / 导入在进行、且**没有**未重试的失败项 → 主题主色 + 呼吸。</summary>
+    Downloading,
+
+    /// <summary>有失败项（**用户主动取消不算**）→ 红色常亮。</summary>
+    Failed,
+}
+
 /// <summary>WT Live 下载项状态。</summary>
 public enum WtLiveDownloadState
 {
