@@ -2299,6 +2299,54 @@ internal static class SelfTest
             var blkTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, @"replace_tex|set_tex|\bparam\b")).Select(p => p.Key).ToList();
 
+            // ---- 卡片模板不得依赖**元素树位置**（§5.7.1「虚拟化下的铁律」）----
+            // 瀑布流是虚拟化的：容器滚出视口被回收时**脱离视觉树**（那一刻没有祖先），滚回来复用又
+            // 赶上下一次解析时机不定 —— `RelativeSource AncestorType` / `ElementName` / `x:Reference`
+            // 这类"按树找"的写法都会**踩空**，表现是卡片上的按钮**偶发**点了没反应（S3 级：
+            // 只在滚动来回之后出现、首屏怎么点都正常，极难复现）。这里把约束钉在 XAML 文本上。
+            if (Directory.Exists(viewsRoot))
+            {
+                var cardXamlPath = Path.Combine(viewsRoot, "WtLiveView.xaml");
+
+                if (File.Exists(cardXamlPath))
+                {
+                    // 卡片模板的唯一定位锚点：整卡可点 → 详情浮窗（这句只出现在卡片模板上）
+                    const string cardAnchor = "Card_MouseLeftButtonUp";
+                    var wtLiveXaml = File.ReadAllText(cardXamlPath, Encoding.UTF8);
+
+                    var anchorAt = wtLiveXaml.IndexOf(cardAnchor, StringComparison.Ordinal);
+                    var templateStart = anchorAt < 0
+                        ? -1
+                        : wtLiveXaml.LastIndexOf("<DataTemplate>", anchorAt, StringComparison.Ordinal);
+                    var templateEnd = anchorAt < 0
+                        ? -1
+                        : wtLiveXaml.IndexOf("</DataTemplate>", anchorAt, StringComparison.Ordinal);
+                    var cardTemplate = templateStart >= 0 && templateEnd > templateStart
+                        ? wtLiveXaml[templateStart..templateEnd]
+                        : "";
+
+                    // 只查**危险**的树查找：`Self` / `TemplatedParent` 不依赖祖先，是安全的，不拦
+                    var forbiddenTreeBindings = new[] { "AncestorType", "FindAncestor", "ElementName=", "{x:Reference" };
+                    var treeBindingsFound = forbiddenTreeBindings
+                        .Where(marker => cardTemplate.Contains(marker, StringComparison.Ordinal))
+                        .ToList();
+
+                    // 自证：定位到的段必须**真是**卡片模板（含它的命令绑定）——
+                    // 否则"0 处"只是扫了个空串，护栏等于没有
+                    var templateLooksRight = cardTemplate.Contains("DownloadCommand", StringComparison.Ordinal);
+
+                    log.AppendLine($"卡片模板绑定: 模板已定位 = {templateLooksRight}（应 True：段内含 DownloadCommand）、"
+                                 + $"按元素树查找的绑定 = {treeBindingsFound.Count} 处（应 0）"
+                                 + (treeBindingsFound.Count > 0 ? "：" + string.Join(", ", treeBindingsFound) : "")
+                                 + " —— 虚拟化容器回收 / 复用时那条链会踩空（§5.7.1）");
+
+                    if (treeBindingsFound.Count > 0)
+                        log.AppendLine($"自检异常：WtLiveView 的卡片模板里出现按元素树查找的绑定"
+                                     + $"（{string.Join(", ", treeBindingsFound)}）→ 容器回收后解析会踩空，"
+                                     + "卡片上的按钮会偶发点了没反应");
+                }
+            }
+
             log.AppendLine($"XAML 文案 : 扫了 {xamlScanned} 个文件，写死的用户可见文本 = {hardcodedTexts.Count}（应 0）"
                          + $"，loc 标记里查不到的 key = {missingLocKeys.Count}（应 0）"
                          + (hardcodedTexts.Count > 0 ? "\n  写死：" + string.Join(" / ", hardcodedTexts.Take(8)) : "")
