@@ -397,15 +397,22 @@
                         </Grid>
                     </Border>
 
-                    <!-- 收藏的作者（搜索框右侧、刷新左侧）：点开遮罩浮窗，见 WtLiveFavoritesOverlay -->
+                    <!-- 三个紧凑的图标按钮（刷新 / 收藏的作者 / 下载列表）：**彼此间距 4**，
+                         比工具区其它元素（8）更紧 —— 它们是同一组"列表动作"，紧排看起来是一组；
+                         与左侧搜索框之间保留 8（那里是"查询"与"动作"的分界，不留会糊成一团）。
+                         间距由**后一个按钮的 Margin 提供**（WPF 没有负间距，用 Margin 最省） -->
+                    <Button Content="&#xF021;" Style="{StaticResource IconButton}" Width="34" Height="34"
+                            FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.refresh}"
+                            Command="{Binding WtLive.RefreshCommand}"/>
+
+                    <!-- 收藏的作者：点开遮罩浮窗，见 WtLiveFavoritesOverlay -->
                     <Button Content="&#xF005;" Style="{StaticResource IconButton}" Width="34" Height="34"
-                            FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.favorites.open}"
+                            FontSize="14" Margin="4,0,0,0" ToolTip="{loc:Loc wtlive.favorites.open}"
                             Command="{Binding WtLive.Favorites.OpenCommand}"/>
 
                     <!-- 下载列表入口：与涂装管理页页头**共用同一控件**（悬停展开浮窗 / 重试与取消语义都一致）。
-                         本页工具栏是"图标按钮"的语言（相邻的「收藏的作者」就是 `IconButton`），
-                         所以打开无边框变体；刷新已迁到内容区右下角的圆形悬浮按钮 -->
-                    <views:WtLiveDownloadsButton Margin="8,0,0,0" Borderless="True"/>
+                         本页工具栏是"图标按钮"的语言（相邻两个就是 `IconButton`），所以打开无边框变体 -->
+                    <views:WtLiveDownloadsButton Margin="4,0,0,0" Borderless="True"/>
                 </StackPanel>
             </Grid>
         </Grid>
@@ -776,15 +783,6 @@
                            TextAlignment="Center" Style="{StaticResource PageSubtitle}"/>
             </StackPanel>
 
-            <!-- 刷新：内容区右下角的**圆形悬浮按钮**。与 ScrollViewer **同级**（叠在其后 = 盖在内容之上），
-                 所以它固定在右下角，**不随瀑布流滚动移动**；空态（没结果 / 加载失败）时同样可用。
-                 外观 = **圆形的次级按钮**（主题白底 + 主色描边），见 Themes 的 FabButton。
-                 外边距 10,6：右侧**留出滚动条的 10px**（再往里收会压住滚动条、拖不动），底部贴角 -->
-            <Button Style="{StaticResource FabButton}"
-                    Content="&#xF021;"
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,6"
-                    ToolTip="{loc:Loc wtlive.refresh}"
-                    Command="{Binding WtLive.RefreshCommand}"/>
         </Grid>
     </Grid>
 </UserControl>
