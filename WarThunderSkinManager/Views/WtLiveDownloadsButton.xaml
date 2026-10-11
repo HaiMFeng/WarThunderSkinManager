@@ -3,7 +3,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
     <!-- WT Live 下载列表入口（涂装管理页页头与 WT Live 页工具栏**共用同一个控件**，§3.15）：
-         图标 = 向下箭头 + 底部一横；**悬停展开浮窗、移出关闭**（带 250ms 延时，给鼠标从按钮移入浮窗留出间隙）。
+         图标 = **`F063`（arrow-down）**——与卡片右下角的下载按钮、列表空态插图**同一个字形**，
+         三处"下载"入口在整页里形状一致（原先这里是 `F0ED` cloud-arrow-down 的云朵，笔画密、14px 下发糊，
+         与卡片那边的箭头不是一个密度）；
+         **悬停展开浮窗、移出关闭**（带 250ms 延时，给鼠标从按钮移入浮窗留出间隙）。
          图标着色反映任务状态：有下载 / 导入任务 = 主题主色（一眼看出在忙），无任务或全部结束 = 次要色。
          抽成控件而不是各页复制一份：两处的浮窗内容 / 重试语义 / 延时关闭节奏必须完全一致，
          复制两份迟早会改一处漏一处。宿主只给 Margin，DataContext 继承外层（同一窗口内是 MainViewModel），
@@ -35,7 +38,7 @@
                  FA Solid **只有一个字重** → 继承 SemiBold 会让 WPF 做"合成加粗"，墨迹沿书写方向向右
                  扩出、边缘发虚；在 34 宽的紧凑变体里看着就像"右侧被切掉一截"。
                  对照：工具栏里相邻的「收藏的作者」用独立样式 IconButton（不继承 ButtonBase），没有这个污染 -->
-            <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="14"
+            <TextBlock Text="&#xF063;" FontFamily="{StaticResource IconFont}" FontSize="14"
                        FontWeight="Normal" HorizontalAlignment="Center">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">

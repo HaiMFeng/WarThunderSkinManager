@@ -624,7 +624,9 @@
                                                 </Hyperlink>
                                                 <Run Text="{Binding MetaSuffix, Mode=OneWay}"/>
                                             </TextBlock>
-                                            <Button Content="&#xF019;" HorizontalAlignment="Right"
+                                            <!-- 下载：与工具栏的下载列表入口、空态插图**同一个字形**
+                                                 （`F063` arrow-down），整页三个「下载」形状统一 -->
+                                            <Button Content="&#xF063;" HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
                                                     ToolTip="{loc:Loc wtlive.card.download}"
                                                     CommandParameter="{Binding PostUrl}"
@@ -775,7 +777,7 @@
                         </Style.Triggers>
                     </Style>
                 </StackPanel.Style>
-                <TextBlock Text="&#xF0ED;" FontFamily="{StaticResource IconFont}" FontSize="26"
+                <TextBlock Text="&#xF063;" FontFamily="{StaticResource IconFont}" FontSize="26"
                            Foreground="{StaticResource BrushTextMuted}" HorizontalAlignment="Center"/>
                 <TextBlock Text="{loc:Loc wtlive.list.empty}" Margin="0,10,0,0" HorizontalAlignment="Center"
                            FontSize="15" FontWeight="SemiBold"/>
