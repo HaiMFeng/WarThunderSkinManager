@@ -20,6 +20,14 @@ public partial class VehiclePart : ObservableObject
     /// </summary>
     [ObservableProperty] private bool _isExcluded;
 
+    /// <summary>
+    /// 该部件位置是用户**手动补出来的**（§3.10）：这辆车的 blk 里本来没有它，
+    /// 是用户明确知道"这车也有这个部件"才补上的（典型场景：同一枚导弹，涂装只适配了另一辆车）。
+    /// 候选同样为空，要等去涂装管理页的属性页配贴图。与 <see cref="IsExcluded"/> 互斥
+    /// （一个只做加、一个只做减）。
+    /// </summary>
+    [ObservableProperty] private bool _isManuallyAdded;
+
     /// <summary>按命名规律推测的标签（部位 / 功能 / 贴图类型，§3.6；仅供识别参考）</summary>
     [ObservableProperty] private IReadOnlyList<PartTag> _tags = Array.Empty<PartTag>();
 

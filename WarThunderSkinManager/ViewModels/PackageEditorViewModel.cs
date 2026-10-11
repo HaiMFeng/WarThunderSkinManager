@@ -358,6 +358,19 @@ public partial class PackageEditorViewModel : ObservableObject
             }
         }
 
+        // 手动补齐的部件位置（§3.10）也要并进候选池：它们不在任何包的映射里，
+        // 不补这一刀的话，用户在载具管理页补出来的位置**在属性页根本看不到行**、
+        // 也就选不到贴图 —— 那这个功能等于白做（本次改动最要紧的一环）。
+        // 必须在 AddCrossVehicleCandidates **之前**并入：那个方法按 from 去别的载具找贴图，
+        // "载具 B 那枚导弹要拿到 A 的 w_n / w_c"正是靠它
+        foreach (var key in VehicleExtraPartsService.ExtraFor(_meta.VehicleId))
+        {
+            if (key.Length == 0 || pool.ContainsKey(key)) continue;
+
+            pool[key] = new List<PartCandidate>();
+            seenBlobs[key] = new HashSet<string>(StringComparer.Ordinal);
+        }
+
         AddCrossVehicleCandidates(pool);
         AddMultiSourceCandidates(pool);
 

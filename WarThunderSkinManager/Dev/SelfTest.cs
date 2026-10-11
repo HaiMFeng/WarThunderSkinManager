@@ -1487,6 +1487,36 @@ internal static class SelfTest
             var partBack = restoredPart is { IsExcluded: false } && restoredPart.Candidates.Count > 0;
             log.AppendLine($"恢复    : 取消排除后部件回到正常态（含候选）= {partBack}（应为 True）");
 
+            // ---- 手动**新增**部件（§3.10）：与"删除"对偶 —— 补出 blk 里根本没有的位置，
+            //      让用户能跨载具给"这辆车也有、但涂装没适配"的部件配贴图 ----
+            var extraDir = Path.Combine(workDir, "cfg-extra-parts");
+            Directory.CreateDirectory(extraDir);
+            VehicleExtraPartsService.Configure(extraDir);
+
+            const string extraVehicleId = "us_m1a1_extra_sample";
+            const string extraFrom = "missile_w_extra";
+            var extraAdded = VehicleExtraPartsService.Add(extraDir, extraVehicleId, extraFrom);
+            var extraAddedAgain = VehicleExtraPartsService.Add(extraDir, extraVehicleId, extraFrom);
+
+            // 该载具**没有任何包**：这一行只能来自手动补齐（聚合视图把它补出来）
+            var extraPart = VehicleAggregator.Build(extraVehicleId, Array.Empty<SkinPackage>())
+                .Parts.FirstOrDefault(p => string.Equals(p.From, extraFrom, StringComparison.OrdinalIgnoreCase));
+
+            log.AppendLine($"新增部件: 首次添加 = {extraAdded}（应 True）、重复添加 = {extraAddedAgain}（应 False：无副作用）、"
+                         + $"聚合补出该行 = {extraPart != null}（应 True）、标记手动 = {extraPart?.IsManuallyAdded}（应 True）、"
+                         + $"候选为空 = {extraPart?.Candidates.Count == 0}（应 True：贴图要另去属性页配）、"
+                         + $"持久化可查 = {VehicleExtraPartsService.IsExtra(extraVehicleId, extraFrom)}（应 True）");
+
+            // 与排除清单**互斥**：万一同一个 from 两边都有（清单可被手工编辑），约定**排除优先** ——
+            // 用户明确删过的东西不该自己冒回来，也不能同时既"已排除"又"手动补齐"
+            PartExclusionService.Configure(extraDir);
+            PartExclusionService.Add(extraDir, extraVehicleId, extraFrom);
+            var bothSides = VehicleAggregator.Build(extraVehicleId, Array.Empty<SkinPackage>())
+                .Parts.FirstOrDefault(p => string.Equals(p.From, extraFrom, StringComparison.OrdinalIgnoreCase));
+            log.AppendLine($"新增/删除互斥: 两边都命中时排除优先 = {bothSides?.IsExcluded}（应 True）、"
+                         + $"不标记为手动 = {bothSides?.IsManuallyAdded == false}（应 True）");
+            PartExclusionService.Remove(extraDir, extraVehicleId, extraFrom);
+
             // ---- 新建空白涂装包（§3.4）：无 source.blk、无贴图引用，部件在属性页从库内选择 ----
             log.AppendLine();
             log.AppendLine("---- 新建空白涂装包 ----");
@@ -2299,51 +2329,58 @@ internal static class SelfTest
             var blkTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, @"replace_tex|set_tex|\bparam\b")).Select(p => p.Key).ToList();
 
-            // ---- 卡片模板不得依赖**元素树位置**（§5.7.1「虚拟化下的铁律」）----
-            // 瀑布流是虚拟化的：容器滚出视口被回收时**脱离视觉树**（那一刻没有祖先），滚回来复用又
-            // 赶上下一次解析时机不定 —— `RelativeSource AncestorType` / `ElementName` / `x:Reference`
-            // 这类"按树找"的写法都会**踩空**，表现是卡片上的按钮**偶发**点了没反应（S3 级：
-            // 只在滚动来回之后出现、首屏怎么点都正常，极难复现）。这里把约束钉在 XAML 文本上。
+            // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----
+            // 容器滚出视口被回收时**脱离视觉树**（那一刻没有祖先），滚回来复用又赶上下一次解析时机不定 ——
+            // `RelativeSource AncestorType` / `ElementName` / `x:Reference` 这类"按树找"的写法都会**踩空**，
+            // 表现是行内按钮**偶发**点了没反应（S3 级：只在滚动来回之后出现、首屏怎么点都正常，极难复现）。
+            // 这里把约束钉在 XAML 文本上：凡是**虚拟化列表的行模板**都扫一遍。
             if (Directory.Exists(viewsRoot))
             {
-                var cardXamlPath = Path.Combine(viewsRoot, "WtLiveView.xaml");
-
-                if (File.Exists(cardXamlPath))
+                // 锚点必须**只出现在该行模板里**（用它反查所在的 <DataTemplate>）
+                var watchedTemplates = new (string File, string Anchor, string Description)[]
                 {
-                    // 卡片模板的唯一定位锚点：整卡可点 → 详情浮窗（这句只出现在卡片模板上）
-                    const string cardAnchor = "Card_MouseLeftButtonUp";
-                    var wtLiveXaml = File.ReadAllText(cardXamlPath, Encoding.UTF8);
+                    ("WtLiveView.xaml", "Card_MouseLeftButtonUp", "卡片"),
+                    ("VehicleManagementView.xaml", "PartDeleteOrRestore_Click", "部件行")
+                };
 
-                    var anchorAt = wtLiveXaml.IndexOf(cardAnchor, StringComparison.Ordinal);
+                foreach (var (fileName, anchor, description) in watchedTemplates)
+                {
+                    var templatePath = Path.Combine(viewsRoot, fileName);
+                    if (!File.Exists(templatePath)) continue;
+
+                    var templateXaml = File.ReadAllText(templatePath, Encoding.UTF8);
+
+                    var anchorAt = templateXaml.IndexOf(anchor, StringComparison.Ordinal);
                     var templateStart = anchorAt < 0
                         ? -1
-                        : wtLiveXaml.LastIndexOf("<DataTemplate>", anchorAt, StringComparison.Ordinal);
+                        : templateXaml.LastIndexOf("<DataTemplate>", anchorAt, StringComparison.Ordinal);
                     var templateEnd = anchorAt < 0
                         ? -1
-                        : wtLiveXaml.IndexOf("</DataTemplate>", anchorAt, StringComparison.Ordinal);
-                    var cardTemplate = templateStart >= 0 && templateEnd > templateStart
-                        ? wtLiveXaml[templateStart..templateEnd]
+                        : templateXaml.IndexOf("</DataTemplate>", anchorAt, StringComparison.Ordinal);
+                    var template = templateStart >= 0 && templateEnd > templateStart
+                        ? templateXaml[templateStart..templateEnd]
                         : "";
 
                     // 只查**危险**的树查找：`Self` / `TemplatedParent` 不依赖祖先，是安全的，不拦
-                    var forbiddenTreeBindings = new[] { "AncestorType", "FindAncestor", "ElementName=", "{x:Reference" };
-                    var treeBindingsFound = forbiddenTreeBindings
-                        .Where(marker => cardTemplate.Contains(marker, StringComparison.Ordinal))
-                        .ToList();
+                    var forbidden = new[] { "AncestorType", "FindAncestor", "ElementName=", "{x:Reference" };
+                    var found = forbidden.Where(m => template.Contains(m, StringComparison.Ordinal)).ToList();
 
-                    // 自证：定位到的段必须**真是**卡片模板（含它的命令绑定）——
+                    // 自证：定位到的段必须**真是**那个行模板（含锚点本身）——
                     // 否则"0 处"只是扫了个空串，护栏等于没有
-                    var templateLooksRight = cardTemplate.Contains("DownloadCommand", StringComparison.Ordinal);
+                    var located = template.Length > 0 && template.Contains(anchor, StringComparison.Ordinal);
 
-                    log.AppendLine($"卡片模板绑定: 模板已定位 = {templateLooksRight}（应 True：段内含 DownloadCommand）、"
-                                 + $"按元素树查找的绑定 = {treeBindingsFound.Count} 处（应 0）"
-                                 + (treeBindingsFound.Count > 0 ? "：" + string.Join(", ", treeBindingsFound) : "")
-                                 + " —— 虚拟化容器回收 / 复用时那条链会踩空（§5.7.1）");
+                    log.AppendLine($"{fileName} 行模板: 已定位 = {located}（应 True）、"
+                                 + $"按元素树查找的绑定 = {found.Count} 处（应 0）"
+                                 + (found.Count > 0 ? "：" + string.Join(", ", found) : "")
+                                 + $" —— {description}是虚拟化的，容器回收 / 复用时那条链会踩空（§5.7.1）");
 
-                    if (treeBindingsFound.Count > 0)
-                        log.AppendLine($"自检异常：WtLiveView 的卡片模板里出现按元素树查找的绑定"
-                                     + $"（{string.Join(", ", treeBindingsFound)}）→ 容器回收后解析会踩空，"
-                                     + "卡片上的按钮会偶发点了没反应");
+                    if (!located)
+                        log.AppendLine($"自检异常：定位不到 {fileName} 的{description}模板（锚点 {anchor}）"
+                                     + " → 护栏失效，请确认模板是否被改动（改名 / 拆模板都会让它落空）");
+                    else if (found.Count > 0)
+                        log.AppendLine($"自检异常：{fileName} 的{description}模板里出现按元素树查找的绑定"
+                                     + $"（{string.Join(", ", found)}）→ 容器回收后解析会踩空，"
+                                     + "行内按钮会偶发点了没反应");
                 }
             }
 

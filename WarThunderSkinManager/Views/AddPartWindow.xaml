@@ -1,0 +1,56 @@
+<Window x:Class="WarThunderSkinManager.Views.AddPartWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        ShowInTaskbar="False"
+        Width="480" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="symbols_skyquake, Segoe UI, Microsoft YaHei UI"
+        Foreground="{StaticResource BrushText}"
+        Background="{StaticResource BrushBackground}">
+    <Border BorderThickness="1" BorderBrush="{StaticResource BrushBorder}" Background="{StaticResource BrushBackground}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏（可拖动） -->
+            <Grid Grid.Row="0" Background="{StaticResource BrushCanvas}"
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <TextBlock x:Name="HeaderText" Margin="14,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Foreground="{StaticResource BrushText}"
+                           TextTrimming="CharacterEllipsis"/>
+                <Button Style="{StaticResource TitleBarCloseButton}"
+                        HorizontalAlignment="Right" Click="Cancel_Click"/>
+            </Grid>
+
+            <!-- 说明：候选只是补全便利，没有候选也能手动完整输入（这是这个功能的立足点） -->
+            <TextBlock x:Name="HintText" Grid.Row="1" Margin="20,16,20,0" TextWrapping="Wrap"
+                       FontSize="12" LineHeight="19" Foreground="{StaticResource BrushTextSecondary}"/>
+
+            <!-- 输入 + 候选：**可编辑 ComboBox** —— 输入框与下拉本就是同一个控件，
+                 选中候选即回填文本；没有候选时照常手输。
+                 用 KeyUp 而不是 TextChanged：ComboBox 没有 TextChanged，
+                 输入必然伴随按键，够用；下拉被重新拉开时再刷一次候选（DropDownOpened）。 -->
+            <ComboBox x:Name="PartInput" Grid.Row="2" Margin="20,12,20,0"
+                      Style="{StaticResource BaseComboBox}"
+                      IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
+                      KeyUp="PartInput_KeyUp"
+                      DropDownOpened="PartInput_DropDownOpened"/>
+
+            <!-- 校验提示（空输入 / 该载具已有这个位置） -->
+            <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="20,8,20,0" TextWrapping="Wrap"
+                       FontSize="12" Foreground="{StaticResource BrushDanger}" Visibility="Collapsed"/>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,20,20,18">
+                <Button x:Name="CancelButton" Style="{StaticResource SecondaryButton}" Click="Cancel_Click"/>
+                <Button x:Name="ConfirmButton" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+                        Click="Ok_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

@@ -139,6 +139,18 @@ public sealed class VehicleSearchIndex
         return builder.ToString();
     }
 
+    /// <summary>
+    /// 给**一条已归一化的候选**打分（0 = 不匹配）。给"自带候选表"的调用方用 ——
+    /// 例如**部件名补全**（<see cref="PartNameSearchIndex"/>）：它自己维护归一化后的候选，
+    /// 建一次、逐键击只做比较，不必走本类的载具条目表。
+    /// <para>
+    /// 两者共用**同一套**档位与细化规则：这种"越像越靠前"的排序一旦两处漂移，
+    /// 用户就得对同一个界面里的两个搜索框重新建立手感。
+    /// </para>
+    /// </summary>
+    public static int ScoreNormalized(string? normalizedQuery, string normalizedCandidate)
+        => string.IsNullOrEmpty(normalizedQuery) ? 0 : Score(normalizedQuery, normalizedCandidate);
+
     /// <summary>给**一条归一化候选**打分；0 = 不匹配。</summary>
     private static int Score(string query, string candidate)
     {

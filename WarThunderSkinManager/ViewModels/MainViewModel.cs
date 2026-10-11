@@ -321,8 +321,9 @@ public partial class MainViewModel : ObservableObject
         InitResourceItems(); // 设置页「更新资源」行条目（§3.15）
         _ = Task.Run(CountryResolver.Prewarm); // 商店表索引后台预热，避免首次投影 UI 卡顿（§3.4）
 
-        // 部件排除清单跟随配置目录（载具管理页手动删除部件，§3.10）
+        // 部件排除清单 / 手动补齐清单跟随配置目录（载具管理页手动删 / 加部件，§3.10）
         PartExclusionService.Configure(config.ConfigDirectory);
+        VehicleExtraPartsService.Configure(config.ConfigDirectory);
 
         // 语言下拉：内置支持 + 用户放进 lang/ 的语言文件；当前语言直接写字段，避免 ctor 里触发切换
         AvailableLanguages = ScanLanguages(config.ConfigDirectory);
@@ -525,8 +526,9 @@ public partial class MainViewModel : ObservableObject
             return false;
         }
 
-        // 静态服务跟随新目录：排除清单 / 数据表 / 部件表与快照缓存全部失效重建
+        // 静态服务跟随新目录：排除清单 / 补齐清单 / 数据表 / 部件表与快照缓存全部失效重建
         PartExclusionService.Configure(Config.ConfigDirectory);
+        VehicleExtraPartsService.Configure(Config.ConfigDirectory);
         DataTables.Configure(Config.ConfigDirectory);
         PartCatalog.Invalidate();
         Skins.Reproject();
@@ -970,6 +972,7 @@ public partial class MainViewModel : ObservableObject
         {
             case nameof(AppConfig.ConfigDirectory):
                 PartExclusionService.Configure(Config.ConfigDirectory);
+                VehicleExtraPartsService.Configure(Config.ConfigDirectory); // 手动补齐的部件也跟目录走（§3.10）
                 DataTables.Configure(Config.ConfigDirectory); // 译名 / 武器表跟随配置目录（§3.6 / §3.7）
                 WtLivePreviewCache.Configure(Config.ConfigDirectory); // 预览图缓存也跟着走（§5.7.1）
                 // 收藏的作者也在配置目录里 → 换目录要换成新目录那份（旧目录的文件原样留着）
@@ -1408,6 +1411,7 @@ public partial class MainViewModel : ObservableObject
             {
                 apply(current); // 取消 / 失败 → 回滚，旧配置依旧可用
                 PartExclusionService.Configure(Config.ConfigDirectory);
+                VehicleExtraPartsService.Configure(Config.ConfigDirectory);
                 DataTables.Configure(Config.ConfigDirectory);
                 return;
             }
@@ -1417,6 +1421,7 @@ public partial class MainViewModel : ObservableObject
             // 迁移意外失败 → 回滚目录并提示；**不能让异常上抛**（async void 命令处理器抛出会崩溃整个程序）
             apply(current);
             PartExclusionService.Configure(Config.ConfigDirectory);
+            VehicleExtraPartsService.Configure(Config.ConfigDirectory);
             DataTables.Configure(Config.ConfigDirectory);
             ShowStatus(Loc.Format("migrate.failed", ex.Message));
             return;

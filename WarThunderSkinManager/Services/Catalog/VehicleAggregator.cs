@@ -103,6 +103,25 @@ public static class VehicleAggregator
             };
         }
 
+        // 手动补齐行（§3.10）：与排除行**对偶** —— 那边删掉误写的部件，这边补出漏掉的位置
+        // （例：载具 B 也有同一枚导弹，但涂装只给了 A 的贴图）。同样"候选为空、只把行留在列表里"，
+        // 但语义相反，所以标记为手动补齐、界面给「手动」标签。
+        // 补出来的行就是用户接下来的入口：去涂装管理页的属性页，从跨载具候选给它配贴图（§3.5 / §3.13）
+        foreach (var key in VehicleExtraPartsService.ExtraFor(vehicleId))
+        {
+            // 理论上两者互斥（补的时候会把它从排除清单里移走），但清单文件可被手工编辑：
+            // 万一同一个 from 两边都有，**排除优先**（保守：用户明确删过的东西不该自己冒回来）
+            if (parts.ContainsKey(key)) continue;
+
+            parts[key] = new VehiclePart
+            {
+                From = key,
+                DisplayName = DisplayFrom(key),
+                IsManuallyAdded = true,
+                Tags = PartTagResolver.Resolve(key, vehicleId)
+            };
+        }
+
         vehicle.Parts = parts.Values
             .OrderBy(p => p.From, StringComparer.Ordinal)
             .ToList();

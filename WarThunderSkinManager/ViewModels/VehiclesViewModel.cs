@@ -463,6 +463,86 @@ public partial class VehiclesViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 部件列表标题右侧的「+」：**手动补一个部件位置**（§3.10）—— 这辆车的 blk 里没有它，
+    /// 但用户明确知道"这辆也有这个部件"（典型：同一枚导弹，涂装只适配了另一辆车）。
+    /// </summary>
+    /// <remarks>
+    /// 补出来的只是一个**位置**（一行、候选为空）：要真正复用贴图，还得去涂装管理页的属性页，
+    /// 从跨载具候选里给它选贴图（§3.5 / §3.13）。那一步之所以看得见这个位置，是因为
+    /// <c>PackageEditorViewModel.BuildParts</c> 会把本清单并进候选池 —— **两处必须同时成立**。
+    /// </remarks>
+    [RelayCommand]
+    private void AddPart()
+    {
+        if (SelectedVehicle == null) return;
+        if (!DirectoryGate.EnsureReady(_config)) return; // 目录未就绪 → 引导到设置页
+        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory))
+        {
+            ShowStatus(Loc["settings.configDirRequired"]);
+            return;
+        }
+
+        var vehicle = SelectedVehicle;
+        var resourceDir = _config.ResourceDirectory;
+
+        // 候选取**全库所有载具的所有部件位置**：跨载具补位置正是这个功能的用途，
+        // 不按当前载具收窄（要补的往往就是"本车还没有、别的车才有"的那个位置）。
+        // PartCatalog 有内存快照，首次构建之后就是查表
+        var index = string.IsNullOrWhiteSpace(resourceDir)
+            ? PartNameSearchIndex.Empty
+            : new PartNameSearchIndex(PartCatalog.AllFroms(resourceDir).Select(pair => pair.Key));
+
+        var input = AddPartWindow.Prompt(
+            System.Windows.Application.Current?.MainWindow, index, vehicle.DisplayName,
+            text => AlreadyHasPart(vehicle, text));
+
+        if (input == null) return; // 用户取消
+
+        if (!VehicleExtraPartsService.Add(_config.ConfigDirectory, vehicle.Id, input))
+        {
+            // 已经补过同一个位置（上面的重复校验一般已挡住；这里兜住并发 / 手工编辑清单的情形）
+            ShowStatus(Loc.Format("vehicles.part.add.duplicate", input));
+            return;
+        }
+
+        // 与排除清单**互斥**：同一个 from 不能既"被删除"又"被补齐"，
+        // 否则聚合时两边都命中、界面自相矛盾
+        PartExclusionService.Remove(_config.ConfigDirectory, vehicle.Id, input);
+
+        PartCatalog.Invalidate(); // 部件表一并重建：属性页候选 / 多源复用搜索同步生效
+
+        // 立刻把这一行插进当前列表：Vehicle.Parts 是普通 List，只有整体替换才会通知界面。
+        // （随后触发的全量重建会用 VehicleAggregator.Build 重新聚合出同一行，两边结果一致）
+        var key = VehicleAggregator.NormalizeFrom(input);
+        vehicle.Parts = vehicle.Parts
+            .Append(new VehiclePart
+            {
+                From = key,
+                DisplayName = VehicleAggregator.DisplayFrom(key),
+                IsManuallyAdded = true,
+                Tags = PartTagResolver.Resolve(key, vehicle.Id)
+            })
+            .OrderBy(p => p.From, StringComparer.Ordinal)
+            .ToList();
+
+        OnPropertyChanged(nameof(PartCountText));
+        ShowStatus(Loc.Format("vehicles.part.added", input));
+
+        // 通知主视图重建库：激活输出要按新清单重新组装
+        //（与"删除部件"同一条理由：只改配置不重建，输出不会跟着变）
+        PartExclusionsChanged?.Invoke();
+    }
+
+    /// <summary>该载具是否已经有这个部件位置（按归一化口径比较）——输入框用它就地提示"已存在"。</summary>
+    private static bool AlreadyHasPart(Vehicle vehicle, string input)
+    {
+        var key = VehicleAggregator.NormalizeFrom(input);
+        if (key.Length == 0) return false;
+
+        return vehicle.Parts.Any(p => string.Equals(p.From, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// 部件行的**删除 / 恢复**按钮（§3.10，同一个按钮随行的排除态切换语义）：
     /// 正常行 = **删除**（写排除清单 → 行变灰、提示「已排除」，按钮变红字「恢复」）；
     /// 排除行 = **恢复**（移出排除清单 → 候选与输出随之回来）。
