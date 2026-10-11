@@ -1989,6 +1989,14 @@ internal static class SelfTest
                          + $"、文件夹={optionCfg.ImportDeleteSourceFolder}、压缩包={optionCfg.ImportDeleteArchive}"
                          + $"、WT Live 一键导入={optionCfg.WtLiveAutoImport}（应 True）");
 
+            // 「一键导入」窗口初值（§3.17）：钉住"构造参数 → 复选框"这条直连。
+            // 曾经是"先构造窗口、再给窗口属性赋值"，复选框永远停在默认 false
+            // → 同进程内第二次下载记不住上一次的勾选（实测踩过）
+            var autoImportWindow = new WarThunderSkinManager.Views.WTLiveImportWindow(null, true);
+            var autoImportCheck = autoImportWindow.FindName("AutoImportCheck") as CheckBox;
+            log.AppendLine($"一键导入窗口初值: 属性={autoImportWindow.AutoImport}（应 True）"
+                         + $"、复选框={autoImportCheck?.IsChecked}（应 True）");
+
             // ---- 取消激活 → 清空该载具在 UserSkins 下的输出（保留空 blk，§3.8）----
             log.AppendLine();
             log.AppendLine("---- 取消激活 → 清空输出 ----");

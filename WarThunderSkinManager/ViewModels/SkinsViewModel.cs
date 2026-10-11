@@ -158,11 +158,12 @@ public partial class SkinsViewModel : ObservableObject
         var entryPostId = WtLiveLink.PostIdOf(postUrl);
         if (entryPostId != null && !await ConfirmNotDownloaded(entryPostId.Value)) return;
 
-        var window = string.IsNullOrWhiteSpace(postUrl)
-            ? new WTLiveImportWindow()
-            : new WTLiveImportWindow(postUrl);
+        // 「一键导入」的初值**必须走构造参数**：复选框的初值在窗口构造里就定好了，
+        // "构造完再赋值"会让它永远停在默认的 false —— 同进程内第二次下载就记不住勾选（实测踩过）
+        var window = new WTLiveImportWindow(
+            string.IsNullOrWhiteSpace(postUrl) ? null : postUrl,
+            _config.WtLiveAutoImport);
 
-        window.AutoImport = _config.WtLiveAutoImport; // 预置上次的「一键导入」选择（默认不勾）
         window.Owner = Application.Current?.MainWindow;
         if (window.ShowDialog() != true || window.Post == null) return;
 
@@ -456,9 +457,10 @@ public partial class SkinsViewModel : ObservableObject
             ImportService.AssignGroupKey(candidates, zipPath, ImportSourceType.Archive);
 
             // 帖子链接随包落盘（item.Url）：属性页可打开，下次下载同一帖可提示「已下载」
-            // 「一键导入」（item.AutoImport）→ 静默解构、不弹导入预览窗（§3.17）
+            // 「一键导入」（item.AutoImport）→ 静默解构：不弹导入预览窗、也不开加载遮罩（§3.17）。
+            // external 传本轮 runToken：静默期间没有遮罩，取消入口改由下载条目的「取消」提供
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath,
-                sourceUrl: item.Url, silent: item.AutoImport);
+                sourceUrl: item.Url, silent: item.AutoImport, external: runToken);
 
             // 导入成功 → 预览图（已下载完）应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
@@ -1730,12 +1732,15 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 「预览 → 解构」流程（功能设计 §3.1）。<paramref name="archives"/> 非空时，
     /// 预览里提供「导入成功后删除压缩包」选项（默认不勾，见 <see cref="ImportPreviewViewModel"/>）。
-    /// <paramref name="silent"/> = <c>true</c> 时**跳过预览窗**直接解构（WT Live 的「一键导入」，§3.17）：
-    /// 用扫描出的默认命名，且**不**记录任何「删除源 / 删除压缩包」勾选（用户没在预览里确认过）。
+    /// <paramref name="silent"/> = <c>true</c> 时**跳过预览窗、并且全程不开加载遮罩**直接解构
+    /// （WT Live 的「一键导入」，§3.17）：用扫描出的默认命名，且**不**记录任何
+    /// 「删除源 / 删除压缩包」勾选（用户没在预览里确认过）。
+    /// <paramref name="external"/> 供静默路径传入调用方的取消令牌 —— 那时没有遮罩可点取消。
     /// </summary>
     private async Task<ImportResult?> RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
         string sourcePath, bool canDeleteArchive = false, IReadOnlyList<string>? archives = null,
-        string extraStatus = "", string? sourceUrl = null, bool silent = false)
+        string extraStatus = "", string? sourceUrl = null, bool silent = false,
+        CancellationToken external = default)
     {
         try
         {
@@ -1776,18 +1781,33 @@ public partial class SkinsViewModel : ObservableObject
             preview.ApplyNames();
 
             // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，
-            // 上百 GB 批量导入时可从遮罩上取消——取消在包之间生效，已完成的包保留
-            using var cts = new CancellationTokenSource();
+            // 上百 GB 批量导入时可从遮罩上取消——取消在包之间生效，已完成的包保留。
+            // 静默路径（「一键导入」）把调用方的令牌关联进来充当取消源（那条路没有遮罩可点取消）
+            using var cts = silent
+                ? CancellationTokenSource.CreateLinkedTokenSource(external)
+                : new CancellationTokenSource();
             ImportResult result;
 
-            using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressCommitting"], cts.Cancel))
+            if (silent)
             {
-                scope.Report(0, candidates.Count); // 与旧进度窗一致：起始就显示 0 / N
-                var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
-
-                // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
+                // **全程不开遮罩**：用户此刻还在看下载列表，弹一个全屏"处理中"会把界面整个锁住，
+                // 与"静默"的承诺正好相反；进度也没地方显示（没有进度条），直接丢弃
+                var silentReporter = new Progress<ImportProgress>(_ => { });
                 result = await Task.Run(() => ImportService.Commit(
-                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl));
+                    candidates, _config.ResourceDirectory, sourceType, sourcePath,
+                    silentReporter, cts.Token, sourceUrl));
+            }
+            else
+            {
+                using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressCommitting"], cts.Cancel))
+                {
+                    scope.Report(0, candidates.Count); // 与旧进度窗一致：起始就显示 0 / N
+                    var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
+
+                    // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
+                    result = await Task.Run(() => ImportService.Commit(
+                        candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl));
+                }
             }
 
             PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
@@ -1797,8 +1817,9 @@ public partial class SkinsViewModel : ObservableObject
                 ? Loc.Format("import.canceled", result.Packages.Count)
                 : Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
             // 源清理 / 删压缩包都是**文件 IO**（整目录递归删除，几十 GB 的源可能很慢）→ 放后台；
-            // 连同末尾的库重建一起开遮罩：进度窗此时已关，这一段是"看不见的收尾"（用户以为已经结束）
-            using (BusyIndicator.Instance.Begin(Loc["busy.import"]))
+            // 连同末尾的库重建一起开遮罩：进度窗此时已关，这一段是"看不见的收尾"（用户以为已经结束）。
+            // **静默路径不开** —— 全程无遮罩是「一键导入」的承诺（传 null 时 using 会安全跳过 Dispose）
+            using (silent ? null : BusyIndicator.Instance.Begin(Loc["busy.import"]))
             {
                 if (!result.Canceled && preview.DeleteSource)
                 {

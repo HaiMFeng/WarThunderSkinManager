@@ -37,14 +37,27 @@ public partial class WTLiveImportWindow : Window
     /// <summary>要预填并自动读取的帖子链接（见带参构造）；null = 空白等用户粘贴 / 输入。</summary>
     private readonly string? _pendingUrl;
 
-    public WTLiveImportWindow()
+    /// <summary>
+    /// <paramref name="postUrl"/> 非空则**预填并立即读取**（WT Live 浏览页卡片 / 详情浮窗的下载按钮走这条）；
+    /// null = 空白等粘贴 / 输入（涂装管理页的入口）——两个入口共用一个窗口。
+    /// <para>
+    /// <paramref name="autoImport"/> 是「一键导入」的**初值**（宿主传上次的记忆，默认不勾）。
+    /// 它必须是**构造参数**、不能在构造之后再赋值：复选框的初值在构造函数里就要定好，
+    /// "构造完再赋值"会让它永远停在默认的 <c>false</c> —— 这正是"同进程内第二次下载记不住勾选"的成因。
+    /// </para>
+    /// </summary>
+    public WTLiveImportWindow(string? postUrl, bool autoImport)
     {
         InitializeComponent();
+
+        _pendingUrl = postUrl;
+        AutoImport = autoImport;
+        AutoImportCheck.IsChecked = autoImport; // 初值 = 上次的记忆（默认不勾）
+
         Closed += (_, _) => _closed = true;
-        AutoImportCheck.IsChecked = AutoImport; // 初值 = 上次的记忆（宿主在 ShowDialog 前写入；默认不勾）
         UrlBox.Focus();
 
-        // 预填链接（见带参构造）：等窗口显示出来再读——读取时要显示「正在读取涂装信息…」，
+        // 预填链接：等窗口显示出来再读——读取时要显示「正在读取涂装信息…」，
         // 在构造里发起会赶在首次渲染之前，用户只看到结果、看不到过程
         Loaded += (_, _) =>
         {
@@ -55,12 +68,6 @@ public partial class WTLiveImportWindow : Window
             _ = FetchAsync();
         };
     }
-
-    /// <summary>
-    /// 预填帖子链接并**立即读取**（WT Live 浏览页卡片上的下载按钮走这条）：
-    /// 与"用户粘贴链接 → 点读取"同一条路径，只是省掉这两步。
-    /// </summary>
-    public WTLiveImportWindow(string postUrl) : this() => _pendingUrl = postUrl;
 
     private void Fetch_Click(object sender, RoutedEventArgs e) => _ = FetchAsync();
 
