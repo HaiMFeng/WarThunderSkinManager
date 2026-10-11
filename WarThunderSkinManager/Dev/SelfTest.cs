@@ -2210,6 +2210,31 @@ internal static class SelfTest
                 log.AppendLine($"自检异常：语言表键不齐平（en 缺 {missingKeys.Count}、zh 缺 {enOnlyKeys.Count}）"
                              + " → 缺失侧会显示成另一种语言");
 
+            // 占位符一致性：同一条 key 的中英文 `{n}` 集合必须相同 ——
+            // 少一个 `{0}` 时 Format 会**静默丢掉**那段信息（那一侧读起来莫名其妙），且只在运行时才发现
+            var zhTableForPlaceholders = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                File.ReadAllText(Path.Combine(workDir, "cfg-lang", "lang", "zh-CN.json"), Encoding.UTF8))!;
+            var enTableForPlaceholders = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                File.ReadAllText(Path.Combine(langEnRoot, "lang", "en-US.json"), Encoding.UTF8))!;
+
+            static string PlaceholdersOf(string text)
+                => string.Join(",", System.Text.RegularExpressions.Regex.Matches(text, @"\{(\d+)\}")
+                    .Select(m => m.Groups[1].Value)
+                    .OrderBy(v => v, StringComparer.Ordinal));
+
+            var placeholderMismatch = zhTableForPlaceholders.Keys
+                .Where(enTableForPlaceholders.ContainsKey)
+                .Where(k => PlaceholdersOf(zhTableForPlaceholders[k]) != PlaceholdersOf(enTableForPlaceholders[k]))
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToList();
+
+            log.AppendLine($"占位符一致: 不一致 {placeholderMismatch.Count} 条（应 0）"
+                         + (placeholderMismatch.Count > 0 ? "：" + string.Join(", ", placeholderMismatch) : ""));
+
+            if (placeholderMismatch.Count > 0)
+                log.AppendLine($"自检异常：语言表占位符不一致（{placeholderMismatch.Count} 条）"
+                             + " → 少掉的那一侧会丢失信息（Format 静默不填）");
+
             // ---- 文案体检（静态扫语言表 + XAML 源码）----
             // ① XAML 里 {loc:Loc key} 用到的 key 必须在语言表里：拼错 / 改名没同步 → 界面显示 ⟦key⟧，判失败
             // ② XAML 里不该有**写死的用户可见文本**（Text="中文" 这种），判失败

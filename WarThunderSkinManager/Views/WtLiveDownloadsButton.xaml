@@ -101,14 +101,22 @@
                                 <StackPanel Margin="0,0,0,10">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <!-- 文件名可压缩（`*`）：状态文案一长**先压它** ——
+                                                 右侧两个操作按钮是最后才该被牺牲的东西 -->
+                                            <ColumnDefinition Width="*" MinWidth="72"/>
+                                            <!-- 状态文案**限宽**（`Auto` + `MaxWidth`）：它的失败原因直接来自
+                                                 异常消息、可能极长；不限宽时 `Auto` 列会按期望宽度撑开，
+                                                 把右边两个按钮顶出浮窗（实测踩过） -->
+                                            <ColumnDefinition Width="Auto" MaxWidth="150"/>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
                                                    ToolTip="{Binding FileName}"/>
+                                        <!-- 限宽后必然出现截断 → 悬停给全文，信息不丢 -->
                                         <TextBlock Grid.Column="1" Text="{Binding StateText}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding StateText}"
                                                    Style="{StaticResource PageSubtitle}" Margin="12,0,0,0"/>
                                         <!-- 常驻「重试」（**图标按钮** &#xF021;，紧凑、不占文字宽度）：下载中也能点 =
                                              掐断当前下载并重跑（察觉卡死时直接掐断）。

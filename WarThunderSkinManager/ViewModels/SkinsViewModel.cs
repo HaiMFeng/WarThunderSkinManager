@@ -536,11 +536,15 @@ public partial class SkinsViewModel : ObservableObject
         {
             // 读取停滞 / 服务器超时，且自动重试用尽
             item.State = WtLiveDownloadState.Failed;
-            item.SetStateText("wtlive.state.failed", Loc["wtlive.state.stalled"]);
+            // 次数由常量格式化：原先写死在文案里，与 WTLiveService 的常量有失步风险
+            item.SetStateText("wtlive.state.failed",
+                Loc.Format("wtlive.state.stalled", WTLiveService.DownloadAttempts));
         }
         catch (Exception ex)
         {
-            var reason = ex.GetBaseException().Message;
+            // 异常消息可能很长（HTTP 异常常带整段状态行 / URL）→ 折成一行并截断：
+            // 条目里那一列是**限宽**的（见 WtLiveDownloadsButton 的列定义），顶部提示也只有一行
+            var reason = Shorten(ex.GetBaseException().Message);
 
             // 只有预览图失败（压缩包已下好）→ 给出更准确的原因与指引
             var previewOnly = hasPreview && previewTaskFailed();
@@ -582,6 +586,16 @@ public partial class SkinsViewModel : ObservableObject
         item.State = WtLiveDownloadState.Canceled;
         item.SetStateText("wtlive.state.canceled");
         item.Progress = 0;
+    }
+
+    /// <summary>
+    /// 把可能很长的失败原因折成**一行**并截断：状态文案那一列是限宽的（浮窗条目），
+    /// 顶部提示也只有一行 —— 一长串 .NET 异常消息既读不懂、又会把布局挤坏。
+    /// </summary>
+    private static string Shorten(string text, int max = 80)
+    {
+        var oneLine = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return oneLine.Length <= max ? oneLine : oneLine[..max] + "…";
     }
 
     private static void TryDeletePath(string? path)
