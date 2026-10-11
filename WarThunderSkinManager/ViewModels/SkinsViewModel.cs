@@ -1387,11 +1387,13 @@ public partial class SkinsViewModel : ObservableObject
     /// 投影（快照 → 载具视图）同样重，也一并放后台。
     /// <para>用信号量串行化：并发重建会各自写索引快照、互相覆盖，且叠加 CPU 争抢。</para>
     /// </remarks>
-    private async Task RefreshLibraryAsync()
+    private async Task RefreshLibraryAsync(bool showBusy = true)
     {
         // "处理中"遮罩（§2.6）：这条路径是复制 / 删除 / 导入 / 保存的**共同慢尾巴**，
-        // 放在这里保证任何一条入口都有反馈；外层若已开遮罩，文案取外层（更具体）那次
-        using var busy = BusyIndicator.Instance.Begin(Loc["busy.refresh"]);
+        // 放在这里保证任何一条入口都有反馈；外层若已开遮罩，文案取外层（更具体）那次。
+        // **静默导入**（「一键导入」，§3.17）要求全程无遮罩 —— 由调用方传 showBusy: false 关掉；
+        // 否则上层的遮罩虽然跳过了，这个**开在方法内部的兜底遮罩**仍会冒出来（实测踩过）
+        using var busy = showBusy ? BusyIndicator.Instance.Begin(Loc["busy.refresh"]) : null;
 
         await _refreshGate.WaitAsync();
         try
@@ -1780,9 +1782,15 @@ public partial class SkinsViewModel : ObservableObject
 
             preview.ApplyNames();
 
+            // 静默导入（「一键导入」，§3.17）**全程不开遮罩**。这条路径上遮罩有三处来源，
+            // 都在这里显式关掉 —— 将来若在本路径新增遮罩调用，记得一并处理（曾漏过一处）：
+            //   ① 下面「解构落盘」那次          → silent 分支不开
+            //   ② 再下面「收尾（源清理 / 库重建）」那次 → silent 时传 null
+            //   ③ RefreshLibraryAsync **内部**的兜底遮罩 → showBusy: false
+            //
             // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，
             // 上百 GB 批量导入时可从遮罩上取消——取消在包之间生效，已完成的包保留。
-            // 静默路径（「一键导入」）把调用方的令牌关联进来充当取消源（那条路没有遮罩可点取消）
+            // 静默路径把调用方的令牌关联进来充当取消源（那条路没有遮罩可点取消）
             using var cts = silent
                 ? CancellationTokenSource.CreateLinkedTokenSource(external)
                 : new CancellationTokenSource();
@@ -1833,7 +1841,8 @@ public partial class SkinsViewModel : ObservableObject
 
                 message += extraStatus;
 
-                await RefreshLibraryAsync();
+                // 静默导入连这一个也要关掉：它开在刷新方法**内部**，不是这层的外层遮罩
+                await RefreshLibraryAsync(showBusy: !silent);
             }
 
             ShowStatus(message);
