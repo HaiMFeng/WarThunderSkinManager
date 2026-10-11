@@ -177,15 +177,19 @@
                                 <!-- 部件（按 from 聚合；贴图适配在涂装管理页，见 §3.5 / §3.10）。
                                      标题右侧「+」= **手动补一个部件位置**：作者没适配、用户却明确知道
                                      "这辆也有"的位置（典型：同一枚导弹，涂装只给了另一辆车的贴图）。
-                                     补完只是让这一行出现，接着去涂装管理页属性页从跨载具候选配贴图 -->
-                                <Grid Margin="0,24,0,8">
-                                    <TextBlock Text="{loc:Loc vehicles.parts}" Style="{StaticResource SectionTitle}"/>
-                                    <Button Style="{StaticResource IconButton}"
-                                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                                     补完只是让这一行出现，接着去涂装管理页属性页从跨载具候选配贴图。
+                                     「+」**紧贴标题**（横向 StackPanel）而不是右对齐：它是这个标题的
+                                     附属动作（往"部件结构"里加一条），飘到右端会被看成一个行尾的全局操作 -->
+                                <StackPanel Orientation="Horizontal" Margin="0,24,0,8">
+                                    <TextBlock Text="{loc:Loc vehicles.parts}" Style="{StaticResource SectionTitle}"
+                                               VerticalAlignment="Center"/>
+                                    <!-- 左距 2：按钮字形本身在 24 的格子居中（左右各留 ~5），再贴就咬字了 -->
+                                    <Button Style="{StaticResource IconButton}" Margin="2,0,0,0"
+                                            VerticalAlignment="Center"
                                             Content="&#xF067;" FontSize="13"
                                             ToolTip="{loc:Loc vehicles.parts.add.tooltip}"
                                             Command="{Binding Vehicles.AddPartCommand}"/>
-                                </Grid>
+                                </StackPanel>
                                 <TextBlock Text="{loc:Loc vehicles.parts.hint}" Style="{StaticResource PageSubtitle}"
                                            TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <Grid Margin="0,0,0,6">
