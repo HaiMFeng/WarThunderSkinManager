@@ -40,7 +40,6 @@ public sealed class CountryOption
 public partial class VehiclesViewModel : ObservableObject
 {
     private readonly AppConfig _config;
-    private readonly DispatcherTimer _statusTimer;
 
     /// <summary>同步界面字段时置位，避免把「加载」误当成「用户修改」而反复落盘。</summary>
     private bool _syncing;
@@ -77,7 +76,6 @@ public partial class VehiclesViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<CountryOption> _countryOptions = new();
     [ObservableProperty] private CountryOption? _selectedCountryOption;
     [ObservableProperty] private string _editDisplayName = "";
-    [ObservableProperty] private string _statusMessage = "";
 
     /// <summary>
     /// 部件排除清单发生变化（删 / 恢复部件）→ 由 <c>MainViewModel</c> 触发一次**库重建**。
@@ -93,13 +91,6 @@ public partial class VehiclesViewModel : ObservableObject
     public VehiclesViewModel(AppConfig config)
     {
         _config = config;
-
-        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
-        _statusTimer.Tick += (_, _) =>
-        {
-            StatusMessage = "";
-            _statusTimer.Stop();
-        };
 
         BuildCountryOptions();
         InitializeLibrary();
@@ -537,16 +528,9 @@ public partial class VehiclesViewModel : ObservableObject
         PartExclusionsChanged?.Invoke();
     }
 
-    private void ShowStatus(string message)
-    {
-        // 相同消息连续第二次时 setter 因值相等不播报 → 手动补一次通知，
-        // 由主窗口以闪烁提示「又发生了一次」（文本本就在显示，无需重新赋值）
-        if (string.Equals(StatusMessage, message, StringComparison.Ordinal))
-            OnPropertyChanged(nameof(StatusMessage));
-        else
-            StatusMessage = message;
-
-        _statusTimer.Stop();
-        _statusTimer.Start();
-    }
+    /// <summary>
+    /// 操作反馈 → 顶部气泡提示（§2.7）：交给 <see cref="ToastService"/> 排队显示
+    /// （最多 4 条、各 2 秒、点击消除），不再走"标题栏一行文本 + 定时器清空"。
+    /// </summary>
+    private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

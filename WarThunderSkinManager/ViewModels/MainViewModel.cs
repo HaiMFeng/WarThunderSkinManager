@@ -150,18 +150,6 @@ public partial class MainViewModel : ObservableObject
     /// <summary>当前选中的导航页（启动默认为涂装管理）</summary>
     [ObservableProperty] private TabKey _selectedTab = TabKey.Skins;
 
-    /// <summary>操作反馈（保存结果等），短暂显示后自动清空</summary>
-    [ObservableProperty] private string _statusMessage = "";
-
-    /// <summary>
-    /// 状态强调信号：**连续相同**的状态消息不重新赋值（值相等不播报），
-    /// 改为**翻转**此标记（true⇄false 交替，每次必播报）驱动标题栏一次主色光晕脉冲
-    /// （动画自带回弹，标记状态本身无含义）。
-    /// </summary>
-    [ObservableProperty] private bool _statusFlash;
-
-    private readonly DispatcherTimer _statusTimer;
-
     /// <summary>涂装管理页视图模型（导入入口 + 涂装包卡片）</summary>
     public SkinsViewModel Skins { get; }
 
@@ -376,11 +364,6 @@ public partial class MainViewModel : ObservableObject
             s => string.Equals(s.Id, config.WtLivePreviewCacheMb, StringComparison.Ordinal))
             ?? WtLiveCacheSizes.First(s => s.Id == WtLiveCacheSizeCatalog.DefaultId);
 
-        // 子页状态变化 → 刷新标题右侧的统一提示位点
-        Skins.PropertyChanged += OnChildChanged;
-        Vehicles.PropertyChanged += OnChildChanged;
-        PartReuse.PropertyChanged += OnChildChanged;
-
         // 从详情浮窗点「下载」：下载流程走完（确认窗关掉、下载真的开始了）就**退出详情** ——
         // 用户此刻要看的是下载进度，不是刚才那个详情；卡片上的下载按钮不经详情，这一手对那条路径无影响
         Skins.WtLiveDownloadStarted += () => WtLive.Detail.CloseCommand.Execute(null);
@@ -389,13 +372,6 @@ public partial class MainViewModel : ObservableObject
         DirectoryGate.Blocked += OnDirectoriesBlocked;
 
         Config.PropertyChanged += OnConfigChanged;
-
-        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
-        _statusTimer.Tick += (_, _) =>
-        {
-            StatusMessage = "";
-            _statusTimer.Stop();
-        };
 
         // Saves 目录自动探测（§3.14）：默认路径存在即静默采用；失败不阻塞（设置页可手选，不参与迁移）
         if (string.IsNullOrWhiteSpace(Config.SavesDirectory))
@@ -419,26 +395,6 @@ public partial class MainViewModel : ObservableObject
 
         // 应用自更新（§3.16）：快捷方式状态 → 上次更新的首启提示 → 延迟自动检查
         InitAppUpdate();
-    }
-
-    /// <summary>
-    /// 子页状态 → **镜像到全局状态**：状态提示统一显示在窗口标题栏（应用名右侧），
-    /// 因此不管当时在哪一页（例如切走后自动同步才落盘）都能看到反馈。
-    /// </summary>
-    private void OnChildChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(SkinsViewModel.StatusMessage)) return;
-        if (sender is not { } source) return;
-
-        var message = source switch
-        {
-            SkinsViewModel skins => skins.StatusMessage,
-            VehiclesViewModel vehicles => vehicles.StatusMessage,
-            PartReuseViewModel partReuse => partReuse.StatusMessage,
-            _ => ""
-        };
-
-        if (message.Length > 0) ShowStatus(message);
     }
 
     // ---------- 目录变更迁移（§3：设置页更换目录时把数据带走） ----------
@@ -2255,22 +2211,10 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private void ShowStatus(string message)
-    {
-        // 连续相同消息：值相等 setter 不播报（文本本就在显示），改为**主色高亮一瞬**表达强调；
-        // 相异消息正常显示。高亮由 _flashTimer 自动回落（见下）
-        var repeat = string.Equals(StatusMessage, message, StringComparison.Ordinal);
-
-        if (!repeat)
-        {
-            StatusMessage = message;
-        }
-        else
-        {
-            StatusFlash = !StatusFlash; // 每次翻转必播报 → 标题栏脉冲一次光晕
-        }
-
-        _statusTimer.Stop();
-        _statusTimer.Start();
-    }
+    /// <summary>
+    /// 操作反馈 → 顶部气泡提示（§2.7）。原先走"标题栏一行文本 + 定时器清空"：多条消息会
+    /// **互相覆盖**，且受一行宽度所限只能截断；现在交给 <see cref="ToastService"/> 排队显示
+    /// （最多 4 条、各 2 秒、点击消除）。相同文案连发也不再需要"光晕脉冲"那套代偿 —— 它会各自成条。
+    /// </summary>
+    private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

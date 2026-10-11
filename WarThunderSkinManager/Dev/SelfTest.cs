@@ -3055,6 +3055,29 @@ internal static class SelfTest
             log.AppendLine($"遮罩抑制: 抑制中 IsBusy={suppressedBusy}（应 False）、文案为空 = {suppressedText.Length == 0}（应 True）、"
                          + $"释放后 IsBusy={recoveredBusy}（应 True）、全部释放后 IsBusy={BusyIndicator.Instance.IsBusy}（应 False）");
 
+            // ---- 顶部气泡提示（§2.7）：上限 4 条、超出顶掉最早、点击消除 ----
+            var toasts = ToastService.Instance;
+            foreach (var old in toasts.Items.ToList()) toasts.Dismiss(old); // 先清场（自检可能被重复调用）
+
+            for (var i = 1; i <= 4; i++) toasts.Show($"第 {i} 条");
+            var toastCountAtLimit = toasts.Items.Count;                 // 应 4
+            var toastOldestAtLimit = toasts.Items[0].Message;           // 应「第 1 条」
+
+            toasts.Show("第 5 条");                                      // 超上限 → 顶掉**最早**那条
+            var toastCountAfterOverflow = toasts.Items.Count;           // 应 4
+            var toastOldestAfterOverflow = toasts.Items[0].Message;     // 应「第 2 条」
+            var toastNewest = toasts.Items[^1].Message;                 // 应「第 5 条」
+
+            toasts.Dismiss(toasts.Items[0]);                            // 点击消除一条
+            var toastCountAfterDismiss = toasts.Items.Count;            // 应 3
+            var toastOldestAfterDismiss = toasts.Items[0].Message;      // 应「第 3 条」
+
+            log.AppendLine($"气泡提示   : 上限 = {ToastService.MaxVisible} 条 / 每条 {ToastService.DefaultLifetime.TotalSeconds} 秒（应 4 / 2），"
+                         + $"满 4 条后最早 = {toastOldestAtLimit}（应 第 1 条，共 {toastCountAtLimit}）；"
+                         + $"再来一条顶掉最早 = {toastCountAfterOverflow} 条、最早变 {toastOldestAfterOverflow}（应 4 / 第 2 条）、"
+                         + $"最新 = {toastNewest}（应 第 5 条）；"
+                         + $"点击消除一条 = {toastCountAfterDismiss} 条、最早变 {toastOldestAfterDismiss}（应 3 / 第 3 条）");
+
             // ---- 应用自更新（§6，docs/应用自更新设计.md）：离线可验证的部分 ----
             // 版本比较：必须按 SemVer（字符串比会在 0.1.10 vs 0.1.9 上翻车；-dev 是预发布标识）
             AppVersion.TryParse("v0.1.4-dev", out var vCur);

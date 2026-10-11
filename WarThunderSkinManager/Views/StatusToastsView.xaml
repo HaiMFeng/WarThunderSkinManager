@@ -1,0 +1,60 @@
+<UserControl x:Class="WarThunderSkinManager.Views.StatusToastsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+             xmlns:services="clr-namespace:WarThunderSkinManager.Services">
+    <!-- 顶部居中的气泡提示（§2.7）：最多 4 条纵向堆叠（上限在服务侧），每条底部带剩余时间进度条，
+         点击气泡任意位置立即消除该条。
+         ItemsSource 在 code-behind 里直接绑 ToastService —— 本控件挂在窗口层，DataContext 是
+         MainViewModel，与提示队列无关，不去绕 DataContext。
+         空白处不挡命中测试：ItemsControl 自身没背景，只有气泡 Border 有。 -->
+    <ItemsControl x:Name="ToastList" HorizontalAlignment="Center" Focusable="False">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate>
+                <!-- 气泡本体。点击任意位置 = 消除（Cursor 给出手感暗示，ToolTip 说出这条捷径） -->
+                <Border Margin="0,0,0,8" Padding="16,10" CornerRadius="10"
+                        Background="{StaticResource BrushSurface}"
+                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                        Cursor="Hand" MouseLeftButtonUp="Toast_Click"
+                        ToolTip="{loc:Loc common.dismissHint}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270"
+                                          Opacity="0.18" Color="{StaticResource ColorShadow}"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <!-- 文案**换行**显示：原方案的病根之一就是标题栏只放得下一行、只能截断 -->
+                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" MaxWidth="520"
+                                   Foreground="{StaticResource BrushText}"/>
+                        <!-- 剩余时间进度条：贴底、2px 高，ScaleX 由 1 动到 0。
+                             Duration 取服务里的同一个值（x:Static，不走 Binding ——
+                             动画属性上的 Binding 依赖 DataContext 继承链，在模板里容易失效）。
+                             动画跑在**合成线程**，不占 UI 线程：多条并发也不增加刷新负担。 -->
+                        <Grid Height="2" Margin="0,10,0,-8" ClipToBounds="True">
+                            <Border CornerRadius="1" Background="{StaticResource BrushSurface2}"/>
+                            <Border x:Name="ToastBar" CornerRadius="1"
+                                    Background="{StaticResource BrushPrimary}"
+                                    RenderTransformOrigin="0,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="1"/>
+                                </Border.RenderTransform>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <DataTemplate.Triggers>
+                    <!-- 条目加载即开始倒计时。中途被点击 / 顶掉时元素被销毁，动画随之停止，不需要手工 Stop -->
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="ToastBar"
+                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                 From="1" To="0"
+                                                 Duration="{x:Static services:ToastService.DefaultLifetimeDuration}"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </DataTemplate.Triggers>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>

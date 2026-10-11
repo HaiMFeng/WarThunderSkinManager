@@ -60,10 +60,7 @@
                 <TextBlock Grid.Column="0" Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
                            VerticalAlignment="Center" Margin="14,0"
                            FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}"/>
-                <!-- 全局状态提示：统一放在应用名右侧（所有页面的操作反馈都来这里）；
-                     连续相同消息不重新赋值，改由 StatusFlash 驱动一次主色光晕脉冲（见 MainWindow.xaml.cs） -->
-                <TextBlock x:Name="StatusText" Grid.Column="1"
-                           Style="{StaticResource TitleBarStatusText}" Text="{Binding StatusMessage}"/>
+
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,6,0">
                     <!-- 置顶：点一下置顶、再点一下取消（图钉 &#xF08D;；置顶时图标变主色以示状态） -->
                     <Button Content="&#xF08D;" Click="Pin_Click" ToolTip="{loc:Loc app.window.pin}">
@@ -409,6 +406,15 @@
             <!-- 全局"处理中"遮罩（§2.6）：样式统一、可复用，实现见 Views/BusyOverlay.xaml。
                  文案 / 进度 / 取消由 BusyIndicator 驱动（嵌套时取最外层）。 -->
             <views:BusyOverlay Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="50"/>
-        </Grid>
+
+            <!-- 顶部居中的气泡提示（§2.7，替代原先标题栏那一行状态文本）：
+                 最多 4 条纵向堆叠、每条 2 秒、底部剩余时间进度条、点击消除 —— 规则都在 ToastService 里。
+                 层级 60 > 遮罩 50：连"处理中"期间的操作结果（如导入完成）也要看得见；
+                 顶部偏移 44 = 标题栏 36 + 8 间隙，不遮标题栏上的窗口按钮。
+                 只占自身内容尺寸，空白处不参与命中测试（见 StatusToastsView）。 -->
+            <views:StatusToastsView Grid.RowSpan="2" Panel.ZIndex="60"
+                                    HorizontalAlignment="Center" VerticalAlignment="Top"
+                                    Margin="0,44,0,0"/>
+            </Grid>
     </Border>
 </Window>

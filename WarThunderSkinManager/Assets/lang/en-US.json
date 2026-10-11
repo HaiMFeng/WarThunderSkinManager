@@ -18,6 +18,7 @@
   "common.configDirNotReady": "The configuration directory is not ready yet",
   "common.continue": "Continue",
   "common.close": "Close",
+  "common.dismissHint": "Click to dismiss this message",
   "common.tip": "Tip",
   "settings.title": "Settings",
   "settings.subtitle": "Directories, interface language and data maintenance",

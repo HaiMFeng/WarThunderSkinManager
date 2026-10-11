@@ -126,8 +126,6 @@ public partial class PartReuseViewModel : ObservableObject
 
     [ObservableProperty] private ObservableCollection<PartSearchResultVm> _searchResults = new();
 
-    [ObservableProperty] private string _statusMessage = "";
-
     /// <summary>
     /// 部件表是否正在后台加载（进入本页 / 库变动后首次构建较重，§4）：
     /// 为 true 时搜索结果显示**加载动画**，就绪后一次性显示列表。
@@ -385,13 +383,9 @@ public partial class PartReuseViewModel : ObservableObject
         return true;
     }
 
-    private void ShowStatus(string message)
-    {
-        // 相同消息连续第二次时 setter 因值相等不播报 → 手动补一次通知，
-        // 由主窗口以闪烁提示「又发生了一次」（文本本就在显示，无需重新赋值）
-        if (string.Equals(StatusMessage, message, StringComparison.Ordinal))
-            OnPropertyChanged(nameof(StatusMessage));
-        else
-            StatusMessage = message;
-    }
+    /// <summary>
+    /// 操作反馈 → 顶部气泡提示（§2.7）：交给 <see cref="ToastService"/> 排队显示
+    /// （最多 4 条、各 2 秒、点击消除），不再走"标题栏一行文本"。
+    /// </summary>
+    private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

@@ -48,7 +48,6 @@ public partial class SkinsViewModel : ObservableObject
     private const int ThumbnailDecodeWidth = 640;
 
     private readonly AppConfig _config;
-    private readonly DispatcherTimer _statusTimer;
 
     private List<Vehicle> _allVehicles = new();
 
@@ -62,7 +61,6 @@ public partial class SkinsViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<SkinPackage> _packages = new();
     [ObservableProperty] private SkinPackage? _selectedPackage;
     [ObservableProperty] private VehicleActivation _activation = new();
-    [ObservableProperty] private string _statusMessage = "";
 
     /// <summary>包卡片宽度（随窗口自适应，由视图在 SizeChanged 时计算下发）</summary>
     [ObservableProperty] private double _cardWidth = 150;
@@ -619,13 +617,6 @@ public partial class SkinsViewModel : ObservableObject
 
         // 启动时清扫导入暂存区：上次会话（含被强杀的下载）可能留下残留（§3.17）
         try { ArchiveService.CleanupStagingRoot(config.ResourceDirectory); } catch { /* 目录不可写时忽略 */ }
-
-        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _statusTimer.Tick += (_, _) =>
-        {
-            StatusMessage = "";
-            _statusTimer.Stop();
-        };
 
         HookDownloadNotifications(); // 「有下载任务」状态要能实时反映到界面（下载按钮图标着色）
 
@@ -2257,16 +2248,9 @@ public partial class SkinsViewModel : ObservableObject
         return true;
     }
 
-    private void ShowStatus(string message)
-    {
-        // 相同消息连续第二次时 setter 因值相等不播报 → 手动补一次通知，
-        // 由主窗口以闪烁提示「又发生了一次」（文本本就在显示，无需重新赋值）
-        if (string.Equals(StatusMessage, message, StringComparison.Ordinal))
-            OnPropertyChanged(nameof(StatusMessage));
-        else
-            StatusMessage = message;
-
-        _statusTimer.Stop();
-        _statusTimer.Start();
-    }
+    /// <summary>
+    /// 操作反馈 → 顶部气泡提示（§2.7）：交给 <see cref="ToastService"/> 排队显示
+    /// （最多 4 条、各 2 秒、点击消除），不再走"标题栏一行文本 + 定时器清空"。
+    /// </summary>
+    private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

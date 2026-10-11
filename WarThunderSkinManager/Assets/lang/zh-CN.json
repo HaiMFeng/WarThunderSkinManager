@@ -18,6 +18,7 @@
   "common.configDirNotReady": "配置目录尚未就绪",
   "common.continue": "继续",
   "common.close": "关闭",
+  "common.dismissHint": "点击消除这条提示",
   "common.tip": "提示",
   "settings.title": "设置",
   "settings.subtitle": "目录、界面语言与数据维护",
