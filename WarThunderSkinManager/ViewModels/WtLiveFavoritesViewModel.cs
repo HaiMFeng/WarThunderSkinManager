@@ -87,7 +87,7 @@ public partial class WtLiveFavoriteAuthorItem : ObservableObject
 }
 
 /// <summary>
-/// 「收藏的作者」（§3.16）：WT Live 页工具栏的星标按钮打开它，遮罩浮窗里**逐行**显示
+/// 「收藏的作者」（§3.17）：WT Live 页工具栏的星标按钮打开它，遮罩浮窗里**逐行**显示
 /// 头像 / 昵称 / 删除按钮，可拖动排序，点一行 = 按该作者搜涂装。
 /// <para>
 /// 内存里这份 <see cref="Items"/> 是唯一真源：任何收藏 / 取消 / 删除 / 排序都**整体落盘**

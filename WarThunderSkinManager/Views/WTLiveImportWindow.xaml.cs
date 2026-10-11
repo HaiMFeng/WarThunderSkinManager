@@ -11,7 +11,7 @@ using WarThunderSkinManager.Services;
 namespace WarThunderSkinManager.Views;
 
 /// <summary>
-/// 「从 WT Live 下载」窗口（§3.15）：粘贴帖子链接 → 校验并读取帖子信息
+/// 「从 WT Live 下载」窗口（§3.17）：粘贴帖子链接 → 校验并读取帖子信息
 /// （作者 / 文件 / 预览图 / 正文）→ 用户确认无误后「开始下载」，
 /// 下载与导入由 <see cref="ViewModels.SkinsViewModel.StartWtLiveDownload"/> 接管。
 /// <para>
@@ -28,7 +28,7 @@ public partial class WTLiveImportWindow : Window
 
     /// <summary>
     /// 「一键导入」：宿主在开窗前写入**上次的记忆**作为初值（默认 <c>false</c>），窗口据此预置复选框；
-    /// 用户点「开始下载」后由 <see cref="Start_Click"/> 回读，宿主再落盘成下次的默认值（§3.15）。
+    /// 用户点「开始下载」后由 <see cref="Start_Click"/> 回读，宿主再落盘成下次的默认值（§3.17）。
     /// </summary>
     public bool AutoImport { get; set; }
 

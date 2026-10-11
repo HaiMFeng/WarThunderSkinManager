@@ -7,7 +7,7 @@ using System.Windows.Threading;
 namespace WarThunderSkinManager.Views;
 
 /// <summary>
-/// WT Live 下载列表入口（涂装管理页页头与 WT Live 页工具栏共用，§3.15）：
+/// WT Live 下载列表入口（涂装管理页页头与 WT Live 页工具栏共用，§3.17）：
 /// **悬停展开浮窗、移出关闭**；浮窗右缘对齐按钮右缘（默认左对齐时 360 宽的浮窗右半会超出窗口）。
 /// </summary>
 public partial class WtLiveDownloadsButton : UserControl

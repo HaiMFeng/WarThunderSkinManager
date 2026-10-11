@@ -77,7 +77,7 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>激活状态变化（激活 / 取消激活成功后触发，§3.14 游戏内同步由 MainViewModel 订阅）。</summary>
     public event Action? GameSkinSelectionChanged;
 
-    // ---------- WT Live 下载（§3.15）----------
+    // ---------- WT Live 下载（§3.17）----------
 
     /// <summary>
     /// 一次 WT Live 下载**真正开始了**（下载项已进列表、任务已起）。
@@ -190,7 +190,7 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 下载前查「链接表」：该帖链接已挂在某个涂装包上（<see cref="PackageMeta.SourceUrl"/> /
     /// 导入清单，见 <see cref="PackageLinkService"/>）即视为**已下载过** → 提醒并询问是否再次下载
-    /// （§3.16）。返回是否继续下载。
+    /// （§3.17）。返回是否继续下载。
     /// <para>
     /// 只要帖子 id 就查得了（比对链接由它拼出来），因此**入口知道链接时可以在开确认窗之前就问**；
     /// <paramref name="displayName"/> 供入口还没有帖子信息时兜底（空 → 显示 <c>#帖子id</c>）。
@@ -226,7 +226,7 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 创建下载项并开始下载（压缩包 + 预览图；两者都完成才进入导入，§3.15）。
+    /// 创建下载项并开始下载（压缩包 + 预览图；两者都完成才进入导入，§3.17）。
     /// <paramref name="autoImport"/> = 下载确认窗的「一键导入」勾选：下载完**静默**导入、不弹导入预览窗；
     /// 它记在**条目**上，所以点「重试」整条重跑时仍然沿用当初的选择。
     /// </summary>
@@ -283,7 +283,7 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 列表右侧的「**取消 / 移除**」按钮（§3.15）——同一位置、随状态改变语义：
+    /// 列表右侧的「**取消 / 移除**」按钮（§3.17）——同一位置、随状态改变语义：
     /// <list type="bullet">
     /// <item><b>下载中 / 导入中</b> → **取消**：掐断本轮，条目**留在列表**（状态「已取消」、进度清零），
     /// 之后可用「重试」重新下载；</item>
@@ -329,7 +329,7 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 下载压缩包 + 预览图（**并行**；进度 = 压缩包 80% + 预览图 20%）→ 两者都完成后进入常规导入流程
-    /// （扫描 → 预览 → 解构），并把网页解析的显示名 / 预览图应用到导入的涂装包（§3.15）。
+    /// （扫描 → 预览 → 解构），并把网页解析的显示名 / 预览图应用到导入的涂装包（§3.17）。
     /// </summary>
     private async Task DownloadAndImportAsync(WtLiveDownloadItem item, CancellationToken ct)
     {
@@ -456,7 +456,7 @@ public partial class SkinsViewModel : ObservableObject
             ImportService.AssignGroupKey(candidates, zipPath, ImportSourceType.Archive);
 
             // 帖子链接随包落盘（item.Url）：属性页可打开，下次下载同一帖可提示「已下载」
-            // 「一键导入」（item.AutoImport）→ 静默解构、不弹导入预览窗（§3.15）
+            // 「一键导入」（item.AutoImport）→ 静默解构、不弹导入预览窗（§3.17）
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath,
                 sourceUrl: item.Url, silent: item.AutoImport);
 
@@ -563,7 +563,7 @@ public partial class SkinsViewModel : ObservableObject
     {
         _config = config;
 
-        // 启动时清扫导入暂存区：上次会话（含被强杀的下载）可能留下残留（§3.15）
+        // 启动时清扫导入暂存区：上次会话（含被强杀的下载）可能留下残留（§3.17）
         try { ArchiveService.CleanupStagingRoot(config.ResourceDirectory); } catch { /* 目录不可写时忽略 */ }
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
@@ -826,7 +826,7 @@ public partial class SkinsViewModel : ObservableObject
     /// 首次生成某载具的 blk 后提示：用户涂装必须**在游戏里手动选中一次**才会生效
     /// （取消激活会保留空 blk，正是为了之后切换不必重选，见 §3.8）。
     /// 「游戏内同步涂装选择」开启时：游戏未运行 → 选择已自动写入，不再提示；
-    /// **游戏运行中**（本次没写进去）→ 仍提示手动选择，但文案不同（说明原因，§3.14 / §3.15）。
+    /// **游戏运行中**（本次没写进去）→ 仍提示手动选择，但文案不同（说明原因，§3.14 / §3.17）。
     /// </summary>
     private void PromptFirstOutput(string vehicleId)
     {
@@ -1730,7 +1730,7 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 「预览 → 解构」流程（功能设计 §3.1）。<paramref name="archives"/> 非空时，
     /// 预览里提供「导入成功后删除压缩包」选项（默认不勾，见 <see cref="ImportPreviewViewModel"/>）。
-    /// <paramref name="silent"/> = <c>true</c> 时**跳过预览窗**直接解构（WT Live 的「一键导入」，§3.15）：
+    /// <paramref name="silent"/> = <c>true</c> 时**跳过预览窗**直接解构（WT Live 的「一键导入」，§3.17）：
     /// 用扫描出的默认命名，且**不**记录任何「删除源 / 删除压缩包」勾选（用户没在预览里确认过）。
     /// </summary>
     private async Task<ImportResult?> RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
@@ -1756,7 +1756,7 @@ public partial class SkinsViewModel : ObservableObject
 
             if (silent)
             {
-                // 「一键导入」（§3.15）：跳过预览窗，直接用扫描出的默认命名解构。
+                // 「一键导入」（§3.17）：跳过预览窗，直接用扫描出的默认命名解构。
                 // **不**调用 RememberImportChoices —— 用户没在预览里确认过任何勾选，
                 // 不该让这里的默认值覆盖他上次在预览窗里做出的选择。
             }

@@ -2,7 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
-    <!-- WT Live 下载列表入口（涂装管理页页头与 WT Live 页工具栏**共用同一个控件**，§3.15）：
+    <!-- WT Live 下载列表入口（涂装管理页页头与 WT Live 页工具栏**共用同一个控件**，§3.17）：
          图标 = **`F063`（arrow-down）**——与卡片右下角的下载按钮、列表空态插图**同一个字形**，
          三处"下载"入口在整页里形状一致（原先这里是 `F0ED` cloud-arrow-down 的云朵，笔画密、14px 下发糊，
          与卡片那边的箭头不是一个密度）；

@@ -3,7 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace WarThunderSkinManager.ViewModels;
 
 /// <summary>
-/// WT Live 搜索框下拉项的类型（功能设计 §3.15 搜索扩展）。
+/// WT Live 搜索框下拉项的类型（功能设计 §3.17 搜索扩展）。
 /// <para>
 /// 站点**只做标签搜索**（<c>searchString=#tag</c>，实测裸词返回 0 条，见
 /// <see cref="Services.WtLiveTag"/>），因此搜索有三个真正的维度：

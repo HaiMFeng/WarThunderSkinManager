@@ -171,7 +171,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>「多源复用」页视图模型（§3.13，仅在设置开启后可进入）</summary>
     public PartReuseViewModel PartReuse { get; }
 
-    /// <summary>「WT Live」页视图模型（公开涂装浏览：瀑布流 + 滚动到底加载下一页，§3.15）</summary>
+    /// <summary>「WT Live」页视图模型（公开涂装浏览：瀑布流 + 滚动到底加载下一页，§3.17）</summary>
     public WtLiveViewModel WtLive { get; }
 
     /// <summary>「多源复用」导航入口是否可见（跟随设置开关）。</summary>
@@ -353,7 +353,7 @@ public partial class MainViewModel : ObservableObject
         WtLivePreviewCache.Configure(config.ConfigDirectory);
         ApplyPreviewCacheLimit();
 
-        // 收藏的作者（§3.16）：唯一的本地数据，存配置目录 → 先注入目录再载入。
+        // 收藏的作者（§3.17）：唯一的本地数据，存配置目录 → 先注入目录再载入。
         // 放在缓存配置**之后**：载入时就开始取头像（走那份图片缓存），顺序反了会白白少缓存一轮
         WtLiveFavoriteAuthors.Configure(config.ConfigDirectory);
         WtLive.Favorites.Reload();

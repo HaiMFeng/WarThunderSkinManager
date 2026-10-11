@@ -98,7 +98,7 @@
                     <TextBox Style="{StaticResource BaseTextBox}"
                              Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
 
-                    <!-- 来源链接（§3.16）：WT Live 帖子网址——下载时记录，可编辑 / 打开重新访问 -->
+                    <!-- 来源链接（§3.17）：WT Live 帖子网址——下载时记录，可编辑 / 打开重新访问 -->
                     <TextBlock Text="{loc:Loc pkg.editor.link}" Style="{StaticResource FieldLabel}" Margin="0,18,0,6"/>
                     <Grid>
                         <Grid.ColumnDefinitions>

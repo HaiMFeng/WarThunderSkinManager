@@ -169,7 +169,7 @@ public partial class PackageEditorViewModel : ObservableObject
         ApplyBlocks();
     }
 
-    // ---------- 来源链接（§3.16）----------
+    // ---------- 来源链接（§3.17）----------
 
     /// <summary>链接非空 → 「打开链接」按钮可用。</summary>
     public bool HasSourceUrl => SourceUrl.Trim().Length > 0;

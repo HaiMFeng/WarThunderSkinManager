@@ -105,7 +105,7 @@ public partial class AppConfig : ObservableObject
     [ObservableProperty] private bool _importDeleteArchive;
 
     /// <summary>
-    /// WT Live 下载确认窗的「一键导入」（§3.15）：勾选后下载完成**直接静默进入导入**
+    /// WT Live 下载确认窗的「一键导入」（§3.17）：勾选后下载完成**直接静默进入导入**
     /// （跳过导入预览窗），只在窗口顶部提示导入结果。**记住上次选择，默认不勾**。
     /// </summary>
     [ObservableProperty] private bool _wtLiveAutoImport;

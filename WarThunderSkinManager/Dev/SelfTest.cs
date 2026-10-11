@@ -2449,7 +2449,7 @@ internal static class SelfTest
                          + $"本地被手改 → {ResourceUpdateService.IsLocallyModified(unitsInfo.FileName, handEdited, tablesDir)}（应 True）");
 
             log.AppendLine();
-            log.AppendLine("---- WT Live 解析（§3.15） ----");
+            log.AppendLine("---- WT Live 解析（§3.17） ----");
             var sampleJson = """
                 {"lang_group":1189546,"id":1242183,"language":"en","languages":["en"],
                  "type":"camouflage","created":1790408452,"visible":true,
@@ -2527,7 +2527,7 @@ internal static class SelfTest
                          + $"单张不动 = {WtLiveDetailViewModel.Step(0, 1, 1)}（应 0），"
                          + $"没有图 = {WtLiveDetailViewModel.Step(0, 0, 1)}（应 0）");
 
-            // ---- 来源链接判定（§3.16）：下载前「已下载」比对——语言段 / 尾斜杠 / 大小写不同必须视为同一帖 ----
+            // ---- 来源链接判定（§3.17）：下载前「已下载」比对——语言段 / 尾斜杠 / 大小写不同必须视为同一帖 ----
             log.AppendLine($"来源链接判定: 同帖异语言段 = {WtLiveLink.Matches("https://live.warthunder.com/post/1189546/en/", "https://live.warthunder.com/post/1189546/ru/")}（应 True），"
                          + $"尾斜杠差异 = {WtLiveLink.Matches("https://live.warthunder.com/post/1189546/", "https://live.warthunder.com/post/1189546")}（应 True），"
                          + $"不同帖 = {WtLiveLink.Matches("https://live.warthunder.com/post/1189546/", "https://live.warthunder.com/post/1189547/")}（应 False），"
@@ -2535,7 +2535,7 @@ internal static class SelfTest
                          + $"非帖子链接规范化比对 = {WtLiveLink.Matches("https://example.com/a/", "https://example.com/A")}（应 True），"
                          + $"取帖子 id = {WtLiveLink.PostIdOf("https://live.warthunder.com/post/1189546/en/")}（应 1189546）");
 
-            // ---- 「已下载」判定的**两个来源**（§3.16）：包自己的来源链接 + 早期下载的包「补认」 ----
+            // ---- 「已下载」判定的**两个来源**（§3.17）：包自己的来源链接 + 早期下载的包「补认」 ----
             // 早期版本下载的包没有 sourceUrl（那时还没这个字段），只能靠导入清单里那次下载的暂存压缩包名
             // （`<帖子id>-<随机8位>-<原名>.zip`）把帖子 id 认回来——**少了这一路，提醒对老包永不生效**
             // （用户库里 38 次 WT Live 下载只有 1 次带着链接，其余全是老包）。
@@ -2580,7 +2580,7 @@ internal static class SelfTest
                          + $"，非帖子链接 = {hitNotPost.Count}（应 0）");
             log.AppendLine($"已下载补认: 老包（无 sourceUrl）命中 = {hitSamePost.Any(m => m.PackageId == "pkg_old")}（应 True：靠导入清单里的帖子 id 认回来）");
 
-            // ---- WT Live 收藏的作者（§3.16）：顺序 + 去重落盘、详情星标 ----
+            // ---- WT Live 收藏的作者（§3.17）：顺序 + 去重落盘、详情星标 ----
             // 顺序就是文件里的数组顺序（拖动排序改的就是它）；同一作者重复出现只留最先那条；
             // 没有 id 的条目直接丢弃（id 是唯一键，也是按作者搜索的查询值）
             var favDir = Path.Combine(workDir, "favcfg");
@@ -2853,7 +2853,7 @@ internal static class SelfTest
                 .Select(p => $"{p.Owner.Name}.{p.Name}"));
             log.AppendLine($"绑定路径   : {bindingPaths.Length} 个成员缺失 = [{missingBindings}]（应为空 [])");
 
-            // ---- 下载阶段进度与重试节奏（§3.15：预览图是下载的一部分，独占 20%）----
+            // ---- 下载阶段进度与重试节奏（§3.17：预览图是下载的一部分，独占 20%）----
             var progressCases = new (double Zip, double Preview, bool HasPreview, double Expect)[]
             {
                 (1, 0, true, 0.8),      // 压缩包下完全部 → 80%
@@ -2873,7 +2873,7 @@ internal static class SelfTest
                          + $"间隔 = {WTLiveService.RetryDelay.TotalSeconds} 秒（应 1，固定不退避），"
                          + $"停滞超时 = {WTLiveService.StallTimeout.TotalSeconds} 秒（应 30）");
 
-            // ---- 下载列表右侧两个按钮的语义（§3.15）----
+            // ---- 下载列表右侧两个按钮的语义（§3.17）----
             // 重试：下载中 / 失败 / 已取消 可见；取消/移除：进行中 = 取消（条目留列表）、其余 = 从列表移除
             static WtLiveDownloadItem MakeDownloadItem() => new(1,
                 "https://live.warthunder.com/post/1/en/", "a.zip", "author", "name",
