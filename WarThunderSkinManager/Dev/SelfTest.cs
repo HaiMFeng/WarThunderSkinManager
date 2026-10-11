@@ -3068,15 +3068,20 @@ internal static class SelfTest
             var toastOldestAfterOverflow = toasts.Items[0].Message;     // 应「第 2 条」
             var toastNewest = toasts.Items[^1].Message;                 // 应「第 5 条」
 
-            toasts.Dismiss(toasts.Items[0]);                            // 点击消除一条
-            var toastCountAfterDismiss = toasts.Items.Count;            // 应 3
-            var toastOldestAfterDismiss = toasts.Items[0].Message;      // 应「第 3 条」
+            // 点击消除是"先标记退场（界面播淡出动画）→ ExitGrace 之后出队"，不是瞬间摘元素
+            var toDismiss = toasts.Items[0];
+            toasts.Dismiss(toDismiss);
+            var dismissMarked = toDismiss.IsDismissing;                       // 应 True
+            var dismissStillQueued = toasts.Items.Contains(toDismiss);        // 应 True（动画期间还在队列里）
+            toasts.Dismiss(toDismiss);                                        // 重复点击应幂等
+            var dismissingCount = toasts.Items.Count(t => t.IsDismissing);     // 应 1
 
             log.AppendLine($"气泡提示   : 上限 = {ToastService.MaxVisible} 条 / 每条 {ToastService.DefaultLifetime.TotalSeconds} 秒（应 4 / 2），"
                          + $"满 4 条后最早 = {toastOldestAtLimit}（应 第 1 条，共 {toastCountAtLimit}）；"
                          + $"再来一条顶掉最早 = {toastCountAfterOverflow} 条、最早变 {toastOldestAfterOverflow}（应 4 / 第 2 条）、"
                          + $"最新 = {toastNewest}（应 第 5 条）；"
-                         + $"点击消除一条 = {toastCountAfterDismiss} 条、最早变 {toastOldestAfterDismiss}（应 3 / 第 3 条）");
+                         + $"点击消除 = 标记退场 {dismissMarked}（应 True）、退场期间仍在队列 = {dismissStillQueued}（应 True，"
+                         + $"{ToastService.ExitGrace.TotalMilliseconds} ms 后出队）、重复点击幂等 = {dismissingCount}（应 1）");
 
             // ---- 应用自更新（§6，docs/应用自更新设计.md）：离线可验证的部分 ----
             // 版本比较：必须按 SemVer（字符串比会在 0.1.10 vs 0.1.9 上翻车；-dev 是预发布标识）

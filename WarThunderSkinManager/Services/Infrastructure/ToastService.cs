@@ -44,6 +44,12 @@ public sealed class ToastService
     /// <summary>到期回收的检查间隔（低频即可：2 秒的展示不需要逐帧精度）。</summary>
     private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(100);
 
+    /// <summary>
+    /// 退场宽限：点击消除 / 到期后**先播淡出动画**，再过这么久才真正出队。
+    /// 比视图侧那段 150ms 的淡出略长，保证动画放完再摘元素（否则会看到"闪一下才消失"）。
+    /// </summary>
+    public static readonly TimeSpan ExitGrace = TimeSpan.FromMilliseconds(170);
+
     /// <summary>全局唯一实例（界面绑定 <see cref="Items"/>，各模块直接 <see cref="Show"/>）。</summary>
     public static ToastService Instance { get; } = new();
 
@@ -75,23 +81,41 @@ public sealed class ToastService
         if (!_timer.IsEnabled) _timer.Start();
     }
 
-    /// <summary>立即消除某条（点击气泡触发）。</summary>
+    /// <summary>
+    /// 消除某条（点击气泡触发）：**先标记退场**（界面据此播淡出动画），
+    /// <see cref="ExitGrace"/> 之后由到期扫描真正出队。重复点击幂等。
+    /// </summary>
     public void Dismiss(StatusToast toast)
     {
-        if (!Items.Remove(toast)) return;
+        if (toast.IsDismissing || !Items.Contains(toast)) return;
 
-        if (Items.Count == 0) _timer.Stop();
+        toast.IsDismissing = true;
+        toast.Deadline = DateTime.UtcNow + ExitGrace;
+        if (!_timer.IsEnabled) _timer.Start();
     }
 
     /// <summary>
-    /// 到期回收：队列按插入顺序，**到期时刻也是递增的**，所以从头部扫、遇到一条没过期的就停。
+    /// 到期回收，分两段：① 到期的先**标记退场**（界面开始淡出）；② 退场期已过的**真正出队**。
     /// </summary>
     private void ExpireDue()
     {
         var now = DateTime.UtcNow;
 
-        while (Items.Count > 0 && Items[0].Deadline <= now)
-            Items.RemoveAt(0);
+        // ① 到点 → 标记退场（复用 Deadline 记"该出队的时刻"），界面随之播淡出
+        foreach (var toast in Items)
+        {
+            if (toast.IsDismissing || toast.Deadline > now) continue;
+
+            toast.IsDismissing = true;
+            toast.Deadline = now + ExitGrace;
+        }
+
+        // ② 退场期已过 → 出队。**倒序**扫：被点掉的可能是中间那条，不能只盯队首
+        for (var i = Items.Count - 1; i >= 0; i--)
+        {
+            if (Items[i].IsDismissing && Items[i].Deadline <= now)
+                Items.RemoveAt(i);
+        }
 
         if (Items.Count == 0) _timer.Stop();
     }

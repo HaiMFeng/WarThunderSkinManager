@@ -11,48 +11,85 @@
     <ItemsControl x:Name="ToastList" HorizontalAlignment="Center" Focusable="False">
         <ItemsControl.ItemTemplate>
             <DataTemplate>
-                <!-- 气泡本体。点击任意位置 = 消除（Cursor 给出手感暗示，ToolTip 说出这条捷径） -->
-                <Border Margin="0,0,0,8" Padding="16,10" CornerRadius="10"
-                        Background="{StaticResource BrushSurface}"
-                        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
-                        Cursor="Hand" MouseLeftButtonUp="Toast_Click"
-                        ToolTip="{loc:Loc common.dismissHint}">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270"
-                                          Opacity="0.18" Color="{StaticResource ColorShadow}"/>
-                    </Border.Effect>
-                    <StackPanel>
-                        <!-- 文案**换行**显示：原方案的病根之一就是标题栏只放得下一行、只能截断 -->
-                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" MaxWidth="520"
-                                   Foreground="{StaticResource BrushText}"/>
-                        <!-- 剩余时间进度条：贴底、2px 高，ScaleX 由 1 动到 0。
-                             Duration 取服务里的同一个值（x:Static，不走 Binding ——
-                             动画属性上的 Binding 依赖 DataContext 继承链，在模板里容易失效）。
-                             动画跑在**合成线程**，不占 UI 线程：多条并发也不增加刷新负担。 -->
-                        <Grid Height="2" Margin="0,10,0,-8" ClipToBounds="True">
-                            <Border CornerRadius="1" Background="{StaticResource BrushSurface2}"/>
-                            <Border x:Name="ToastBar" CornerRadius="1"
+                <!-- 气泡：进入 / 退出动画都由触发器驱动；进度条与文案**叠放**（同一层 Grid），
+                     因此它贴底却不参与气泡高度计算。
+                     初始状态（Opacity=0 / Y=-8）直接写在 XAML 上 → 第一帧就处于"未落定"的样子，
+                     不会先实心闪一下再淡入。点击任意位置 = 消除。 -->
+                <Grid x:Name="ToastRoot" Margin="0,0,0,8" Opacity="0"
+                      Cursor="Hand" MouseLeftButtonUp="Toast_Click"
+                      ToolTip="{loc:Loc common.dismissHint}">
+                    <Grid.RenderTransform>
+                        <TranslateTransform x:Name="ToastShift" Y="-8"/>
+                    </Grid.RenderTransform>
+
+                    <Border x:Name="ToastCard" CornerRadius="10"
+                            Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushBorder}" BorderThickness="1">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270"
+                                              Opacity="0.18" Color="{StaticResource ColorShadow}"/>
+                        </Border.Effect>
+                        <Grid>
+                            <!-- 文案靠自身 Margin 撑出内边距（Border **不设 Padding**，
+                                 这样进度条才能直接顶到内边框上） -->
+                            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" MaxWidth="520"
+                                       Margin="16,10,16,12"
+                                       Foreground="{StaticResource BrushText}"/>
+                            <!-- 进度条：与文案**同层叠放** + `VerticalAlignment=Bottom` → 贴着内底边，
+                                 完全不增加气泡高度。左右各让出 10（= 气泡圆角半径），免得两端探到圆角外。
+                             从左端（0）长到满（1）。Duration 取服务里的同一个值（x:Static，不走 Binding ——
+                                 动画属性上的 Binding 依赖 DataContext 继承链，在模板里容易失效）。
+                                 动画跑在**合成线程**，不占 UI 线程：多条并发也不增加刷新负担。 -->
+                            <Border x:Name="ToastBar" Height="2" CornerRadius="1"
+                                    VerticalAlignment="Bottom" Margin="10,0,10,1"
                                     Background="{StaticResource BrushPrimary}"
                                     RenderTransformOrigin="0,0.5">
                                 <Border.RenderTransform>
-                                    <ScaleTransform ScaleX="1"/>
+                                    <ScaleTransform ScaleX="0"/>
                                 </Border.RenderTransform>
                             </Border>
                         </Grid>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </Grid>
                 <DataTemplate.Triggers>
-                    <!-- 条目加载即开始倒计时。中途被点击 / 顶掉时元素被销毁，动画随之停止，不需要手工 Stop -->
+                    <!-- 载入即**进入**：淡入 + 自上而下落定 8px，同时起进度条（2 秒走满） -->
                     <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                         <BeginStoryboard>
                             <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="ToastRoot"
+                                                 Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.18"/>
+                                <DoubleAnimation Storyboard.TargetName="ToastShift"
+                                                 Storyboard.TargetProperty="Y"
+                                                 To="0" Duration="0:0:0.22">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut"/>
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
                                 <DoubleAnimation Storyboard.TargetName="ToastBar"
                                                  Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
-                                                 From="1" To="0"
+                                                 From="0" To="1"
                                                  Duration="{x:Static services:ToastService.DefaultLifetimeDuration}"/>
                             </Storyboard>
                         </BeginStoryboard>
                     </EventTrigger>
+
+                    <!-- **退出**：被标记退场（点击消除，或到期）后淡出 + 微微上移；
+                         动画放完由服务按 ExitGrace 把它移出队列（见 ToastService.ExpireDue） -->
+                    <DataTrigger Binding="{Binding IsDismissing}" Value="True">
+                        <DataTrigger.EnterActions>
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="ToastRoot"
+                                                     Storyboard.TargetProperty="Opacity"
+                                                     To="0" Duration="0:0:0.15"/>
+                                    <DoubleAnimation Storyboard.TargetName="ToastShift"
+                                                     Storyboard.TargetProperty="Y"
+                                                     To="-6" Duration="0:0:0.15"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </DataTrigger.EnterActions>
+                    </DataTrigger>
                 </DataTemplate.Triggers>
             </DataTemplate>
         </ItemsControl.ItemTemplate>
