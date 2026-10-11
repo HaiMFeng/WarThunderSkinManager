@@ -32,6 +32,7 @@ public sealed class BusyIndicator : INotifyPropertyChanged
 
     private readonly object _gate = new();
     private int _count;
+    private int _suppress;
     private string _text = "";
     private string _detail = "";
     private bool _barVisible;
@@ -67,6 +68,19 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     /// <summary>取消是否已被请求（界面据此把按钮置灰：请求已投递，等流程自己收尾）。</summary>
     public bool CancelRequested => _cancelRequested;
 
+    /// <summary>
+    /// **抑制遮罩**：作用域内所有 <see cref="Begin"/> 都返回"空作用域"——不显示遮罩、不改任何状态、
+    /// <c>Dispose</c> 也不会误减别人的计数；退出作用域即恢复。
+    /// <para>
+    /// 用于"静默"流程（§3.17 的「一键导入」）：用户此刻还在看别的界面（下载列表），
+    /// 任何全屏"处理中"都与"静默"的承诺相反。这里用**作用域**而不是逐个调用点传参，
+    /// 是为了**不可能漏** —— 那条流程上的遮罩来源分散（解构 / 收尾 / 刷新方法内部的兜底），
+    /// 逐个判断曾漏过一处（实测）；抑制标志连**将来新增**的遮罩也一并盖住。
+    /// </para>
+    /// <para>与 <c>Begin</c> 一样只在 UI 线程上使用。</para>
+    /// </summary>
+    public IDisposable Suppress() => new SuppressScope(this);
+
     /// <summary>进入"处理中"状态；<c>Dispose</c> 时退出。可嵌套，成对使用（<c>using var</c> 最省心）。</summary>
     public Scope Begin(string text) => Begin(text, null);
 
@@ -85,6 +99,10 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         bool isOuter;
         lock (_gate)
         {
+            // 抑制期间（<see cref="Suppress"/>）一律不给遮罩：返回空作用域，
+            // 不计数、不动状态，Dispose 也不会误减别人的计数
+            if (_suppress > 0) return new Scope(this, isOuter: false, noop: true);
+
             // 最外层那次决定文案与进度/取消（内层只加计数，不改观感）
             isOuter = _count == 0;
             if (isOuter)
@@ -191,8 +209,12 @@ public sealed class BusyIndicator : INotifyPropertyChanged
     private void Raise([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    /// <summary>一次"处理中"的范围（<c>Dispose</c> 只生效一次）。</summary>
-    public sealed class Scope(BusyIndicator owner, bool isOuter) : IDisposable
+    /// <summary>
+    /// 一次"处理中"的范围（<c>Dispose</c> 只生效一次）。
+    /// <paramref name="noop"/> = 抑制期间（<see cref="Suppress"/>）拿到的**空作用域**：
+    /// 所有方法都是空操作，<c>Dispose</c> 也不碰计数。
+    /// </summary>
+    public sealed class Scope(BusyIndicator owner, bool isOuter, bool noop = false) : IDisposable
     {
         private bool _done;
 
@@ -203,7 +225,7 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         /// </summary>
         public void Report(double fraction, string? text = null)
         {
-            if (!isOuter) return;
+            if (noop || !isOuter) return;
 
             var clamped = Math.Clamp(fraction, 0, 1);
             owner.SetProgress(true, clamped,
@@ -216,7 +238,7 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         /// </summary>
         public void Report(int done, int total)
         {
-            if (!isOuter) return;
+            if (noop || !isOuter) return;
             if (total <= 0)
             {
                 owner.SetProgress(false, 0, "");
@@ -230,14 +252,14 @@ public sealed class BusyIndicator : INotifyPropertyChanged
         /// <summary>回到不定态（只转圈、不显示进度条）。仅**最外层**作用域生效。</summary>
         public void HideBar()
         {
-            if (!isOuter) return;
+            if (noop || !isOuter) return;
             owner.SetProgress(false, 0, "");
         }
 
         /// <summary>设置副文案（正在处理的具体条目），传空串则界面折叠该行。仅**最外层**作用域生效。</summary>
         public void SetDetail(string detail)
         {
-            if (!isOuter) return;
+            if (noop || !isOuter) return;
             owner.SetDetail(detail ?? "");
         }
 
@@ -246,7 +268,29 @@ public sealed class BusyIndicator : INotifyPropertyChanged
             if (_done) return;
 
             _done = true;
+            if (noop) return; // 空作用域没计过数，也就不能减
             owner.End();
+        }
+    }
+
+    /// <summary><see cref="Suppress"/> 的作用域（<c>Dispose</c> 只生效一次）。</summary>
+    private sealed class SuppressScope : IDisposable
+    {
+        private readonly BusyIndicator _owner;
+        private bool _done;
+
+        public SuppressScope(BusyIndicator owner)
+        {
+            _owner = owner;
+            lock (owner._gate) owner._suppress++;
+        }
+
+        public void Dispose()
+        {
+            if (_done) return;
+
+            _done = true;
+            lock (_owner._gate) _owner._suppress--;
         }
     }
 }

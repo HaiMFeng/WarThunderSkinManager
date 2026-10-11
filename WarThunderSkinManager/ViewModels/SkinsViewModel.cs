@@ -1387,13 +1387,12 @@ public partial class SkinsViewModel : ObservableObject
     /// 投影（快照 → 载具视图）同样重，也一并放后台。
     /// <para>用信号量串行化：并发重建会各自写索引快照、互相覆盖，且叠加 CPU 争抢。</para>
     /// </remarks>
-    private async Task RefreshLibraryAsync(bool showBusy = true)
+    private async Task RefreshLibraryAsync()
     {
         // "处理中"遮罩（§2.6）：这条路径是复制 / 删除 / 导入 / 保存的**共同慢尾巴**，
         // 放在这里保证任何一条入口都有反馈；外层若已开遮罩，文案取外层（更具体）那次。
-        // **静默导入**（「一键导入」，§3.17）要求全程无遮罩 —— 由调用方传 showBusy: false 关掉；
-        // 否则上层的遮罩虽然跳过了，这个**开在方法内部的兜底遮罩**仍会冒出来（实测踩过）
-        using var busy = showBusy ? BusyIndicator.Instance.Begin(Loc["busy.refresh"]) : null;
+        // 静默导入（§3.17）不必在这里特判：调用方的 BusyIndicator.Suppress() 作用域会兜住它
+        using var busy = BusyIndicator.Instance.Begin(Loc["busy.refresh"]);
 
         await _refreshGate.WaitAsync();
         try
@@ -1782,12 +1781,11 @@ public partial class SkinsViewModel : ObservableObject
 
             preview.ApplyNames();
 
-            // 静默导入（「一键导入」，§3.17）**全程不开遮罩**。这条路径上遮罩有三处来源，
-            // 都在这里显式关掉 —— 将来若在本路径新增遮罩调用，记得一并处理（曾漏过一处）：
-            //   ① 下面「解构落盘」那次          → silent 分支不开
-            //   ② 再下面「收尾（源清理 / 库重建）」那次 → silent 时传 null
-            //   ③ RefreshLibraryAsync **内部**的兜底遮罩 → showBusy: false
-            //
+            // 静默导入（「一键导入」，§3.17）**全程不开遮罩**：用**作用域抑制**，
+            // 而不是逐个调用点传参 —— 这条流程上的遮罩来源分散（解构 / 收尾 / RefreshLibraryAsync
+            // 内部的兜底），逐个判断曾漏掉一处（刷新那次），抑制标志则连**将来新增**的也一并盖住
+            using var suppressor = silent ? BusyIndicator.Instance.Suppress() : null;
+
             // 解构落盘在后台**并行**执行（§3.1）：贴图哈希与复制是 IO 密集，
             // 上百 GB 批量导入时可从遮罩上取消——取消在包之间生效，已完成的包保留。
             // 静默路径把调用方的令牌关联进来充当取消源（那条路没有遮罩可点取消）
@@ -1796,26 +1794,15 @@ public partial class SkinsViewModel : ObservableObject
                 : new CancellationTokenSource();
             ImportResult result;
 
-            if (silent)
+            using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressCommitting"], cts.Cancel))
             {
-                // **全程不开遮罩**：用户此刻还在看下载列表，弹一个全屏"处理中"会把界面整个锁住，
-                // 与"静默"的承诺正好相反；进度也没地方显示（没有进度条），直接丢弃
-                var silentReporter = new Progress<ImportProgress>(_ => { });
-                result = await Task.Run(() => ImportService.Commit(
-                    candidates, _config.ResourceDirectory, sourceType, sourcePath,
-                    silentReporter, cts.Token, sourceUrl));
-            }
-            else
-            {
-                using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressCommitting"], cts.Cancel))
-                {
-                    scope.Report(0, candidates.Count); // 与旧进度窗一致：起始就显示 0 / N
-                    var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
+                scope.Report(0, candidates.Count); // 与旧进度窗一致：起始就显示 0 / N
+                var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
 
-                    // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch
-                    result = await Task.Run(() => ImportService.Commit(
-                        candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl));
-                }
+                // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch。
+                // 被抑制时 scope 是空作用域：Report 之类全是空操作，进度自然丢弃
+                result = await Task.Run(() => ImportService.Commit(
+                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl));
             }
 
             PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
@@ -1826,8 +1813,8 @@ public partial class SkinsViewModel : ObservableObject
                 : Loc.Format("import.done", result.Packages.Count, result.Warnings.Count);
             // 源清理 / 删压缩包都是**文件 IO**（整目录递归删除，几十 GB 的源可能很慢）→ 放后台；
             // 连同末尾的库重建一起开遮罩：进度窗此时已关，这一段是"看不见的收尾"（用户以为已经结束）。
-            // **静默路径不开** —— 全程无遮罩是「一键导入」的承诺（传 null 时 using 会安全跳过 Dispose）
-            using (silent ? null : BusyIndicator.Instance.Begin(Loc["busy.import"]))
+            // 静默导入时这个遮罩、以及刷新方法内部那个兜底遮罩，都由上面的 Suppress 一并盖住
+            using (BusyIndicator.Instance.Begin(Loc["busy.import"]))
             {
                 if (!result.Canceled && preview.DeleteSource)
                 {
@@ -1841,8 +1828,7 @@ public partial class SkinsViewModel : ObservableObject
 
                 message += extraStatus;
 
-                // 静默导入连这一个也要关掉：它开在刷新方法**内部**，不是这层的外层遮罩
-                await RefreshLibraryAsync(showBusy: !silent);
+                await RefreshLibraryAsync();
             }
 
             ShowStatus(message);

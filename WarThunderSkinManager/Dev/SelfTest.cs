@@ -2989,6 +2989,27 @@ internal static class SelfTest
             log.AppendLine($"统一容器取消态: 初始未请求 = {cancelFlagInitially}（应 True），请求后 = {cancelFlagSet}（应 True），"
                          + $"释放后复位 = {cancelFlagReset}（应 True）");
 
+            // 遮罩抑制（§3.17「一键导入」的静默导入）：抑制作用域内不显示遮罩、文案也不动，
+            // 退出后计数不残留、遮罩照常可用 —— 钉的是"静默导入全程无遮罩"这套机制本身
+            bool suppressedBusy, recoveredBusy;
+            string suppressedText;
+            using (BusyIndicator.Instance.Suppress())
+            {
+                using var suppressedScope = BusyIndicator.Instance.Begin("被抑制的遮罩");
+                suppressedScope.Report(0.5);
+                suppressedScope.SetDetail("不该出现的副文案");
+                suppressedBusy = BusyIndicator.Instance.IsBusy;
+                suppressedText = BusyIndicator.Instance.Text;
+            }
+
+            using (BusyIndicator.Instance.Begin("恢复后的遮罩"))
+            {
+                recoveredBusy = BusyIndicator.Instance.IsBusy;
+            }
+
+            log.AppendLine($"遮罩抑制: 抑制中 IsBusy={suppressedBusy}（应 False）、文案为空 = {suppressedText.Length == 0}（应 True）、"
+                         + $"释放后 IsBusy={recoveredBusy}（应 True）、全部释放后 IsBusy={BusyIndicator.Instance.IsBusy}（应 False）");
+
             // ---- 应用自更新（§6，docs/应用自更新设计.md）：离线可验证的部分 ----
             // 版本比较：必须按 SemVer（字符串比会在 0.1.10 vs 0.1.9 上翻车；-dev 是预发布标识）
             AppVersion.TryParse("v0.1.4-dev", out var vCur);
