@@ -22,10 +22,13 @@ namespace WarThunderSkinManager.Services;
 /// <para>
 /// <b>为什么不用逐帧定时器推进度</b>：底部进度条的动画交给视图的 WPF <c>Storyboard</c>
 /// （跑在合成线程，完全不占 UI 线程）；服务侧只用**一个**低频定时器做到期回收
-/// （<see cref="TickInterval"/>），对 2 秒的展示精度绰绰有余。于是并发开销是**常数级**、
+/// （<see cref="TickInterval"/>），对这种几秒级的展示精度绰绰有余。于是并发开销是**常数级**、
 /// 与条数无关（上限本身就只有 4 条）。
 /// </para>
-/// <para>与 <c>BusyIndicator</c> 一样：只在 UI 线程上使用。</para>
+/// <para>
+/// 调用点在 UI 线程上；但服务**不假设**这一点：<see cref="Show"/> / <see cref="Dismiss"/>
+/// 会检查线程并封送回 UI（见 <see cref="TryMarshal"/>）。
+/// </para>
 /// </remarks>
 public sealed class ToastService
 {
@@ -41,7 +44,7 @@ public sealed class ToastService
     /// </summary>
     public static readonly Duration DefaultLifetimeDuration = new(DefaultLifetime);
 
-    /// <summary>到期回收的检查间隔（低频即可：2 秒的展示不需要逐帧精度）。</summary>
+    /// <summary>到期回收的检查间隔（低频即可：几秒级的展示不需要逐帧精度）。</summary>
     private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
@@ -64,12 +67,31 @@ public sealed class ToastService
         _timer.Tick += (_, _) => ExpireDue();
     }
 
+    /// <summary>
+    /// 非 UI 线程调用时把动作**封送**回 UI 线程并返回 <c>false</c>（调用方就地返回）；
+    /// 已在 UI 线程、或根本没有 <see cref="Application"/>（自检 / 无 UI 环境）时返回 <c>true</c>，照常往下走。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Items"/> 直接绑到界面的 <c>ItemsControl</c>，从非 UI 线程改它（或
+    /// <c>DispatcherTimer.Start</c>）都是跨线程访问 → 直接抛异常。现有调用点都在 UI 线程，
+    /// 这一层是兜底：将来新增后台流程直接 <c>Show</c> 时不会崩（与 <c>BusyOverlay</c> 的兜底同一套）。
+    /// </remarks>
+    private static bool TryMarshal(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess()) return true;
+
+        dispatcher.BeginInvoke(action);
+        return false;
+    }
+
     /// <summary>弹出一条提示（空文案直接忽略）。</summary>
     public void Show(string? message)
     {
         if (string.IsNullOrWhiteSpace(message)) return;
+        if (!TryMarshal(() => Show(message))) return;
 
-        Items.Add(new StatusToast(message, DefaultLifetime)
+        Items.Add(new StatusToast(message)
         {
             Deadline = DateTime.UtcNow + DefaultLifetime
         });
@@ -87,6 +109,7 @@ public sealed class ToastService
     /// </summary>
     public void Dismiss(StatusToast toast)
     {
+        if (!TryMarshal(() => Dismiss(toast))) return;
         if (toast.IsDismissing || !Items.Contains(toast)) return;
 
         toast.IsDismissing = true;

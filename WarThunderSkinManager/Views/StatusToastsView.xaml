@@ -56,7 +56,7 @@
                     </Border>
                 </Grid>
                 <DataTemplate.Triggers>
-                    <!-- 载入即**进入**：淡入 + 自上而下落定 8px，同时起进度条（2 秒走满） -->
+                    <!-- 载入即**进入**：淡入 + 自上而下落定 8px，同时起进度条（3 秒走满 = ToastService.DefaultLifetime） -->
                     <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                         <BeginStoryboard>
                             <Storyboard>

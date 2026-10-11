@@ -534,6 +534,7 @@ public partial class SkinsViewModel : ObservableObject
         {
             // 读取停滞 / 服务器超时，且自动重试用尽
             item.State = WtLiveDownloadState.Failed;
+            item.Progress = 0; // 别让进度条停在中断处（"失败"旁边挂着半截进度看着像还在下）
             // 次数由常量格式化：原先写死在文案里，与 WTLiveService 的常量有失步风险
             item.SetStateText("wtlive.state.failed",
                 Loc.Format("wtlive.state.stalled", WTLiveService.DownloadAttempts));
@@ -548,6 +549,7 @@ public partial class SkinsViewModel : ObservableObject
             var previewOnly = hasPreview && previewTaskFailed();
 
             item.State = WtLiveDownloadState.Failed;
+            item.Progress = 0; // 同上：失败态不留半截进度条（只有「下载中」才该有进度）
             if (previewOnly) item.SetStateText("wtlive.state.previewFailed", reason);
             else item.SetStateText("wtlive.state.failed", reason);
 
@@ -2250,7 +2252,7 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 操作反馈 → 顶部气泡提示（§2.7）：交给 <see cref="ToastService"/> 排队显示
-    /// （最多 4 条、各 2 秒、点击消除），不再走"标题栏一行文本 + 定时器清空"。
+    /// （最多 4 条、各 3 秒、点击消除），不再走"标题栏一行文本 + 定时器清空"。
     /// </summary>
     private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

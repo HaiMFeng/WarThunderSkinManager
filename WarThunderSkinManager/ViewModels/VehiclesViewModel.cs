@@ -546,6 +546,10 @@ public partial class VehiclesViewModel : ObservableObject
     /// 部件行的**删除 / 恢复**按钮（§3.10，同一个按钮随行的排除态切换语义）：
     /// 正常行 = **删除**（写排除清单 → 行变灰、提示「已排除」，按钮变红字「恢复」）；
     /// 排除行 = **恢复**（移出排除清单 → 候选与输出随之回来）。
+    /// <para>
+    /// **手动补出来的行**另走一条：先撤掉补齐记录 —— 还没配贴图就整行消失（没有块可排除，
+    /// 也不该进排除清单，否则两清单会同时命中同一个 from）；已配过贴图就撤记录 + 照常排除。
+    /// </para>
     /// <c>source.blk</c> 与 <c>meta.parts</c> 都不动。
     /// </summary>
     [RelayCommand]
@@ -563,6 +567,30 @@ public partial class VehiclesViewModel : ObservableObject
         {
             RestorePart(part);
             return;
+        }
+
+        // 手动补出来的位置（§3.10）**先撤掉补齐记录**，否则它会和排除清单同时命中同一个 from
+        //（两个清单是互斥的，那条记录还会一直留着当垃圾）：
+        //  - 还没配贴图（候选为空）→ 包里本来就没有它，撤了记录这行就没了，**不必**再进排除清单
+        //    （没有块可排除，进了反而让"已排除"的行在属性页还挂着一条补齐行）；
+        //  - 已配过贴图（候选非空）→ 它现在也在包里，继续走下面的排除路径，只是记录照样撤。
+        if (part.IsManuallyAdded)
+        {
+            VehicleExtraPartsService.Remove(_config.ConfigDirectory, SelectedVehicle.Id, part.From);
+
+            if (part.Candidates.Count == 0)
+            {
+                // 整行消失（不是"转灰"）：它本来就不在任何包里，UI 里不需要留一个占位
+                SelectedVehicle.Parts = SelectedVehicle.Parts
+                    .Where(p => !ReferenceEquals(p, part))
+                    .ToList();
+
+                PartCatalog.Invalidate();
+                OnPropertyChanged(nameof(PartCountText));
+                ShowStatus(Loc.Format("vehicles.part.manualRemoved", part.From));
+                PartExclusionsChanged?.Invoke();
+                return;
+            }
         }
 
         var confirmed = MessageDialog.Confirm(
@@ -610,7 +638,7 @@ public partial class VehiclesViewModel : ObservableObject
 
     /// <summary>
     /// 操作反馈 → 顶部气泡提示（§2.7）：交给 <see cref="ToastService"/> 排队显示
-    /// （最多 4 条、各 2 秒、点击消除），不再走"标题栏一行文本 + 定时器清空"。
+    /// （最多 4 条、各 3 秒、点击消除），不再走"标题栏一行文本 + 定时器清空"。
     /// </summary>
     private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

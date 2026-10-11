@@ -173,7 +173,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock Text="{loc:Loc wtlive.list.empty}">
+                    <TextBlock Text="{loc:Loc wtlive.downloadlist.empty}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
                                 <Setter Property="Visibility" Value="Collapsed"/>

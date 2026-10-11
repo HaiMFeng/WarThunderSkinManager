@@ -1534,6 +1534,16 @@ internal static class SelfTest
                          + $"不标记为手动 = {bothSides?.IsManuallyAdded == false}（应 True）");
             PartExclusionService.Remove(extraDir, extraVehicleId, extraFrom);
 
+            // 撤掉补齐记录（= 用户点这一行的「删除」）= **整行消失**，且**不在排除清单里留痕**：
+            // 手动补出来的位置本来就不在任何包里，没有块可排除 —— 走排除路径会让同一个 from
+            // 同时命中两个清单（互斥被破坏），界面上还会留下一条"已排除"的灰行。
+            VehicleExtraPartsService.Remove(extraDir, extraVehicleId, extraFrom);
+            var afterRemove = VehicleAggregator.Build(extraVehicleId, Array.Empty<SkinPackage>());
+            var rowGone = afterRemove.Parts.All(
+                p => !string.Equals(p.From, extraFrom, StringComparison.OrdinalIgnoreCase));
+            log.AppendLine($"撤掉补齐记录: 整行消失（不留「已排除」占位）= {rowGone}（应 True）、"
+                         + $"排除清单没被写脏 = {!PartExclusionService.IsExcluded(extraVehicleId, extraFrom)}（应 True）");
+
             // ---- 新建空白涂装包（§3.4）：无 source.blk、无贴图引用，部件在属性页从库内选择 ----
             log.AppendLine();
             log.AppendLine("---- 新建空白涂装包 ----");
@@ -2257,6 +2267,36 @@ internal static class SelfTest
             if (missingKeys.Count > 0 || enOnlyKeys.Count > 0)
                 log.AppendLine($"自检异常：语言表键不齐平（en 缺 {missingKeys.Count}、zh 缺 {enOnlyKeys.Count}）"
                              + " → 缺失侧会显示成另一种语言");
+
+            // **同一个 key 不得定义两次**：反序列化成 Dictionary 时**后者静默覆盖前者**（不抛异常），
+            // 于是被覆盖的那条永远不生效、界面显示的是另一处的文案。实测踩过：
+            // `wtlive.list.empty` 同时被写成"没有找到涂装"与"暂无 WT Live 下载"，浏览页空态就显示成了后者。
+            // 上面那几条检查（键齐平 / XAML 里 key 存在）都看不见它 —— Dictionary 早就去重了，
+            // 所以这里直接数**原始 JSON** 的属性名。
+            var duplicatedLangKeys = new List<string>();
+            foreach (var (file, dir) in new (string File, string Dir)[]
+                     {
+                         ("zh-CN.json", Path.Combine(workDir, "cfg-lang", "lang")),
+                         ("en-US.json", Path.Combine(langEnRoot, "lang"))
+                     })
+            {
+                var path = Path.Combine(dir, file);
+                if (!File.Exists(path)) continue;
+
+                using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var property in document.RootElement.EnumerateObject())
+                    if (!seen.Add(property.Name)) duplicatedLangKeys.Add($"{file}·{property.Name}");
+            }
+
+            log.AppendLine($"语言表重复: 重复定义的 key = {duplicatedLangKeys.Count}（应 0：后者静默覆盖前者，前一处文案永不显示）"
+                         + (duplicatedLangKeys.Count > 0
+                             ? "\n  重复：" + string.Join(" / ", duplicatedLangKeys.Distinct())
+                             : ""));
+
+            if (duplicatedLangKeys.Count > 0)
+                log.AppendLine($"自检异常：语言表里有重复定义的 key（{duplicatedLangKeys.Count} 处）"
+                             + " → 生效的是后一处，前一处文案永远不显示");
 
             // 占位符一致性：同一条 key 的中英文 `{n}` 集合必须相同 ——
             // 少一个 `{0}` 时 Format 会**静默丢掉**那段信息（那一侧读起来莫名其妙），且只在运行时才发现

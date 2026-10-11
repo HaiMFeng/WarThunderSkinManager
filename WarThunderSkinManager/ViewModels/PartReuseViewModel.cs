@@ -385,7 +385,7 @@ public partial class PartReuseViewModel : ObservableObject
 
     /// <summary>
     /// 操作反馈 → 顶部气泡提示（§2.7）：交给 <see cref="ToastService"/> 排队显示
-    /// （最多 4 条、各 2 秒、点击消除），不再走"标题栏一行文本"。
+    /// （最多 4 条、各 3 秒、点击消除），不再走"标题栏一行文本"。
     /// </summary>
     private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }

@@ -367,6 +367,12 @@ public partial class PackageEditorViewModel : ObservableObject
         {
             if (key.Length == 0 || pool.ContainsKey(key)) continue;
 
+            // 已被「手动删除」排除掉的位置**不并**：聚合视图那边排除优先（行是灰的、输出不含该块），
+            // 这里若照并，用户就能给一个"已排除"的位置配贴图 —— 配完写出的块又会被排除规则丢掉，
+            // 变成"配了贴图却不出图"。正常情况下两个清单互斥（撤补齐记录 / 进排除时互相清理），
+            // 这条是给**手工编辑过清单**的情况兜底。
+            if (PartExclusionService.IsExcluded(_meta.VehicleId, key)) continue;
+
             pool[key] = new List<PartCandidate>();
             seenBlobs[key] = new HashSet<string>(StringComparer.Ordinal);
         }

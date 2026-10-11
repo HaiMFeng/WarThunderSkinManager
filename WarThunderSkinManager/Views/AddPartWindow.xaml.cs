@@ -106,9 +106,15 @@ public partial class AddPartWindow : Window
     /// 离开输入框就收起气泡浮层。
     /// 点气泡**不会**走到这里：气泡是 <c>Focusable=False</c> 的按钮，按它不夺焦点
     /// （否则会在点击生效之前先把浮层关掉，那次点击就落空了）。
+    /// 焦点只是落进**浮层自己**（候选多到要滚时拖动框内滚动条）时也**不关**：
+    /// 否则拖到一半浮层就没了（与 WT Live 搜索框的失焦处理同一条）。
     /// </summary>
     private void PartInput_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
-        => CloseSuggestions();
+    {
+        if (SuggestionPopup.IsKeyboardFocusWithin) return;
+
+        CloseSuggestions();
+    }
 
     /// <summary>点一个候选气泡 = 把它的名字回填进输入框（选中哪条就是哪条，不做二次匹配）。</summary>
     private void Suggestion_Click(object sender, RoutedEventArgs e)
@@ -152,7 +158,10 @@ public partial class AddPartWindow : Window
     {
         var text = (PartInput.Text ?? "").Trim();
 
-        if (text.Length == 0)
+        // 空与"只剩分隔符"（`___` / `---`）**同样拒绝**：归一化（去 * 与首尾空白）之后它们看着有内容，
+        // 但搜索侧的归一化会把所有非字母数字全丢掉 → 候选恒为空、存下来的却是一个语义为空的位置。
+        // 两套归一化口径不一致，这里按"有没有实义字符"这一条收口。
+        if (text.Length == 0 || VehicleSearchIndex.Normalize(text).Length == 0)
         {
             ShowError(Loc["vehicles.parts.add.empty"]);
             return;

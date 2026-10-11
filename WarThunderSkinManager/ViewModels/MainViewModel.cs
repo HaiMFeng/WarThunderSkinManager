@@ -2220,7 +2220,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// 操作反馈 → 顶部气泡提示（§2.7）。原先走"标题栏一行文本 + 定时器清空"：多条消息会
     /// **互相覆盖**，且受一行宽度所限只能截断；现在交给 <see cref="ToastService"/> 排队显示
-    /// （最多 4 条、各 2 秒、点击消除）。相同文案连发也不再需要"光晕脉冲"那套代偿 —— 它会各自成条。
+    /// （最多 4 条、各 3 秒、点击消除）。相同文案连发也不再需要"光晕脉冲"那套代偿 —— 它会各自成条。
     /// </summary>
     private static void ShowStatus(string message) => ToastService.Instance.Show(message);
 }
