@@ -3096,11 +3096,11 @@ internal static class SelfTest
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.Progress)),
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.CanRetry)),
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.IsCancelable)),
-                // 设置页「存储维护」的横向存储条：磁盘行 / 说明行 / 重测命令 + 三段的占比与数值
+                // 设置页「存储维护」的横向存储条：磁盘行 / 重测命令 + 三段的占比与数值
+                // （统计进度与"读不到磁盘信息"走顶部气泡，卡片里没有动态说明行 —— 那行会顶得按钮上下跳）
                 (typeof(MainViewModel), nameof(MainViewModel.StorageUsage)),
                 (typeof(MainViewModel), nameof(MainViewModel.StorageMeasuring)),
                 (typeof(MainViewModel), nameof(MainViewModel.StorageDiskText)),
-                (typeof(MainViewModel), nameof(MainViewModel.StorageStatusText)),
                 (typeof(MainViewModel), nameof(MainViewModel.RefreshStorageUsageCommand)),
                 (typeof(StorageUsage), nameof(StorageUsage.OwnFraction)),
                 (typeof(StorageUsage), nameof(StorageUsage.OtherFraction)),
@@ -3531,11 +3531,17 @@ internal static class SelfTest
             var sizeTiersOk = DataResetService.FormatSize(5L * 1024 * 1024 * 1024).EndsWith(" GB")
                               && DataResetService.FormatSize(2L * 1024 * 1024 * 1024 * 1024).EndsWith(" TB");
 
+            // 「读不到磁盘信息」= Measure 返回 null：这是界面上"条整块收起 + 顶部气泡说明原因"的触发条件
+            // （卡片里不再放说明行，所以这条契约一旦破了，用户就会看到条静静地消失）
+            var storageNullOk = StorageUsageService.Measure(null) == null
+                                && StorageUsageService.Measure(Path.Combine(workDir, "no-such-dir")) == null;
+
             log.AppendLine($"存储条     : 本目录占用 = {DataResetService.FormatSize(storage?.OwnBytes ?? -1)}（应 500 KB），"
                          + $"三段相加 == 磁盘总容量 = {storageSumOk}（应 True）"
                          + $"，占比 → 星宽 = {starShapeOk}（应 True：0.4 出星宽 0.4）"
                          + $"，越界夹取 = {starClampOk}（应 True：-1→0 / 3→1 / NaN→0 / null→0）"
-                         + $"，容量分档 = {sizeTiersOk}（应 True：GB / TB）");
+                         + $"，容量分档 = {sizeTiersOk}（应 True：GB / TB）"
+                         + $"，读不到磁盘信息 → null = {storageNullOk}（应 True：界面据此收起条并弹气泡）");
 
             // ---- 存储条的**布局**：三段星宽是不是真的按占比落到了 ColumnDefinition 上 ----
             // 这一条不是多余的：ColumnDefinition **不在可视化树里**，DataContext 能否流到它身上必须实测

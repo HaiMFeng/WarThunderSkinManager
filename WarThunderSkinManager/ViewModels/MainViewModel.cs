@@ -983,8 +983,8 @@ public partial class MainViewModel : ObservableObject
                 break;
 
             case nameof(AppConfig.ResourceDirectory):
-                // 存储条画的是"资源目录所在磁盘" → 换了目录就是换了一块盘，必须重测
-                RefreshStorageUsage();
+                // 存储条画的是"资源目录所在磁盘" → 换了目录就是换了一块盘，必须重测（顺带重测，不弹气泡）
+                StartStorageMeasure(announce: false);
                 break;
 
             case nameof(AppConfig.PartReuseEnabled):
@@ -1267,9 +1267,10 @@ public partial class MainViewModel : ObservableObject
                         PartReuse.Refresh(); // 重读组数据与部件表（库可能已变化）
                         break;
                     case TabKey.Settings:
-                        // 存储条要递归枚举资源目录（几十万个文件），**进页面才测**、
-                        // 且一律在后台跑（见 RefreshStorageUsage）——否则又是一次整窗冻结
-                        RefreshStorageUsage();
+                        // 存储条要递归枚举资源目录（几十万个文件），**进页面才测**、一律在后台跑
+                        //（见 StartStorageMeasure）——否则又是一次整窗冻结。
+                        // 顺带重测不弹气泡：条本身是反馈，每次都弹会把气泡刷成噪音
+                        StartStorageMeasure(announce: false);
                         break;
                 }
             }));
@@ -1480,38 +1481,19 @@ public partial class MainViewModel : ObservableObject
         ? ""
         : Loc.Format("settings.gc.storage.disk", StorageUsage.Root, StorageUsage.TotalText);
 
-    /// <summary>
-    /// 没有条可画时的说明行：有结果时是空串（那一行随之收起）；
-    /// 统计中 / 读不到磁盘信息 / 目录还没配，各给一句 —— 别让卡片在这几种情况下留一片空白。
-    /// </summary>
-    public string StorageStatusText
-    {
-        get
-        {
-            if (StorageMeasuring) return Loc["settings.gc.storage.measuring"];
-            if (StorageUsage != null) return "";
+    partial void OnStorageUsageChanged(StorageUsage? value) => OnPropertyChanged(nameof(StorageDiskText));
 
-            var resourceDir = Config.ResourceDirectory;
-            return string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir)
-                ? Loc["settings.gc.needResource"]   // 与回收按钮共用同一句"先去配目录"
-                : Loc["settings.gc.storage.unavailable"];
-        }
-    }
-
-    partial void OnStorageUsageChanged(StorageUsage? value)
-    {
-        OnPropertyChanged(nameof(StorageDiskText));
-        OnPropertyChanged(nameof(StorageStatusText));
-    }
-
-    partial void OnStorageMeasuringChanged(bool value) => OnPropertyChanged(nameof(StorageStatusText));
-
-    /// <summary>当前在途的那一趟统计（语义 = <c>null</c> 时才由新一趟接管结果；非 null 时还兼任"这一趟是否仍是最新"的凭据）。</summary>
+    /// <summary>当前在途的那一趟统计（非 null 时兼任"这一趟是否仍是最新"的凭据）。</summary>
     private CancellationTokenSource? _storageMeasureCts;
 
     /// <summary>
-    /// 后台统计「资源目录」所在磁盘的占用并回填横向存储条：
-    /// 进入设置页、回收贴图之后、换资源目录时自动触发，卡片上的重测按钮也走它。
+    /// 卡片右上「重新统计存储占用」：**显式操作** → 顶部气泡里说明"正在统计…"（见 <see cref="StartStorageMeasure"/>）。
+    /// </summary>
+    [RelayCommand]
+    private void RefreshStorageUsage() => StartStorageMeasure(announce: true);
+
+    /// <summary>
+    /// 后台统计「资源目录」所在磁盘的占用并回填横向存储条。
     /// <para>
     /// **一律在后台线程统计**：资源目录可能有几百 GB / 几十万个文件，递归枚举是纯 IO ——
     /// 放 UI 线程上就是一次整窗冻结（同「已知问题」KI-023 / KI-024 那一类）。
@@ -1521,8 +1503,17 @@ public partial class MainViewModel : ObservableObject
     /// 免得慢的旧结果盖掉快的新结果。
     /// </para>
     /// </summary>
-    [RelayCommand]
-    private void RefreshStorageUsage()
+    /// <param name="announce">
+    /// 是否把"正在统计…"弹成顶部气泡。**只有用户主动点重测才 true**：
+    /// 进设置页 / 回收完成 / 换目录都是顺带重测，条本身（与置灰的重测按钮）就是反馈，
+    /// 每次都弹一条会把气泡刷成噪音。
+    /// <para>
+    /// 反过来"**读不到磁盘信息**"无论哪条路径都弹一次：那时整块条会收起，
+    /// 不说明就成了"静默消失"（与「已知问题」KI-003 同一条教训）。
+    /// 目录没配时也只在主动点击时才提示（未配目录这件事别处已有引导）。
+    /// </para>
+    /// </param>
+    private void StartStorageMeasure(bool announce)
     {
         var resourceDir = Config.ResourceDirectory;
 
@@ -1535,10 +1526,10 @@ public partial class MainViewModel : ObservableObject
 
         if (string.IsNullOrWhiteSpace(resourceDir) || !Directory.Exists(resourceDir))
         {
-            // 目录没配 / 不存在（刚被清除数据）→ 不必统计：把条收起，说明行给出"先去配目录"
+            // 目录没配 / 不存在（刚被清除数据）→ 不必统计，把条收起
             StorageMeasuring = false;
             StorageUsage = null;
-            OnPropertyChanged(nameof(StorageStatusText)); // 上面两句可能都没变化，说明行仍要重取
+            if (announce) ShowStatus(Loc["settings.gc.needResource"]);
             return;
         }
 
@@ -1546,6 +1537,7 @@ public partial class MainViewModel : ObservableObject
         var dispatcher = Application.Current?.Dispatcher;
 
         StorageMeasuring = true;
+        if (announce) ShowStatus(Loc["settings.gc.storage.measuring"]);
 
         Task.Run(() => StorageUsageService.Measure(resourceDir, token), token).ContinueWith(t =>
         {
@@ -1558,6 +1550,9 @@ public partial class MainViewModel : ObservableObject
 
                 StorageMeasuring = false;
                 StorageUsage = t.IsFaulted ? null : t.Result;
+
+                // 没有能画的数字（网络盘 / 未就绪 / 无权限）→ 说明原因，别让条静静地消失
+                if (StorageUsage == null) ShowStatus(Loc["settings.gc.storage.unavailable"]);
             }));
         });
     }
@@ -1583,8 +1578,9 @@ public partial class MainViewModel : ObservableObject
         {
             Application.Current?.Dispatcher.Invoke(() =>
             {
-                // 无论成败都重测一次：成功删了文件、失败也只是"磁盘占用没变"，两种都该让条反映现状
-                RefreshStorageUsage();
+                // 无论成败都重测一次：成功删了文件、失败也只是"磁盘占用没变"，两种都该让条反映现状。
+                // 这里是顺带重测，不弹气泡（回收自己的结果已经在状态栏里了）
+                StartStorageMeasure(announce: false);
 
                 if (t.IsFaulted)
                 {
