@@ -2478,23 +2478,38 @@ internal static class SelfTest
             if (Directory.Exists(sourceRoot))
             {
                 var mainWindowPath = Path.Combine(sourceRoot, "MainWindow.xaml");
-                var navItems = 0;
-                var navTagged = 0;
+                var mainWindowXaml = File.Exists(mainWindowPath)
+                    ? File.ReadAllText(mainWindowPath, Encoding.UTF8)
+                    : "";
 
-                if (File.Exists(mainWindowPath))
-                {
-                    var mainWindowXaml = File.ReadAllText(mainWindowPath, Encoding.UTF8);
-                    navItems = System.Text.RegularExpressions.Regex
-                        .Matches(mainWindowXaml, @"CommandParameter=""\{x:Static vm:TabKey\.\w+\}""").Count;
-                    navTagged = System.Text.RegularExpressions.Regex
-                        .Matches(mainWindowXaml, @"Tag=""\{loc:Loc nav\.\w+\}""").Count;
-                }
+                var navItems = System.Text.RegularExpressions.Regex
+                    .Matches(mainWindowXaml, @"CommandParameter=""\{x:Static vm:TabKey\.\w+\}""").Count;
+                var navTagged = System.Text.RegularExpressions.Regex
+                    .Matches(mainWindowXaml, @"Tag=""\{loc:Loc nav\.\w+\}""").Count;
 
                 log.AppendLine($"导航折叠   : 导航项 {navItems} 个、带悬停提示（Tag）{navTagged} 个（应相等）");
 
                 if (navItems > 0 && navTagged != navItems)
                     log.AppendLine($"自检异常：MainWindow.xaml 有 {navItems - navTagged} 个导航项没给 Tag → "
                                  + "折叠后只有图标，没有悬停提示就读不出它是什么（界面设计规范 §5.13）");
+
+                // 折叠 / 展开动画的终点必须与 VM 的窗格宽度常量一致：动画带 FillBehavior=Stop，
+                // 差值会在动画结束那一刻被"一把拽回"（看着就是切到一半顿一下）。
+                // 这两个数分处 XAML 与 C#，只能在这里对着比。
+                var paneToValues = System.Text.RegularExpressions.Regex
+                    .Matches(mainWindowXaml, @"Storyboard\.TargetProperty=""Width""\s*\r?\n\s*To=""(\d+(?:\.\d+)?)""")
+                    .Select(m => double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+                    .ToList();
+
+                var paneWidthsOk = paneToValues.Contains(MainViewModel.NavCompactWidth)
+                                   && paneToValues.Contains(MainViewModel.NavExpandedWidth);
+
+                log.AppendLine($"导航窗格宽 : 动画终点 = [{string.Join(" / ", paneToValues)}]"
+                             + $"（应含 {MainViewModel.NavCompactWidth:0.#} 与 {MainViewModel.NavExpandedWidth:0.#}）= {paneWidthsOk}");
+
+                if (!paneWidthsOk)
+                    log.AppendLine("自检异常：MainWindow.xaml 的导航宽度动画终点与 MainViewModel 的 "
+                                 + "NavCompactWidth / NavExpandedWidth 对不上 → 动画结束会被拽回（切换顿一下）");
             }
 
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----
@@ -3749,12 +3764,14 @@ internal static class SelfTest
             barHost.Children.Clear();
 
             // ---- 左侧导航折叠态（界面设计规范 §5.13）----
-            // 折叠后只剩图标，两件事**只有真渲染一次才知道**：
+            // 折叠后只剩图标，三件事**只有真渲染一次才知道**：
             // ① "这是什么"靠悬停提示，而提示是 NavButton 样式在折叠态从各导航项的 `Tag` 取的
             //    （展开态置空）—— 样式里的 Setter + 绑定 + 触发器这条链子必须实测；
-            // ② 图标在 64 宽的窗格里居中：靠"外边距 10 + 内边距 10 + 图标格 24 + 内边距 10 + 外边距 10"，
-            //    改任一数字都会歪，所以直接把图标中心量出来比。
-            // DataContext 用匿名对象喂 `IsNavCompact`（视图只看这一个派生属性，见 MainViewModel）
+            // ② 图标在折叠窗格里居中：靠"外边距 10 + 内边距 16 + 图标格 24 + 内边距 16 + 外边距 10"，
+            //    改任一数字都会歪；
+            // ③ **图标在两态下的横坐标必须一模一样** —— 内边距两态都是 16、图标格也是 24，
+            //    所以折叠只是"窗格围着图标收起来"。曾经把内边距收到 10，图标会瞬时左移 6px，
+            //    观感就是"切换状态时图标跳一下"（用户实测反馈），这条断言就是防它回来。
             static Button ProbeNavItem(object dataContext)
             {
                 var icon = new TextBlock { Text = "X", Width = 24, TextAlignment = TextAlignment.Center };
@@ -3771,40 +3788,47 @@ internal static class SelfTest
                 };
             }
 
-            static (Button Item, TextBlock Icon, Border Host) ArrangeNavProbe(object dataContext)
+            static (Button Item, TextBlock Icon, Border Host) ArrangeNavProbe(object dataContext, double paneWidth)
             {
                 var item = ProbeNavItem(dataContext);
-                var host = new Border { Width = 64, Height = 200 };
+                var host = new Border { Width = paneWidth, Height = 200 };
                 host.Child = new StackPanel { Children = { item } };
 
-                host.Measure(new Size(64, 200));
-                host.Arrange(new Rect(0, 0, 64, 200));
+                host.Measure(new Size(paneWidth, 200));
+                host.Arrange(new Rect(0, 0, paneWidth, 200));
                 host.UpdateLayout();
 
                 return (item, (TextBlock)((StackPanel)item.Content).Children[0], host);
             }
 
-            var compactProbe = ArrangeNavProbe(new { IsNavCompact = true });
-            var expandedProbe = ArrangeNavProbe(new { IsNavCompact = false });
+            var compactPane = MainViewModel.NavCompactWidth;   // 76
+            var expandedPane = MainViewModel.NavExpandedWidth; // 220
+            var compactProbe = ArrangeNavProbe(new { IsNavCompact = true }, compactPane);
+            var expandedProbe = ArrangeNavProbe(new { IsNavCompact = false }, expandedPane);
 
-            var iconCenterX = compactProbe.Icon.TranslatePoint(
-                new Point(compactProbe.Icon.ActualWidth / 2, 0), compactProbe.Host).X;
+            var compactIconX = compactProbe.Icon.TranslatePoint(new Point(0, 0), compactProbe.Host).X;
+            var expandedIconX = expandedProbe.Icon.TranslatePoint(new Point(0, 0), expandedProbe.Host).X;
+            var compactIconCenter = compactIconX + compactProbe.Icon.ActualWidth / 2;
 
-            var navCompactOk = compactProbe.Item.ActualWidth > 0
-                               && Math.Abs(compactProbe.Item.ActualWidth - 44) < 1
-                               && Math.Abs(compactProbe.Item.Padding.Left - 10) < 0.01
-                               && Math.Abs(iconCenterX - 32) < 1          // 窗格 64 → 中心 32
-                               && (compactProbe.Item.ToolTip as string) == "涂装管理";
+            var navCompactOk = Math.Abs(compactProbe.Item.ActualWidth - (compactPane - 20)) < 1
+                               && Math.Abs(compactProbe.Item.Padding.Left - 16) < 0.01
+                               && Math.Abs(compactIconCenter - compactPane / 2) < 1        // 图标居中
+                               && (compactProbe.Item.ToolTip as string) == "涂装管理";     // 悬停提示 = Tag
 
             var navExpandedOk = Math.Abs(expandedProbe.Item.Padding.Left - 16) < 0.01
-                                && expandedProbe.Item.ToolTip == null;    // 标签就在眼前 → 不给提示
+                                && expandedProbe.Item.ToolTip == null;                     // 标签就在眼前 → 不给提示
 
-            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 44）、"
-                         + $"内边距 = {compactProbe.Item.Padding.Left:0.#}（应 10）、"
-                         + $"图标中心 = {iconCenterX:0.#}（应 32 = 窗格中心）、"
+            var navNoShiftOk = Math.Abs(compactIconX - expandedIconX) < 0.5;               // 两态图标横坐标一致
+
+            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 {compactPane - 20:0.#}）、"
+                         + $"内边距 = {compactProbe.Item.Padding.Left:0.#}（应 16，两态一致）、"
+                         + $"图标中心 = {compactIconCenter:0.#}（应 {compactPane / 2:0.#} = 窗格中心）、"
                          + $"悬停提示 = 「{compactProbe.Item.ToolTip}」（应 = Tag 文案）→ {navCompactOk}");
             log.AppendLine($"导航展开态 : 内边距 = {expandedProbe.Item.Padding.Left:0.#}（应 16）、"
                          + $"悬停提示 = {(expandedProbe.Item.ToolTip == null ? "无（应无）" : expandedProbe.Item.ToolTip.ToString())} → {navExpandedOk}");
+            log.AppendLine($"导航图标位移: 折叠 {compactIconX:0.#} → 展开 {expandedIconX:0.#}"
+                         + $"（应完全相同，切换时不跳）= {navNoShiftOk}；"
+                         + $"折叠态图标是否居中 = {Math.Abs(compactIconCenter - compactPane / 2) < 1}（应 True）");
 
             // 安装身份（§4.3）：安装根与当前进程目录一致才算"安装版"
             var identityOk = AppUpdateService.IsCanonicalInstallPath(

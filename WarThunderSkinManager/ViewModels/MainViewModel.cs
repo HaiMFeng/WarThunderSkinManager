@@ -1062,10 +1062,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isNavCollapsed;
 
     /// <summary>展开态窗格宽度（界面设计规范 §2.3）。</summary>
-    private const double NavExpandedWidth = 220;
+    internal const double NavExpandedWidth = 220;
 
-    /// <summary>折叠态窗格宽度：10 外边距 + 10 内边距 + 24 图标格 + 10 内边距 + 10 外边距 → 图标在窗格里居中。</summary>
-    private const double NavCompactWidth = 64;
+    /// <summary>
+    /// 折叠态窗格宽度 = **10 外边距 + 16 内边距 + 24 图标格 + 16 内边距 + 10 外边距**。
+    /// <para>
+    /// 关键点：内边距**两态都用 16**（不改），所以折叠时图标在屏幕上的位置**一像素都不动** ——
+    /// 窗格只是围着它收起来；图标同时仍严格居中（左 26 / 右 26）。
+    /// 早先用 64（内边距收到 10）会让图标瞬时左移 6px，看起来就是"切换状态时跳一下"。
+    /// </para>
+    /// </summary>
+    internal const double NavCompactWidth = 76;
 
     /// <summary>
     /// 窗口窄于这个宽度就**自动紧凑**（**不覆盖**用户的选择，见 <see cref="IsNavCompact"/>）：

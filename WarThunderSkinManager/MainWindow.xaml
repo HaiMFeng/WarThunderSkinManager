@@ -124,8 +124,10 @@
                                     <DataTrigger.EnterActions>
                                         <BeginStoryboard>
                                             <Storyboard>
+                                                <!-- To 必须与 MainViewModel.NavCompactWidth（76）一致：
+                                                     差值会在动画结束时被 FillBehavior=Stop 一把拽回来；自检会核对这两个数 -->
                                                 <DoubleAnimation Storyboard.TargetProperty="Width"
-                                                                 To="64" Duration="0:0:0.2" FillBehavior="Stop">
+                                                                 To="76" Duration="0:0:0.2" FillBehavior="Stop">
                                                     <DoubleAnimation.EasingFunction>
                                                         <CubicEase EasingMode="EaseOut"/>
                                                     </DoubleAnimation.EasingFunction>

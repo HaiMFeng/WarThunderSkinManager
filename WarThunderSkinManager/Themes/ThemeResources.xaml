@@ -436,7 +436,8 @@
 
     <!-- ============ 左侧导航项 ============
          折叠态（`IsNavCompact`，界面设计规范 §5.13）由这一个样式统一处理，导航项自己不用各写一份：
-         · 内边距 16 → 10：折叠后窗格 64、按钮 44（左右外边距各 10）→ 图标正好居中；
+         · **内边距两态都是 16**（刻意不改）：折叠时窗格收到 76（= 10+16+24+16+10）→ 图标在屏幕上
+           的位置与展开态**完全相同**，窗格只是围着它收起来；改内边距会让图标瞬时平移（"跳一下"）；
          · 标签**不切 Visibility**，靠模板的 `ClipToBounds` 把它裁掉 —— 宽度动画与"标签滑出"
            因此是同一个动作，不会出现"先跳字、再变宽"（也少 5 份重复的触发器）；
          · 只显示图标时**必须**能读出这是什么：文案由调用方挂在 `Tag` 上，本样式在折叠态把它当悬停提示；
@@ -487,9 +488,8 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
-            <DataTrigger Binding="{Binding IsNavCompact}" Value="True">
-                <Setter Property="Padding" Value="10,0"/>
-            </DataTrigger>
+            <!-- 折叠态**不动任何尺寸**（内边距保持 16，见上）：图标与标签的左边缘在两态下逐像素一致，
+                 只有窗格宽度在动 → 切换时不会看到图标平移。这里只负责"只显示图标时给悬停提示" -->
             <DataTrigger Binding="{Binding IsNavCompact}" Value="False">
                 <Setter Property="ToolTip" Value="{x:Null}"/>
             </DataTrigger>
