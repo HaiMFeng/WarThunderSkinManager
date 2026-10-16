@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
-using System.Threading.Tasks;
 using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
@@ -184,8 +183,8 @@ public static class ImportService
     /// 解构并行度上限；<c>0</c> = 按 CPU 核数取默认（见 <see cref="ResolveDegree"/>）。
     /// <para>
     /// **静默导入**（WT Live「一键导入」）会显式给一个小值：那条路径没有遮罩挡着，用户还在
-    /// 翻瀑布流，而缩略图解码 / 预览图取字节也走 <c>Task.Run</c> —— 同一批线程池线程被并行解构
-    /// 占满时，它们只能排队等池注入新线程（每秒才一两个），表现就是"浏览卡顿"。
+    /// 翻瀑布流 —— 解构是 CPU + IO 双密集的活，并行度给满会跟界面自己的渲染 / 布局 / 图片解码
+    /// 抢机器，表现就是"浏览卡顿"。
     /// </para>
     /// </param>
     public static ImportResult Commit(IReadOnlyList<ImportCandidate> candidates, string resourceDir,
@@ -223,18 +222,14 @@ public static class ImportService
         var gate = new object();
         var done = 0;
 
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = ResolveDegree(maxDegreeOfParallelism),
-            CancellationToken = cancellationToken
-        };
-
         try
         {
-            Parallel.ForEach(candidates, options, candidate =>
+            // **专用线程**跑这批解构（不是线程池）：一次导入可能持续几十秒，占住池线程会让别的活
+            // （瀑布流缩略图的解码、预览图取字节等）排队等池注入新线程 —— 理由见
+            // docs/线程池与长任务约定.md。取消在**活与活之间**生效，与原 Parallel.ForEach 同一语义
+            // （所以 body 里不再自己查令牌：那会被下面的 catch 当成"解构失败"记成一条告警）
+            DedicatedWorkers.Run(candidates, ResolveDegree(maxDegreeOfParallelism), candidate =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 try
                 {
                     var recordId = importIdByCandidate[candidate];
@@ -260,7 +255,7 @@ public static class ImportService
                     Total = candidates.Count,
                     Current = candidate.SuggestedName
                 });
-            });
+            }, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -277,7 +272,10 @@ public static class ImportService
         return result;
     }
 
-    /// <summary>解构并行度的**上限**：再多也不会更快（哈希/复制受 IO 与内存带宽限制），只会更抢线程池。</summary>
+    /// <summary>
+    /// 解构并行度的**上限**：再多也不会更快（哈希 / 复制受 IO 与内存带宽限制），
+    /// 只会多占 CPU 与磁盘带宽、跟界面抢机器。
+    /// </summary>
     internal const int MaxDegree = 8;
 
     /// <summary>

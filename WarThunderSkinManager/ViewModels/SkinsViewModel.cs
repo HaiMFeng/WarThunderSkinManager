@@ -133,12 +133,12 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 静默导入（WT Live「一键导入」）的解构**并行度上限**：留一半线程池给界面。
+    /// 静默导入（WT Live「一键导入」）的解构**并行度上限**：留一半机器给界面。
     /// <para>
-    /// 这条路径与用户的浏览**并存**（没有遮罩挡着，用户还在翻瀑布流），而缩略图解码、
-    /// 预览图取字节（<c>WTLiveService.FetchImageCachedAsync</c>）同样走 <c>Task.Run</c> ——
-    /// 并行解构把池线程占满时，它们只能排队等线程池注入新线程（每秒才一两个），
-    /// 用户看到的就是"导入期间浏览卡顿"。上限 4 兼顾多核机器上的导入速度与界面余量。
+    /// 这条路径与用户的浏览**并存**（没有遮罩挡着，用户还在翻瀑布流），而解构本身是
+    /// CPU + IO 双密集：并行度给满会跟界面自己的渲染 / 布局、以及缩略图的解码与取字节
+    /// （同样走 <c>Task.Run</c>）抢 CPU 与磁盘带宽 —— 表现就是"导入期间浏览卡顿"。
+    /// 上限 4 兼顾多核机器上的导入速度与界面余量。
     /// </para>
     /// </summary>
     internal static readonly int SilentImportDegree = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
@@ -1918,8 +1918,9 @@ public partial class SkinsViewModel : ObservableObject
 
                 // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch。
                 // 被抑制时 scope 是空作用域：Report 之类全是空操作，进度自然丢弃。
-                // 静默导入显式收窄并行度（见 SilentImportDegree）：那条路径与用户的浏览并存，
-                // 不能把线程池占满 —— 否则瀑布流缩略图的解码/取字节要排队等池注入线程
+                // 解构本身跑在**专用线程**上（见 ImportService / docs/线程池与长任务约定.md）；
+                // 静默导入再显式收窄并行度（见 SilentImportDegree）：那条路径与用户的浏览并存，
+                // 不能把机器吃满
                 result = await Task.Run(() => ImportService.Commit(
                     candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl,
                     silent ? SilentImportDegree : 0));

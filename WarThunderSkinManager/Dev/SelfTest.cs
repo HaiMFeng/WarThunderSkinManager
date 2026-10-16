@@ -3153,6 +3153,68 @@ internal static class SelfTest
                          + $"（应 2..4，且 ≤ 核数 {Environment.ProcessorCount}）= {silentDegreeOk}，"
                          + $"Commit 并行度解析（0→按核数 / 1→1 / 3→3 / 99→{ImportService.MaxDegree}）= {degreeRuleOk}");
 
+            // ---- 长任务专用线程（docs/线程池与长任务约定.md）----
+            // 钉住四件事：① **一根都不来自线程池**（这正是不用 Parallel.ForEach / Task.Run 的理由）；
+            // ② 每个元素恰好处理一次；③ 实际线程数不超过给定并行度；④ 取消与异常如实往外传
+            // （异常必须"由调用方线程重抛"——专用线程里逃逸的异常会直接结束进程）。
+            var workerIds = new HashSet<int>();
+            var workerItems = 0;
+            var workerLive = 0;
+            var workerPeak = 0;
+            var workerFromPool = 0;
+
+            DedicatedWorkers.Run(Enumerable.Range(0, 30).ToList(), degree: 3, item =>
+            {
+                if (Thread.CurrentThread.IsThreadPoolThread) Interlocked.Increment(ref workerFromPool);
+
+                lock (workerIds)
+                {
+                    workerIds.Add(Environment.CurrentManagedThreadId);
+                    workerLive++;
+                    workerPeak = Math.Max(workerPeak, workerLive);
+                }
+
+                Interlocked.Increment(ref workerItems);
+                Thread.Sleep(1);   // 让三根线程真的重叠起来，并发峰值才有意义
+
+                lock (workerIds) workerLive--;
+            }, CancellationToken.None);
+
+            var workersOk = workerItems == 30          // 每个元素恰好一次
+                            && workerFromPool == 0     // 一根都不来自线程池
+                            && workerIds.Count is >= 1 and <= 3
+                            && workerPeak is >= 1 and <= 3;
+
+            // 异常：worker 里就地接住 → 由调用方线程重抛（既不吞，也不因专用线程里逃逸而结束进程）
+            var escaped = false;
+            try
+            {
+                DedicatedWorkers.Run(new[] { 1, 2, 3 }, 2,
+                    _ => throw new InvalidOperationException("boom"), CancellationToken.None);
+            }
+            catch (InvalidOperationException) { escaped = true; }
+
+            // 取消：令牌已在取消态 → 一件活都不该做，且如实抛 OperationCanceledException
+            using var workerCts = new CancellationTokenSource();
+            workerCts.Cancel();
+            var ranAfterCancel = 0;
+            var cancelEscaped = false;
+            try
+            {
+                DedicatedWorkers.Run(Enumerable.Range(0, 5).ToList(), 2,
+                    _ => Interlocked.Increment(ref ranAfterCancel), workerCts.Token);
+            }
+            catch (OperationCanceledException) { cancelEscaped = true; }
+
+            var workersEndOk = escaped && cancelEscaped && ranAfterCancel == 0;
+
+            log.AppendLine($"长任务线程 : 实际用 {workerIds.Count} 根（应 ≤ 3 且 ≥ 1）、来自线程池 = {workerFromPool}（应 0）"
+                         + $"、处理 {workerItems}/30（应 30）、并发峰值 = {workerPeak}（应 ≤ 3）→ {workersOk}；"
+                         + $"异常由调用方重抛 = {escaped}（应 True / 不得吞 / 不得结束进程）、"
+                         + $"已取消则一件不做 = {cancelEscaped} 且做了 {ranAfterCancel} 件（应 True / 0）→ {workersEndOk}");
+            log.AppendLine($"长任务线程名: 前缀 = {DedicatedWorkers.ThreadNamePrefix}"
+                         + $"（转储里据此认出专属线程）");
+
             // ---- 重试只补尚未完成的部分（§3.17）----
             // 已下好的那一路（压缩包 / 预览图）留着暂存文件跨重试复用：重试只下载尚未完成的那一路，
             // 已下好的那一路**保留它的进度段**（压缩包 80% / 预览图 20%），不再从 0 重来。
