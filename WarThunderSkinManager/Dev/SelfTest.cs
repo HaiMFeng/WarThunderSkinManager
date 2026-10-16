@@ -2418,6 +2418,60 @@ internal static class SelfTest
             var blkTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, @"replace_tex|set_tex|\bparam\b")).Select(p => p.Key).ToList();
 
+            // ---- 文档引用一致性（长任务登记表 ↔ 已知问题清单）----
+            // 「线程池与长任务约定」§6 的登记表用 `KI-0xx` 指回「已知问题」：那一条被修掉、随版本归档
+            // 移出清单之后，这里的引用就成了悬空编号 —— 必须同步把登记表那一行改成 ✅ 并去掉关联编号。
+            // 这条检查就是那个"必须"的执行者，也就是那套约定的**跟踪机制**（另外它顺带把
+            // "登记表里还标着几条 ❌"打出来，每次自检都能看见欠账规模）。
+            var docsRoot = "";
+            if (!string.IsNullOrWhiteSpace(repoRoot))
+            {
+                var candidate = Path.Combine(repoRoot, "docs");
+                if (Directory.Exists(candidate)) docsRoot = candidate;
+            }
+
+            if (docsRoot.Length == 0)
+            {
+                for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+                {
+                    var candidate = Path.Combine(dir.FullName, "docs");
+                    if (Directory.Exists(candidate)) { docsRoot = candidate; break; }
+                }
+            }
+
+            if (docsRoot.Length > 0)
+            {
+                var issuesPath = Path.Combine(docsRoot, "已知问题.md");
+                var conventionPath = Path.Combine(docsRoot, "线程池与长任务约定.md");
+
+                if (File.Exists(issuesPath) && File.Exists(conventionPath))
+                {
+                    var issueIds = System.Text.RegularExpressions.Regex
+                        .Matches(File.ReadAllText(issuesPath, Encoding.UTF8), @"^### (KI-\d{3})",
+                            System.Text.RegularExpressions.RegexOptions.Multiline)
+                        .Select(m => m.Groups[1].Value)
+                        .ToHashSet(StringComparer.Ordinal);
+
+                    var conventionText = File.ReadAllText(conventionPath, Encoding.UTF8);
+                    var referenced = System.Text.RegularExpressions.Regex.Matches(conventionText, @"KI-\d{3}")
+                        .Select(m => m.Value)
+                        .Distinct()
+                        .OrderBy(id => id, StringComparer.Ordinal)
+                        .ToList();
+
+                    var dangling = referenced.Where(id => !issueIds.Contains(id)).ToList();
+                    var openRows = conventionText.Split('\n')
+                        .Count(line => line.StartsWith('|') && line.Contains('❌'));
+
+                    log.AppendLine($"长任务登记 : 约定文档引用已知问题 {referenced.Count} 条、悬空 {dangling.Count}（应 0），"
+                                 + $"登记表里仍标 ❌ 的行 = {openRows}");
+
+                    if (dangling.Count > 0)
+                        log.AppendLine($"自检异常：docs/线程池与长任务约定.md 引用了已归档的问题编号 "
+                                     + $"{string.Join(", ", dangling)} → 把登记表对应行改成 ✅（并去掉关联编号）");
+                }
+            }
+
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----
             // 容器滚出视口被回收时**脱离视觉树**（那一刻没有祖先），滚回来复用又赶上下一次解析时机不定 ——
             // `RelativeSource AncestorType` / `ElementName` / `x:Reference` 这类"按树找"的写法都会**踩空**，
