@@ -119,7 +119,9 @@
                                                    ToolTip="{Binding StateText}"
                                                    Style="{StaticResource PageSubtitle}" Margin="12,0,0,0"/>
                                         <!-- 常驻「重试」（**图标按钮** &#xF021;，紧凑、不占文字宽度）：下载中也能点 =
-                                             掐断当前下载并重跑（察觉卡死时直接掐断）。
+                                             掐断当前下载并重跑（察觉卡死时直接掐断）；**只补尚未完成的那部分**——
+                                             已下好的压缩包 / 预览图复用暂存文件（预览图还会先重查一次缓存），
+                                             不重复下载、进度也保留它们那一段。
                                              导入中 / 已完成后没有可重试的下载 → 隐藏（避免重复导入同一份压缩包）。
                                              仅图标 → 必须带 ToolTip（说明自动重试节奏与停滞超时） -->
                                         <Button Grid.Column="2" Margin="8,0,0,0" VerticalAlignment="Center"
@@ -140,7 +142,8 @@
                                         </Button>
 
                                         <!-- 取消 / 移除（图标 &#xF00D;，**常驻**，在重试右侧）：
-                                             下载中 / 导入中 = **取消**（条目留列表、提示「已取消」、进度清零，可再重试）；
+                                             下载中 / 导入中 = **取消**（条目留列表、提示「已取消」、
+                                             进度只保留**已下载完成**那一段，可再重试）；
                                              已取消 / 失败 / 已完成 = **从列表移除**（已取消状态再按一次即此语义） -->
                                         <Button Grid.Column="3" Margin="2,0,0,0" VerticalAlignment="Center"
                                                 Content="&#xF00D;"
@@ -159,7 +162,8 @@
                                         </Button>
                                     </Grid>
                                     <!-- 进度指示条：下载阶段总进度（压缩包 80% + 预览图 20%）；
-                                         ScaleX 绑定 0..1 比例（ProgressBar 最小模板的 PART_Indicator 不会自动变宽） -->
+                                         ScaleX 绑定 0..1 比例（ProgressBar 最小模板的 PART_Indicator 不会自动变宽）。
+                                         失败 / 已取消时**不清零**：已完成（已下好、重试会复用）的那一段保持不动 -->
                                     <Grid Height="4" Margin="0,4,0,0">
                                         <Border Background="{StaticResource BrushSurface2}" CornerRadius="2"/>
                                         <Border Background="{StaticResource BrushPrimary}" CornerRadius="2"

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -32,8 +33,8 @@ public enum WtLiveDownloadState
     Failed,
 
     /// <summary>
-    /// **用户取消**（列表右侧「取消」按钮）：条目**留在列表里**、进度清零，
-    /// 可用「重试」按钮重新下载；在已取消状态再按一次该按钮 = 从列表移除（§3.17）。
+    /// **用户取消**（列表右侧「取消」按钮）：条目**留在列表里**、进度只保留**已下载完成**那一段，
+    /// 可用「重试」按钮继续（只补尚未完成的部分）；在已取消状态再按一次该按钮 = 从列表移除（§3.17）。
     /// </summary>
     Canceled
 }
@@ -44,8 +45,10 @@ public enum WtLiveDownloadState
 /// 两者都完成才进入常规导入流程。
 /// </summary>
 /// <remarks>
-/// 条目自带下载所需的一切（直链 / 大小 / 预览图 URL），因此**可以整体重跑**——
-/// 列表右侧常驻的「重试」按钮据此掐断当前下载并重新开始（<see cref="CanRetry"/>）。
+/// 条目自带下载所需的一切（直链 / 大小 / 预览图 URL），因此可以重跑——列表右侧常驻的「重试」
+/// 按钮据此掐断当前下载并重新开始（<see cref="CanRetry"/>）。**但只补尚未完成的那部分**：
+/// 已下好的那一路记在 <see cref="StagedZipPath"/> / <see cref="StagedPreviewPath"/> 上并跨轮复用，
+/// 不重复下载（预览图还会先重新检索一次缓存）。
 /// </remarks>
 public sealed partial class WtLiveDownloadItem : ObservableObject
 {
@@ -85,6 +88,45 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
     /// 不会出现两轮并发下载（并发会重复导入同一份压缩包 → 生成重复涂装包）。
     /// </summary>
     internal SemaphoreSlim Gate { get; } = new(1, 1);
+
+    /// <summary>
+    /// **已下好**、可跨重试复用的压缩包暂存路径（null = 还没下完）。
+    /// 「重试只补尚未完成的部分」靠它落地：压缩包已下完，重试就不再重下一遍，
+    /// 直接复用暂存区里的这个文件继续走解压 / 导入。
+    /// </summary>
+    internal string? StagedZipPath { get; set; }
+
+    /// <summary>
+    /// **已下好**、可跨重试复用的预览图暂存路径（null = 还没下完）。
+    /// 预览图落盘时同时会写进 <see cref="WtLivePreviewCache"/>，这里留着是为了
+    /// 缓存被 LRU 回收掉时仍然能复用（不必再下一遍）。
+    /// </summary>
+    internal string? StagedPreviewPath { get; set; }
+
+    /// <summary>本项是否带预览图（没有预览图的帖子只有压缩包那一路）。</summary>
+    internal bool HasPreview => !string.IsNullOrWhiteSpace(PreviewUrl);
+
+    /// <summary>压缩包是否已下好（复用的前提：记过路径、且暂存文件还在）。</summary>
+    internal bool ZipCompleted
+        => StagedZipPath is { Length: > 0 } path && File.Exists(path);
+
+    /// <summary>预览图是否已下好（同上）。</summary>
+    internal bool PreviewCompleted
+        => StagedPreviewPath is { Length: > 0 } path && File.Exists(path);
+
+    /// <summary>
+    /// 「已下载完成的部分」在总进度里占的份额：压缩包下完 = 80%、预览图下完 = 20%、都没有 = 0。
+    /// 两处用得上：① 重试时进度从这一段起步（不再从 0 重来）；② 失败 / 取消时不清掉已下好的那一段。
+    /// </summary>
+    internal double CompletedFraction
+        => WTLiveService.CombinedProgress(ZipCompleted ? 1d : 0d, PreviewCompleted ? 1d : 0d, HasPreview);
+
+    /// <summary>丢弃两部分的复用状态（导入完成 / 从列表移除时调用，暂存文件随之可清）。</summary>
+    internal void ClearStagedParts()
+    {
+        StagedZipPath = null;
+        StagedPreviewPath = null;
+    }
 
     // 最近一次状态文案的语言键 + 参数：界面语言切换后据此重建
     private string? _stateTextKey;

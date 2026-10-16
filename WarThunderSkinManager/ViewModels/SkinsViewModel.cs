@@ -290,8 +290,10 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 列表右侧常驻的「重试」：**掐断当前下载**（若有）→ 等这一轮收尾 → 整条重跑
-    /// （压缩包与预览图都重新下载）。用户察觉卡死时可直接点它，不必等自动重试跑完。
+    /// 列表右侧常驻的「重试」：**掐断当前下载**（若有）→ 等这一轮收尾 → 重跑。
+    /// **只补尚未完成的那部分**（§3.17）：已下好的压缩包 / 预览图直接复用（预览图还会先重新
+    /// 检索一次缓存），不重复下载、进度也保留它们那一段。用户察觉卡死时可直接点它，
+    /// 不必等自动重试跑完。
     /// </summary>
     [RelayCommand]
     private async Task RetryWtLiveDownload(WtLiveDownloadItem? item)
@@ -322,9 +324,10 @@ public partial class SkinsViewModel : ObservableObject
     /// <summary>
     /// 列表右侧的「**取消 / 移除**」按钮（§3.17）——同一位置、随状态改变语义：
     /// <list type="bullet">
-    /// <item><b>下载中 / 导入中</b> → **取消**：掐断本轮，条目**留在列表**（状态「已取消」、进度清零），
-    /// 之后可用「重试」重新下载；</item>
-    /// <item><b>已取消 / 失败 / 已完成</b> → **从列表移除**（已取消状态下再按一次即此语义）。</item>
+    /// <item><b>下载中 / 导入中</b> → **取消**：掐断本轮，条目**留在列表**（状态「已取消」、
+    /// 进度只保留**已下载完成**那一段），之后可用「重试」重新下载；</item>
+    /// <item><b>已取消 / 失败 / 已完成</b> → **从列表移除**（已取消状态下再按一次即此语义），
+    /// 同时清掉留给重试复用的暂存文件。</item>
     /// </list>
     /// </summary>
     [RelayCommand]
@@ -334,7 +337,7 @@ public partial class SkinsViewModel : ObservableObject
 
         if (item.IsCancelable)
         {
-            item.Cts?.Cancel(); // 取消 → 本轮 catch 里落成「已取消」并把进度清零
+            item.Cts?.Cancel(); // 取消 → 本轮 catch 里落成「已取消」，进度只留已完成的那一段
 
             // 稍等本轮收尾（暂存清理在 finally 里做）；不阻塞界面
             return;
@@ -350,6 +353,7 @@ public partial class SkinsViewModel : ObservableObject
         }
 
         WtLiveDownloads.Remove(item);
+        CleanupStagedParts(item); // 条目都没了 → 留给重试复用的暂存文件一并清掉
         item.Cts?.Dispose();
         item.Cts = null;
     }
@@ -387,12 +391,23 @@ public partial class SkinsViewModel : ObservableObject
         // 暂存目录 / 压缩包命名对**「已下载」判定**也是口径（导入清单只留下这个路径）：
         // 统一从 ArchiveService 取，别在这里另拼一份（见 ArchiveService.WtLiveStagingDirectory）
         var wtliveDir = ArchiveService.WtLiveStagingDirectory(resourceDir);
-        var hasPreview = !string.IsNullOrWhiteSpace(item.PreviewUrl);
+        var hasPreview = item.HasPreview;
 
-        zipPath = Path.Combine(wtliveDir,
-            $"{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}-{Path.GetFileName(item.FileName)}");
+        // **只重试尚未完成的那部分**（§3.17）：上一轮已下好的那一路直接复用暂存文件，
+        // 既不重新下载、也不重置它在进度条上的那一段 —— "已下载完成的部分保持原有进度不变"。
+        var zipReused = item.ZipCompleted;
+        var previewReused = item.PreviewCompleted;
 
-        if (hasPreview)
+        zipPath = zipReused
+            ? item.StagedZipPath!
+            : Path.Combine(wtliveDir,
+                $"{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}-{Path.GetFileName(item.FileName)}");
+
+        if (previewReused)
+        {
+            previewImagePath = item.StagedPreviewPath!;
+        }
+        else if (hasPreview)
         {
             // `Path.GetExtension` 会把 URL 的查询串一起吃进来（`…/x.jpg?v=2` → `.jpg?v=2`），
             // 而 `?` 是非法文件名字符 → `File.Create` 直接抛，整个下载项失败。
@@ -405,13 +420,17 @@ public partial class SkinsViewModel : ObservableObject
                 $"preview-{item.PostId}-{Guid.NewGuid().ToString("N")[..8]}{previewExt}");
         }
 
-        // 预览图**优先吃缓存**：命中就本地复制一份（几毫秒、零流量），这一路直接算完成。
+        // 预览图**优先吃缓存**：每次进入本流程（含每次重试）都**重新检索一次缓存** ——
+        // 上一轮只要把预览图下到手，就已经收进缓存了（见下面 StoreFromFile 的位置），
+        // 命中就本地复制一份（几毫秒、零流量），这一路直接算完成，不必再下一遍。
         // 注意是**复制**不是把缓存文件交出去：暂存区随后会被清理，否则会把缓存一起删掉
-        var previewFromCache = hasPreview && WtLivePreviewCache.CopyTo(item.PreviewUrl, previewImagePath!);
+        var previewFromCache = !previewReused && hasPreview
+            && WtLivePreviewCache.CopyTo(item.PreviewUrl, previewImagePath!);
 
-        // 两路进度合成总进度（**预览图独占 20%**）：任一进展都刷新同一根进度条
-        var zipFraction = 0d;
-        var previewFraction = 0d;
+        // 两路进度合成总进度（**预览图独占 20%**）：任一进展都刷新同一根进度条。
+        // 已下好的那一路**直接算满**它那段（压缩包 80% / 预览图 20%）——重试时进度从这一段起步
+        var zipFraction = zipReused ? 1d : 0d;
+        var previewFraction = previewReused || previewFromCache ? 1d : 0d;
 
         var zipProgress = new Progress<ImportProgress>(p =>
         {
@@ -427,7 +446,8 @@ public partial class SkinsViewModel : ObservableObject
 
         void ReportProgress()
         {
-            // 已取消 / 已结束 → 不再回写：取消时进度要清零，若还接收在途回调会被跳回半截
+            // 已取消 / 已结束 → 不再回写：取消后进度只留"已完成部分"那一段，
+            // 若还接收在途回调，会被在途的那半截覆盖回去
             if (item.State != WtLiveDownloadState.Downloading) return;
 
             item.Progress = WTLiveService.CombinedProgress(zipFraction, previewFraction, hasPreview);
@@ -452,27 +472,31 @@ public partial class SkinsViewModel : ObservableObject
             item.Progress = 0;
             item.SetStateText("wtlive.state.downloading0");
 
-            if (previewFromCache)
-            {
-                previewFraction = 1; // 已从缓存复制到位：不再下载，进度条把预览图那 20% 直接算满
-                ReportProgress();
-            }
+            // 已下好的部分立刻反映到进度条（"保持原有进度不变"）：预览图复用 / 命中缓存 =
+            // 20% 已经在手，压缩包复用 = 80% 已经在手，剩下那段才从 0 往下滚
+            ReportProgress();
 
-            zipTask = Task.Run(() => WTLiveService.DownloadFileAsync(
-                item.FileLink, zipPath, item.FileSize, zipProgress, runToken, ReportAttempt), runToken);
+            zipTask = zipReused
+                ? Task.CompletedTask
+                : Task.Run(() => WTLiveService.DownloadFileAsync(
+                    item.FileLink, zipPath, item.FileSize, zipProgress, runToken, ReportAttempt), runToken);
 
-            previewTask = previewFromCache || !hasPreview
+            previewTask = previewReused || previewFromCache || !hasPreview
                 ? Task.CompletedTask
                 : Task.Run(() => WTLiveService.DownloadFileAsync(
                     item.PreviewUrl!, previewImagePath!, null, previewProgress, runToken, ReportAttempt), runToken);
 
-            // **预览图与压缩包都下载完成**才进入安装（预览图是下载的一部分，失败即本项失败 → 可重试）
+            // **预览图单独完成即记账**（不等压缩包）：一落盘就收进缓存 + 记下暂存路径，
+            // 这样压缩包随后失败时，重试会走到上面的缓存检索 / 复用，不必把预览图再下一遍
             await Task.WhenAll(zipTask, previewTask);
 
-            // 下好的预览图顺手收进缓存（本地复制，几毫秒）：下次浏览 / 打开详情就能命中。
-            // 必须在 finally 清理暂存**之前**做完——那个 preview 文件随后就没了
-            if (!previewFromCache && hasPreview && previewImagePath != null && File.Exists(previewImagePath))
+            if (!zipReused) item.StagedZipPath = zipPath;
+
+            if (!previewReused && hasPreview && previewImagePath != null && File.Exists(previewImagePath))
+            {
+                item.StagedPreviewPath = previewImagePath;
                 await Task.Run(() => WtLivePreviewCache.StoreFromFile(item.PreviewUrl, previewImagePath));
+            }
 
             // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
             item.State = WtLiveDownloadState.Importing;
@@ -513,11 +537,13 @@ public partial class SkinsViewModel : ObservableObject
                 item.State = WtLiveDownloadState.Completed;
                 item.SetStateText("wtlive.state.completed", result.Packages.Count);
                 ShowStatus(Loc.Format("wtlive.imported", result.Packages.Count));
+                item.ClearStagedParts(); // 这条流程已经走完 → 复用状态作废，暂存文件随 finally 清掉
             }
             else
             {
                 item.State = WtLiveDownloadState.Completed;
                 item.SetStateText("wtlive.state.nothing");
+                item.ClearStagedParts(); // 同上
             }
         }
         catch (OperationCanceledException) when (_downloadsCts.IsCancellationRequested)
@@ -527,14 +553,16 @@ public partial class SkinsViewModel : ObservableObject
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // 用户取消（「取消」按钮 / 「重试」掐断本轮）：条目留列表、进度清零，可再次重试
+            // 用户取消（「取消」按钮 / 「重试」掐断本轮）：条目留列表，可再次重试
             MarkCanceled(item);
         }
         catch (OperationCanceledException)
         {
             // 读取停滞 / 服务器超时，且自动重试用尽
             item.State = WtLiveDownloadState.Failed;
-            item.Progress = 0; // 别让进度条停在中断处（"失败"旁边挂着半截进度看着像还在下）
+            // 只保留**已下载完成**那部分的进度段（没有已下好的部分就是 0）：
+            // 重试时会从这一段接着走，不必把已下好的部分再下一遍
+            item.Progress = item.CompletedFraction;
             // 次数由常量格式化：原先写死在文案里，与 WTLiveService 的常量有失步风险
             item.SetStateText("wtlive.state.failed",
                 Loc.Format("wtlive.state.stalled", WTLiveService.DownloadAttempts));
@@ -549,13 +577,13 @@ public partial class SkinsViewModel : ObservableObject
             var previewOnly = hasPreview && previewTaskFailed();
 
             item.State = WtLiveDownloadState.Failed;
-            item.Progress = 0; // 同上：失败态不留半截进度条（只有「下载中」才该有进度）
+            item.Progress = item.CompletedFraction; // 同上：已下好的那部分保留其进度段
             if (previewOnly) item.SetStateText("wtlive.state.previewFailed", reason);
             else item.SetStateText("wtlive.state.failed", reason);
 
             ShowStatus(previewOnly ? Loc["wtlive.previewFailed"] : Loc.Format("wtlive.downloadFailed", reason));
 
-            bool previewTaskFailed() => previewImagePath != null && !File.Exists(previewImagePath);
+            bool previewTaskFailed() => !item.PreviewCompleted;
         }
         finally
         {
@@ -571,21 +599,40 @@ public partial class SkinsViewModel : ObservableObject
                 catch { /* 取消 / 网络失败均可 */ }
             }
 
-            // 只清理**本流程**的产物——其他下载 / 导入流程的暂存可能仍在使用，禁止整区清扫
+            // 只清理**本流程**的产物——其他下载 / 导入流程的暂存可能仍在使用，禁止整区清扫。
+            // 例外：**留给重试复用**的那两路（条目上记着路径）必须留着，否则重试又得重下一遍
             foreach (var path in new[] { zipPath, extracted, previewImagePath })
-                TryDeletePath(path);
+                if (!IsRetainedForRetry(path)) TryDeletePath(path);
+
+            bool IsRetainedForRetry(string? path)
+                => path != null
+                   && (string.Equals(path, item.StagedZipPath, StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(path, item.StagedPreviewPath, StringComparison.OrdinalIgnoreCase));
         }
     }
 
     /// <summary>
-    /// 落成「**已取消**」：状态 = <see cref="WtLiveDownloadState.Canceled"/>、文案「已取消」、
-    /// **进度条清零**（用户要求：取消后不该停在半截的百分比上）；条目**保留在列表**，可用「重试」重启。
+    /// 落成「**已取消**」：状态 = <see cref="WtLiveDownloadState.Canceled"/>、文案「已取消」；
+    /// 条目**保留在列表**，可用「重试」重启。
+    /// <para>
+    /// 进度取 <see cref="WtLiveDownloadItem.CompletedFraction"/>：**已下载完成的部分保留它的进度段**
+    /// （预览图已在手就是 20%、压缩包已在手就是 80%），尚无已完成部分才是 0 ——
+    /// 这些都是重试时会**直接复用、不再下载**的部分，进度条如实反映它们已在手。
+    /// </para>
     /// </summary>
     private static void MarkCanceled(WtLiveDownloadItem item)
     {
         item.State = WtLiveDownloadState.Canceled;
         item.SetStateText("wtlive.state.canceled");
-        item.Progress = 0;
+        item.Progress = item.CompletedFraction;
+    }
+
+    /// <summary>清掉条目上「留给重试复用」的暂存文件（从列表移除时调用，不留孤儿）。</summary>
+    private static void CleanupStagedParts(WtLiveDownloadItem item)
+    {
+        TryDeletePath(item.StagedZipPath);
+        TryDeletePath(item.StagedPreviewPath);
+        item.ClearStagedParts();
     }
 
     /// <summary>

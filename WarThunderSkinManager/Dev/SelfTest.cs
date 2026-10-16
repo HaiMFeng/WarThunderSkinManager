@@ -3122,6 +3122,56 @@ internal static class SelfTest
                          + $"间隔 = {WTLiveService.RetryDelay.TotalSeconds} 秒（应 1，固定不退避），"
                          + $"停滞超时 = {WTLiveService.StallTimeout.TotalSeconds} 秒（应 30）");
 
+            // ---- 重试只补尚未完成的部分（§3.17）----
+            // 已下好的那一路（压缩包 / 预览图）留着暂存文件跨重试复用：重试只下载尚未完成的那一路，
+            // 已下好的那一路**保留它的进度段**（压缩包 80% / 预览图 20%），不再从 0 重来。
+            // 判据是纯函数（WtLiveDownloadItem.CompletedFraction / ZipCompleted / PreviewCompleted），
+            // 这里直接钉住语义；"暂存文件不在了就不算已下好"也一并钉住（否则会拿一个不存在的路径去走导入）。
+            var stagedDir = Path.Combine(workDir, "dl-staged");
+            Directory.CreateDirectory(stagedDir);
+            var stagedZipFile = Path.Combine(stagedDir, "1-abcd1234-a.zip");
+            var stagedPreviewFile = Path.Combine(stagedDir, "preview-1-abcd1234.jpg");
+            File.WriteAllBytes(stagedZipFile, new byte[] { 1 });
+            File.WriteAllBytes(stagedPreviewFile, new byte[] { 2 });
+
+            static WtLiveDownloadItem StagedItem(string? zip, string? preview) => new(1,
+                "https://live.warthunder.com/post/1/en/", "a.zip", "author", "name",
+                "https://live.warthunder.com/dl/x/", 0, "https://live.warthunder.com/img/x_lq/y.jpg")
+            {
+                StagedZipPath = zip,
+                StagedPreviewPath = preview
+            };
+
+            var stagedNone = StagedItem(null, null);
+            var stagedPreviewOnly = StagedItem(null, stagedPreviewFile);
+            var stagedZipOnly = StagedItem(stagedZipFile, null);
+            var stagedBoth = StagedItem(stagedZipFile, stagedPreviewFile);
+            var noPreviewPost = MakeDownloadItem(); // 无预览图的帖子：只有压缩包那一路
+
+            var fractionOk = stagedNone.CompletedFraction == 0
+                             && Math.Abs(stagedPreviewOnly.CompletedFraction - 0.2) < 0.0001
+                             && Math.Abs(stagedZipOnly.CompletedFraction - 0.8) < 0.0001
+                             && stagedBoth.CompletedFraction == 1
+                             && Math.Abs(noPreviewPost.CompletedFraction) < 0.0001;
+
+            var fractionOfNone = stagedNone.CompletedFraction;
+            var fractionOfPreview = stagedPreviewOnly.CompletedFraction;
+            var fractionOfZip = stagedZipOnly.CompletedFraction;
+
+            // 暂存文件被删掉（清理 / 手工删）→ 不再算"已下好"，那一路会重新下载
+            File.Delete(stagedZipFile);
+            var staleZipNotReused = !stagedZipOnly.ZipCompleted && stagedZipOnly.CompletedFraction == 0;
+
+            stagedBoth.ClearStagedParts();
+            var clearedAfterDone = !stagedBoth.ZipCompleted && !stagedBoth.PreviewCompleted
+                                   && stagedBoth.CompletedFraction == 0;
+
+            log.AppendLine($"分部分重试 : 已完成部分的进度段 = 无 {fractionOfNone:P0} / 仅预览 {fractionOfPreview:P0}"
+                         + $" / 仅压缩包 {fractionOfZip:P0} / 两者 {1:P0}（应 0% / 20% / 80% / 100%，全部 = {fractionOk}）"
+                         + $"，无预览图的帖子 = {noPreviewPost.CompletedFraction:P0}（应 0%：没有预览图那 20%）"
+                         + $"，暂存文件被删后不再复用 = {staleZipNotReused}（应 True）"
+                         + $"，导入完成清掉复用状态 = {clearedAfterDone}（应 True）");
+
             // ---- 下载列表右侧两个按钮的语义（§3.17）----
             // 重试：下载中 / 失败 / 已取消 可见；取消/移除：进行中 = 取消（条目留列表）、其余 = 从列表移除
             static WtLiveDownloadItem MakeDownloadItem() => new(1,
