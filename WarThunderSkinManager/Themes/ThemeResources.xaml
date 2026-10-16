@@ -448,7 +448,9 @@
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="Padding" Value="16,0"/>
         <Setter Property="Height" Value="44"/>
-        <Setter Property="Margin" Value="10,2"/>
+        <!-- 左右外边距 8（原 10）：导航左右各留 8 就够，收窄后图标落在 24、与「导航」小标题对齐；
+             折叠态窗格 = 8 + 16 + 24 + 16 + 8 = 72（见 MainViewModel.NavCompactWidth） -->
+        <Setter Property="Margin" Value="8,2"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="14"/>

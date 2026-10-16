@@ -3810,7 +3810,8 @@ internal static class SelfTest
             var expandedIconX = expandedProbe.Icon.TranslatePoint(new Point(0, 0), expandedProbe.Host).X;
             var compactIconCenter = compactIconX + compactProbe.Icon.ActualWidth / 2;
 
-            var navCompactOk = Math.Abs(compactProbe.Item.ActualWidth - (compactPane - 20)) < 1
+            // 按钮宽 = 窗格宽 − 左右外边距 ×2（外边距见 NavButton 样式的 Margin="8,2"）
+            var navCompactOk = Math.Abs(compactProbe.Item.ActualWidth - (compactPane - 16)) < 1
                                && Math.Abs(compactProbe.Item.Padding.Left - 16) < 0.01
                                && Math.Abs(compactIconCenter - compactPane / 2) < 1        // 图标居中
                                && (compactProbe.Item.ToolTip as string) == "涂装管理";     // 悬停提示 = Tag
@@ -3820,7 +3821,7 @@ internal static class SelfTest
 
             var navNoShiftOk = Math.Abs(compactIconX - expandedIconX) < 0.5;               // 两态图标横坐标一致
 
-            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 {compactPane - 20:0.#}）、"
+            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 {compactPane - 16:0.#} = 窗格宽 − 外边距 8×2）、"
                          + $"内边距 = {compactProbe.Item.Padding.Left:0.#}（应 16，两态一致）、"
                          + $"图标中心 = {compactIconCenter:0.#}（应 {compactPane / 2:0.#} = 窗格中心）、"
                          + $"悬停提示 = 「{compactProbe.Item.ToolTip}」（应 = Tag 文案）→ {navCompactOk}");
