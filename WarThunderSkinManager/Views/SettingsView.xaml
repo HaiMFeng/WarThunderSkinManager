@@ -1,7 +1,14 @@
 <UserControl x:Class="WarThunderSkinManager.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization">
+             xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+             xmlns:controls="clr-namespace:WarThunderSkinManager.Controls">
+
+    <UserControl.Resources>
+        <!-- 占比 → 星宽：存储条的三段按**同一比例尺**分割可用宽度（见 Controls/ProportionToStarLengthConverter） -->
+        <controls:ProportionToStarLengthConverter x:Key="StarLength"/>
+    </UserControl.Resources>
+
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
@@ -490,14 +497,132 @@
                 </StackPanel>
             </Border>
 
-            <!-- 存储维护（blob 回收，功能设计 §6.5） -->
+            <!-- 存储维护（blob 回收，功能设计 §6.5）＋ 横向存储条（§4 存储管理） -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.gc.title}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                     <TextBlock Text="{loc:Loc settings.gc.hint}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" Margin="0,0,0,14"/>
+                               TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+                    <!-- 横向存储条：**全长 = 资源目录所在磁盘的总容量**，三段 = 本程序资源目录占用 /
+                         该磁盘其他内容占用 / 剩余可用（同一比例尺；数据见 Services/Storage/StorageUsageService）。
+                         宽度走**星宽**（占比经 ProportionToStarLength 换算）→ 条随卡片宽度自适应，
+                         不必把条的像素宽回推到 ViewModel；圆角由 code-behind 在 SizeChanged 里挂
+                         RectangleGeometry 裁（WPF 没有内建圆角 Clip，同「界面设计规范」§2.7）。
+                         还没有统计结果（首次进入 / 读不到磁盘信息）时整块收起，只留下面那行说明。 -->
+                    <StackPanel Margin="0,0,0,16">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StorageUsage}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <!-- 磁盘行：卷根 + 该磁盘总容量（左）＋ 重测（右）。
+                             进入设置页 / 回收完成 / 换资源目录时会自动重测；库随时可能被导入撑大，故再给个显式入口 -->
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="{Binding StorageDiskText}" Style="{StaticResource FieldLabel}"
+                                       VerticalAlignment="Center" Margin="0,0,36,0"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <Button Content="&#xF021;" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    ToolTip="{loc:Loc settings.gc.storage.refresh}"
+                                    Command="{Binding RefreshStorageUsageCommand}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                        <Style.Triggers>
+                                            <!-- 统计中禁掉：这一趟本来就要把整个资源目录重枚举一遍，连点没有意义 -->
+                                            <DataTrigger Binding="{Binding StorageMeasuring}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </Grid>
+
+                        <!-- 条本体：外壳只负责圆角描边与"剩余可用"的底色；三段各自的底色铺满自己那一列。
+                             第三段不另画 —— 条的空余部分天然就是"剩余可用" -->
+                        <Border Height="14" CornerRadius="6"
+                                Background="{StaticResource BrushSurface2}"
+                                BorderBrush="{StaticResource BrushBorder}" BorderThickness="1"
+                                SnapsToDevicePixels="True">
+                            <Grid x:Name="StorageBar">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="{Binding StorageUsage.OwnFraction, Converter={StaticResource StarLength}}"/>
+                                    <ColumnDefinition Width="{Binding StorageUsage.OtherFraction, Converter={StaticResource StarLength}}"/>
+                                    <ColumnDefinition Width="{Binding StorageUsage.FreeFraction, Converter={StaticResource StarLength}}"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Background="{StaticResource BrushPrimary}"/>
+                                <Border Grid.Column="1" Background="{StaticResource BrushBorderStrong}"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 图例：色块 + 名称 + 数值 + 占比（三行共用一套列，数值与占比右对齐成两列） -->
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
+                                <Ellipse Width="8" Height="8" Fill="{StaticResource BrushPrimary}"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc settings.gc.storage.own}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding StorageUsage.OwnText}"
+                                       Margin="12,0,0,0"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding StorageUsage.OwnPercentText}"
+                                       Width="52" TextAlignment="Right" Foreground="{StaticResource BrushTextMuted}"/>
+
+                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4,0,0">
+                                <Ellipse Width="8" Height="8" Fill="{StaticResource BrushBorderStrong}"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc settings.gc.storage.other}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding StorageUsage.OtherText}"
+                                       Margin="12,4,0,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding StorageUsage.OtherPercentText}"
+                                       Width="52" TextAlignment="Right" Margin="0,4,0,0"
+                                       Foreground="{StaticResource BrushTextMuted}"/>
+
+                            <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,4,0,0">
+                                <Ellipse Width="8" Height="8" Fill="{StaticResource BrushSurface2}"
+                                         Stroke="{StaticResource BrushBorder}" StrokeThickness="1"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc settings.gc.storage.free}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding StorageUsage.FreeText}"
+                                       Margin="12,4,0,0"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding StorageUsage.FreePercentText}"
+                                       Width="52" TextAlignment="Right" Margin="0,4,0,0"
+                                       Foreground="{StaticResource BrushTextMuted}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 没有条可画时的说明（统计中 / 读不到磁盘信息）；有结果时这行是空串 → 收起 -->
+                    <TextBlock Text="{Binding StorageStatusText}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource PageSubtitle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StorageStatusText}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
                     <Button Content="{loc:Loc settings.gc.action}" Style="{StaticResource SecondaryButton}"
-                            HorizontalAlignment="Left" Command="{Binding GcBlobsCommand}"/>
+                            HorizontalAlignment="Left" Margin="0,4,0,0" Command="{Binding GcBlobsCommand}"/>
                 </StackPanel>
             </Border>
 

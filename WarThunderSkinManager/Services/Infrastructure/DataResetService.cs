@@ -137,13 +137,17 @@ public static class DataResetService
         return errors;
     }
 
-    /// <summary>把字节数格式化为易读文本。</summary>
+    /// <summary>
+    /// 把字节数格式化为易读文本。**到 TB 为止**（磁盘总容量 / 大库占用常态就是 TB 量级，
+    /// 不给这一档时 2 TB 的盘会显示成「2048 GB」）。
+    /// </summary>
     public static string FormatSize(long bytes)
     {
         if (bytes < 1024) return $"{bytes} B";
         if (bytes < 1024L * 1024) return $"{bytes / 1024.0:0.#} KB";
         if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.#} MB";
-        return $"{bytes / (1024.0 * 1024 * 1024):0.##} GB";
+        if (bytes < 1024L * 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024 * 1024):0.##} GB";
+        return $"{bytes / (1024.0 * 1024 * 1024 * 1024):0.##} TB";
     }
 
     private static int CountFiles(string directory, string pattern)

@@ -3096,6 +3096,21 @@ internal static class SelfTest
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.Progress)),
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.CanRetry)),
                 (typeof(WtLiveDownloadItem), nameof(WtLiveDownloadItem.IsCancelable)),
+                // 设置页「存储维护」的横向存储条：磁盘行 / 说明行 / 重测命令 + 三段的占比与数值
+                (typeof(MainViewModel), nameof(MainViewModel.StorageUsage)),
+                (typeof(MainViewModel), nameof(MainViewModel.StorageMeasuring)),
+                (typeof(MainViewModel), nameof(MainViewModel.StorageDiskText)),
+                (typeof(MainViewModel), nameof(MainViewModel.StorageStatusText)),
+                (typeof(MainViewModel), nameof(MainViewModel.RefreshStorageUsageCommand)),
+                (typeof(StorageUsage), nameof(StorageUsage.OwnFraction)),
+                (typeof(StorageUsage), nameof(StorageUsage.OtherFraction)),
+                (typeof(StorageUsage), nameof(StorageUsage.FreeFraction)),
+                (typeof(StorageUsage), nameof(StorageUsage.OwnText)),
+                (typeof(StorageUsage), nameof(StorageUsage.OtherText)),
+                (typeof(StorageUsage), nameof(StorageUsage.FreeText)),
+                (typeof(StorageUsage), nameof(StorageUsage.OwnPercentText)),
+                (typeof(StorageUsage), nameof(StorageUsage.OtherPercentText)),
+                (typeof(StorageUsage), nameof(StorageUsage.FreePercentText)),
             };
             var missingBindings = string.Join(", ", bindingPaths
                 .Where(p => p.Owner.GetProperty(p.Name) is null)
@@ -3484,6 +3499,73 @@ internal static class SelfTest
 
             log.AppendLine($"更新状态   : 往返一致 = {stateOk}（应 True：phase/targetVersion/skippedVersion/sha256），"
                          + $"文件 = {Path.GetFileName(AppUpdateService.StatePath(stateDir))}");
+
+            // ---- 存储条（设置页「存储维护」的横向存储条，§4 存储管理）----
+            // ① **三段占比之和恒为 1**：三段共用"该磁盘总容量"这一个分母（其他占用 = 总量 − 本目录 − 剩余），
+            //    所以条上不会出现"没画满 / 溢出"的缝隙；② 占比 → 星宽的夹取；
+            // ③ 真实统计一次小目录：本目录占用 == 实际写入的字节数，且三段相加 == 该磁盘总容量；
+            // ④ FormatSize 的 TB 档（磁盘总容量常态就是 TB 量级）。
+            var storageProbe = Path.Combine(workDir, "storage-probe");
+            Directory.CreateDirectory(Path.Combine(storageProbe, "sub"));
+            File.WriteAllBytes(Path.Combine(storageProbe, "a.bin"), new byte[300 * 1024]);
+            File.WriteAllBytes(Path.Combine(storageProbe, "sub", "b.bin"), new byte[200 * 1024]);
+
+            var storage = StorageUsageService.Measure(storageProbe);
+            var storageSumOk = storage is { } usage
+                && usage.OwnBytes == 500 * 1024                                     // 只统计文件长度：300 KB + 200 KB
+                && usage.OwnBytes + usage.OtherBytes + usage.FreeBytes == usage.TotalBytes
+                && Math.Abs(usage.OwnFraction + usage.OtherFraction + usage.FreeFraction - 1) < 1e-9;
+
+            var storageConverter = new WarThunderSkinManager.Controls.ProportionToStarLengthConverter();
+            var starLength = storageConverter.Convert(0.4, typeof(GridLength), null,
+                System.Globalization.CultureInfo.InvariantCulture) as GridLength?;
+
+            // 占比 → 星宽：0.4 要出「星宽 0.4」（不是像素宽），越界 / NaN / null 一律夹进 0..1。
+            // 注意传的是 **double**：绑定的来源就是 double 属性，非 double 会被当"没有值"处理。
+            var starShapeOk = starLength is { IsStar: true } star && Math.Abs(star.Value - 0.4) < 1e-9;
+            var starClampOk = WarThunderSkinManager.Controls.ProportionToStarLengthConverter.Clamp01(-1d) == 0
+                              && WarThunderSkinManager.Controls.ProportionToStarLengthConverter.Clamp01(3d) == 1
+                              && WarThunderSkinManager.Controls.ProportionToStarLengthConverter.Clamp01(double.NaN) == 0
+                              && WarThunderSkinManager.Controls.ProportionToStarLengthConverter.Clamp01(null) == 0;
+
+            var sizeTiersOk = DataResetService.FormatSize(5L * 1024 * 1024 * 1024).EndsWith(" GB")
+                              && DataResetService.FormatSize(2L * 1024 * 1024 * 1024 * 1024).EndsWith(" TB");
+
+            log.AppendLine($"存储条     : 本目录占用 = {DataResetService.FormatSize(storage?.OwnBytes ?? -1)}（应 500 KB），"
+                         + $"三段相加 == 磁盘总容量 = {storageSumOk}（应 True）"
+                         + $"，占比 → 星宽 = {starShapeOk}（应 True：0.4 出星宽 0.4）"
+                         + $"，越界夹取 = {starClampOk}（应 True：-1→0 / 3→1 / NaN→0 / null→0）"
+                         + $"，容量分档 = {sizeTiersOk}（应 True：GB / TB）");
+
+            // ---- 存储条的**布局**：三段星宽是不是真的按占比落到了 ColumnDefinition 上 ----
+            // 这一条不是多余的：ColumnDefinition **不在可视化树里**，DataContext 能否流到它身上必须实测
+            // （DataGridColumn 那条链路就是著名反例）。这里用匿名 DataContext + 真实 Measure/Arrange 跑一遍，
+            // 顺带断言"条真的拿到了宽度"（被 DataTrigger 收起时 ActualWidth = 0）。
+            var barUsage = new StorageUsage(
+                @"D:\", 1000L * 1000 * 1000, 400L * 1000 * 1000, 200L * 1000 * 1000, 400L * 1000 * 1000);
+            var barView = new WarThunderSkinManager.Views.SettingsView
+            {
+                DataContext = new { StorageUsage = barUsage }
+            };
+            var barHost = new Grid { Width = 800, Height = 600 };
+            barHost.Children.Add(barView);
+            barHost.Measure(new Size(800, 600));
+            barHost.Arrange(new Rect(0, 0, 800, 600));
+            barHost.UpdateLayout();
+
+            var barGrid = (Grid?)barView.FindName("StorageBar");
+            var barStars = barGrid?.ColumnDefinitions.Select(c => c.Width.Value).ToArray() ?? Array.Empty<double>();
+            var barStarsOk = barGrid != null
+                && barGrid.ColumnDefinitions.All(c => c.Width.IsStar)
+                && barStars.Length == 3
+                && Math.Abs(barStars[0] - 0.4) < 1e-6
+                && Math.Abs(barStars[1] - 0.2) < 1e-6
+                && Math.Abs(barStars[2] - 0.4) < 1e-6;
+
+            log.AppendLine($"存储条布局 : 三段星宽 = [{string.Join(" / ", barStars.Select(v => v.ToString("0.###")))}]"
+                         + $"（应 0.4 / 0.2 / 0.4）= {barStarsOk}，条宽 = {barGrid?.ActualWidth ?? -1:0.#}"
+                         + $"（应 > 0：有结果时不该被收起）");
+            barHost.Children.Clear();
 
             // 安装身份（§4.3）：安装根与当前进程目录一致才算"安装版"
             var identityOk = AppUpdateService.IsCanonicalInstallPath(
