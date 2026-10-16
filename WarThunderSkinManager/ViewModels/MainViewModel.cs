@@ -216,29 +216,33 @@ public partial class MainViewModel : ObservableObject
     /// 一句话说清"哪一版、哪次构建"，够短、适合贴在对话里；要完整构建号点「构建」那一行。
     /// </summary>
     [RelayCommand]
-    private void CopyVersion() => CopyToClipboard(AppInfo.VersionCopyText, "settings.about.copiedWithBuild");
+    private Task CopyVersion() => CopyToClipboardAsync(AppInfo.VersionCopyText, "settings.about.copiedWithBuild");
 
     /// <summary>
     /// 复制**完整构建号**到剪贴板（「关于」页点构建号）：源码修订号全串，
     /// 贴给作者 / 提 issue 时用它才能精确定位到那一次构建。
     /// </summary>
     [RelayCommand]
-    private void CopyBuild() => CopyToClipboard(AppInfo.BuildHashFull, "settings.about.copiedBuild");
+    private Task CopyBuild() => CopyToClipboardAsync(AppInfo.BuildHashFull, "settings.about.copiedBuild");
 
     /// <summary>
-    /// 两个复制入口共用的落盘 + 反馈。
-    /// 剪贴板是**全局独占**资源：<see cref="ClipboardService"/> 内部改用单格式
-    /// <c>SetDataObject</c>（WPF 的 <c>SetText</c> 会在半成功状态下把剪贴板留着不放，
-    /// 表现为"其他程序一直提示剪贴板被占用"），并且**以"写完后读回来对不对"判成败** ——
-    /// 这条路径会把文本写进去却抛 <c>CLIPBRD_E_CANT_OPEN</c>，按异常判会给出假失败提示。
+    /// 两个复制入口共用的落盘 + 反馈。**异步**：写入在 <see cref="ClipboardService"/> 的常驻 STA
+    /// 线程上做 —— 一次剪贴板访问可能被 OLE 拖到近 1 秒（实测），放 UI 线程上就是"点一下卡一下"。
+    /// 于是点下去立刻返回、气泡等结果出来再弹。
+    /// <para>
+    /// 成败只看"不 flush 那一步抛没抛"：flush 会在**数据已经写进去**之后抛
+    /// <c>CLIPBRD_E_CANT_OPEN</c>（按它判会给出"弹失败、其实复制成功"的假警报），
+    /// 而写完立刻读回也不可行（实测那 ~1 秒内连我们自己都读不到）—— 这条链子的完整理由见
+    /// <see cref="ClipboardService"/> 的类注释。
+    /// </para>
     /// </summary>
-    private void CopyToClipboard(string text, string copiedKey)
+    private async Task CopyToClipboardAsync(string text, string copiedKey)
     {
         if (text.Length == 0) return; // 没有构建号的构建：点它不该弹一句"已复制（空）"的空话
 
         try
         {
-            if (ClipboardService.TrySetText(text)) ShowStatus(Loc.Format(copiedKey, text));
+            if (await ClipboardService.SetTextAsync(text)) ShowStatus(Loc.Format(copiedKey, text));
             else ShowStatus(Loc["settings.about.busy"]);
         }
         catch (Exception ex)
