@@ -124,10 +124,10 @@
                                     <DataTrigger.EnterActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <!-- To 必须与 MainViewModel.NavCompactWidth（72）一致：
+                                                <!-- To 必须与 MainViewModel.NavCompactWidth（68）一致：
                                                      差值会在动画结束时被 FillBehavior=Stop 一把拽回来；自检会核对这两个数 -->
                                                 <DoubleAnimation Storyboard.TargetProperty="Width"
-                                                                 To="72" Duration="0:0:0.2" FillBehavior="Stop">
+                                                                 To="68" Duration="0:0:0.2" FillBehavior="Stop">
                                                     <DoubleAnimation.EasingFunction>
                                                         <CubicEase EasingMode="EaseOut"/>
                                                     </DoubleAnimation.EasingFunction>
@@ -157,9 +157,9 @@
                     <StackPanel Margin="0,14,0,0">
                         <!-- 「导航」标题 + 折叠按钮同一行：折叠后标题收起，按钮**右对齐位置不动**
                              （两态下都在右上角，点起来手感一致）。
-                             左右边距与导航项对齐（24 = 导航项外边距 8 + 内边距 16，右边 8 同其外边距）：
-                             折叠后这一行正好让按钮落在窗格右边缘，与下面的导航项成一条竖线 -->
-                        <Grid Margin="24,0,8,8">
+                             左边距 22 与导航项里的图标（外边距 10 + 内边距 12）只差 0，
+                             折叠后按钮正好落在窗格右边缘，与下面的导航项成一条竖线 -->
+                        <Grid Margin="22,0,10,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>

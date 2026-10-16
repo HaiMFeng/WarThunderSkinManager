@@ -436,8 +436,9 @@
 
     <!-- ============ 左侧导航项 ============
          折叠态（`IsNavCompact`，界面设计规范 §5.13）由这一个样式统一处理，导航项自己不用各写一份：
-         · **内边距两态都是 16**（刻意不改）：折叠时窗格收到 76（= 10+16+24+16+10）→ 图标在屏幕上
-           的位置与展开态**完全相同**，窗格只是围着它收起来；改内边距会让图标瞬时平移（"跳一下"）；
+         · **内边距两态都是 12**（刻意不随折叠变化）：折叠时窗格收到 68（= 10+12+24+12+10）→ 图标在屏幕上
+           的位置与展开态**完全相同**（都在 22），窗格只是围着它收起来；若让内边距随折叠变，
+           图标会瞬时平移（"跳一下"）；
          · 标签**不切 Visibility**，靠模板的 `ClipToBounds` 把它裁掉 —— 宽度动画与"标签滑出"
            因此是同一个动作，不会出现"先跳字、再变宽"（也少 5 份重复的触发器）；
          · 只显示图标时**必须**能读出这是什么：文案由调用方挂在 `Tag` 上，本样式在折叠态把它当悬停提示；
@@ -446,11 +447,9 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
-        <Setter Property="Padding" Value="16,0"/>
+        <Setter Property="Padding" Value="12,0"/>
         <Setter Property="Height" Value="44"/>
-        <!-- 左右外边距 8（原 10）：导航左右各留 8 就够，收窄后图标落在 24、与「导航」小标题对齐；
-             折叠态窗格 = 8 + 16 + 24 + 16 + 8 = 72（见 MainViewModel.NavCompactWidth） -->
-        <Setter Property="Margin" Value="8,2"/>
+        <Setter Property="Margin" Value="10,2"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="14"/>

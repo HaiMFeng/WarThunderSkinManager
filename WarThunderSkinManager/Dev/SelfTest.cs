@@ -3810,22 +3810,22 @@ internal static class SelfTest
             var expandedIconX = expandedProbe.Icon.TranslatePoint(new Point(0, 0), expandedProbe.Host).X;
             var compactIconCenter = compactIconX + compactProbe.Icon.ActualWidth / 2;
 
-            // 按钮宽 = 窗格宽 − 左右外边距 ×2（外边距见 NavButton 样式的 Margin="8,2"）
-            var navCompactOk = Math.Abs(compactProbe.Item.ActualWidth - (compactPane - 16)) < 1
-                               && Math.Abs(compactProbe.Item.Padding.Left - 16) < 0.01
+            // 按钮宽 = 窗格宽 − 左右外边距 ×2（外边距见 NavButton 样式的 Margin="10,2"）
+            var navCompactOk = Math.Abs(compactProbe.Item.ActualWidth - (compactPane - 20)) < 1
+                               && Math.Abs(compactProbe.Item.Padding.Left - 12) < 0.01
                                && Math.Abs(compactIconCenter - compactPane / 2) < 1        // 图标居中
                                && (compactProbe.Item.ToolTip as string) == "涂装管理";     // 悬停提示 = Tag
 
-            var navExpandedOk = Math.Abs(expandedProbe.Item.Padding.Left - 16) < 0.01
+            var navExpandedOk = Math.Abs(expandedProbe.Item.Padding.Left - 12) < 0.01
                                 && expandedProbe.Item.ToolTip == null;                     // 标签就在眼前 → 不给提示
 
             var navNoShiftOk = Math.Abs(compactIconX - expandedIconX) < 0.5;               // 两态图标横坐标一致
 
-            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 {compactPane - 16:0.#} = 窗格宽 − 外边距 8×2）、"
-                         + $"内边距 = {compactProbe.Item.Padding.Left:0.#}（应 16，两态一致）、"
+            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 {compactPane - 20:0.#} = 窗格宽 − 外边距 10×2）、"
+                         + $"内边距 = {compactProbe.Item.Padding.Left:0.#}（应 12，两态一致）、"
                          + $"图标中心 = {compactIconCenter:0.#}（应 {compactPane / 2:0.#} = 窗格中心）、"
                          + $"悬停提示 = 「{compactProbe.Item.ToolTip}」（应 = Tag 文案）→ {navCompactOk}");
-            log.AppendLine($"导航展开态 : 内边距 = {expandedProbe.Item.Padding.Left:0.#}（应 16）、"
+            log.AppendLine($"导航展开态 : 内边距 = {expandedProbe.Item.Padding.Left:0.#}（应 12）、"
                          + $"悬停提示 = {(expandedProbe.Item.ToolTip == null ? "无（应无）" : expandedProbe.Item.ToolTip.ToString())} → {navExpandedOk}");
             log.AppendLine($"导航图标位移: 折叠 {compactIconX:0.#} → 展开 {expandedIconX:0.#}"
                          + $"（应完全相同，切换时不跳）= {navNoShiftOk}；"
