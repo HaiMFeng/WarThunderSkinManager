@@ -51,7 +51,7 @@
   "settings.theme.changed": "主题已保存，重启程序后生效",
   "settings.theme.restart": "重启程序",
   "settings.restart.failed": "重启失败：{0}",
-  "settings.wtliveQuality": "WT Live 卡片",
+  "settings.wtliveQuality": "WT Live",
   "settings.wtliveQuality.hint": "浏览页卡片的缩略图来源与本地缓存。清晰度决定下载哪一级 CDN 变体（低清 386px / 中清 800px / 原图），档位越高越清楚、也越费流量；改档只影响之后加载的卡片，想立刻重载当前列表可点浏览页的「刷新」。预览图缓存是本地留底，命中就不再重复下载。",
   "settings.wtliveQuality.label": "图片清晰度",
   "settings.wtliveQuality.changed": "已切换为{0}，之后加载的卡片生效",
