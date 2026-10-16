@@ -2616,6 +2616,28 @@ internal static class SelfTest
                     if (persistOffenders.Count > 0)
                         log.AppendLine("自检异常：config.json 只应由 MainViewModel.OnConfigChanged 收尾统一写"
                                      + "（向导建立目录那一刻除外）；别处再写一份会漏出「改了没存」");
+
+                    // 设置页的目录框**必须只读**：路径只能从「更改」按钮走目录选择器改 ——
+                    // 手输会写出不存在的路径 / 打错的盘符，而每个目录都牵着迁移、服务重配与重扫
+                    var dirBoxes = 0;
+                    var dirBoxesReadOnly = 0;
+                    foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                                 settingsXaml, @"Text=""\{Binding Config\.\w*Directory\}"""))
+                    {
+                        dirBoxes++;
+
+                        // 从 `Text=` 往回找到最近的 `<TextBox` —— 只读属性就在同一个元素里
+                        var boxAt = settingsXaml.LastIndexOf("<TextBox", m.Index, StringComparison.Ordinal);
+                        var element = boxAt >= 0 && boxAt < m.Index ? settingsXaml[boxAt..m.Index] : "";
+                        if (element.Contains("IsReadOnly=\"True\"", StringComparison.Ordinal)) dirBoxesReadOnly++;
+                    }
+
+                    var dirBoxOk = dirBoxes >= 1 && dirBoxesReadOnly == dirBoxes;
+                    log.AppendLine($"目录框只读 : 目录输入框 {dirBoxes} 个、其中只读 {dirBoxesReadOnly} 个 "
+                                 + $"（应全部只读）→ {dirBoxOk}");
+
+                    if (!dirBoxOk)
+                        log.AppendLine("自检异常：设置页的目录输入框必须全部 IsReadOnly（路径只能从「更改」按钮改）");
                 }
             }
 

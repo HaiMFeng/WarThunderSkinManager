@@ -23,10 +23,10 @@
             <TextBlock Text="{loc:Loc settings.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
 
             <!-- 目录配置（必须设置在前：三个目录决定程序能否工作）。
-                 目录框一律用**默认的失焦更新**（不写 UpdateSourceTrigger=PropertyChanged）：
-                 逐键更新会让每敲一个字都改一次 Config —— 那等于逐键重配服务（改配置目录还会重载收藏）、
-                 逐键重扫账户（改 Saves 目录）、逐个键写一次盘，而且会把"打到一半的路径"存进配置。
-                 失焦提交一次，语义刚好是"这个框填完了" -->
+                 目录框**只读**：路径只能由「更改」走目录选择器改 —— 手输容易写出不存在的路径 / 打错的盘符，
+                 而这里每个目录都牵着迁移、服务重配与重扫，输错一次代价不小（只读仍可选中复制）。
+                 只读态由 BaseTextBox 的 IsReadOnly 触发器给出（背景变浅一档，一眼看出不能编辑）。
+                 绑定用**默认的失焦更新**：既然只有选择器会改它，就不存在"逐键改 Config"的问题 -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.directories}" Style="{StaticResource SectionTitle}" Margin="0,0,0,16"/>
@@ -39,9 +39,11 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
+                                     IsReadOnly="True"
                                      Text="{Binding Config.UserSkinsDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                <Button Content="{loc:Loc common.change}" Style="{StaticResource SecondaryButton}"
+                                        Foreground="{StaticResource BrushDanger}"
                                         Command="{Binding BrowseUserSkinsCommand}"/>
                                 <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
                                         Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
@@ -59,9 +61,11 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
+                                     IsReadOnly="True"
                                      Text="{Binding Config.ResourceDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                <Button Content="{loc:Loc common.change}" Style="{StaticResource SecondaryButton}"
+                                        Foreground="{StaticResource BrushDanger}"
                                         Command="{Binding BrowseResourceCommand}"/>
                                 <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
                                         Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
@@ -79,9 +83,11 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
+                                     IsReadOnly="True"
                                      Text="{Binding Config.ConfigDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                <Button Content="{loc:Loc common.change}" Style="{StaticResource SecondaryButton}"
+                                        Foreground="{StaticResource BrushDanger}"
                                         Command="{Binding BrowseConfigCommand}"/>
                                 <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
                                         Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"
@@ -100,9 +106,11 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
+                                     IsReadOnly="True"
                                      Text="{Binding Config.SavesDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
+                                <Button Content="{loc:Loc common.change}" Style="{StaticResource SecondaryButton}"
+                                        Foreground="{StaticResource BrushDanger}"
                                         Command="{Binding BrowseSavesCommand}"/>
                                 <Button Content="{loc:Loc common.open}" Style="{StaticResource SecondaryButton}"
                                         Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"

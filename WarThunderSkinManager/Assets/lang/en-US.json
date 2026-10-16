@@ -15,6 +15,7 @@
   "nav.expand": "Expand navigation",
   "nav.expandBlocked": "The window is too narrow to expand; widen it to expand the navigation",
   "common.browse": "Browse",
+  "common.change": "Change",
   "common.open": "Open",
   "common.cancel": "Cancel",
   "common.canceling": "Canceling…",

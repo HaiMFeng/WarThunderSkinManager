@@ -159,6 +159,17 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+
+        <!-- 只读态（设置页的目录框）：背景与边框退一档、文字降一级 → 一眼看出"这里不能编辑"。
+             仍保留选中 / 复制（比 IsEnabled=false 更适合"路径要拿去粘到别处"的场景）；
+             悬浮与聚焦时边框照旧给反馈：它是可交互的字段，只是不可写 -->
+        <Style.Triggers>
+            <Trigger Property="IsReadOnly" Value="True">
+                <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BrushBorder}"/>
+                <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- 密码框：外观与 BaseTextBox 一致（压缩包密码输入用） -->
