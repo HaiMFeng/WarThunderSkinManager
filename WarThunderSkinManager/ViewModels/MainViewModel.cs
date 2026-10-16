@@ -1022,19 +1022,19 @@ public partial class MainViewModel : ObservableObject
             case nameof(AppConfig.SavesDirectory):
                 LoadGameAccounts(); // 目录变了 → 重扫账户（lastlogin uid 可能随游戏切换）
                 OnPropertyChanged(nameof(GameSyncBlockEnabled));
-                AutoSave();
                 break;
 
             case nameof(AppConfig.GameSyncEnabled):
-                AutoSave();
                 // 开启即尝试同步一次（游戏运行中 → 服务端报告跳过原因）
                 if (Config.GameSyncEnabled) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
                 break;
-
-            case nameof(AppConfig.ManagedAccountId):
-                AutoSave();
-                break;
         }
+
+        // **全配置项立即落盘**（唯一落点）：AppConfig 的任何属性变化都在这里写一次 config.json
+        // （原子写；文件很小，可忽略成本）。集中收尾而不是散在各个设置项的回调里 ——
+        // 否则每加一个配置项就多一次"忘了落盘"的机会（从前是 6 处手工 SafePersist + 一个
+        // 「保存配置」按钮兜底，漏了就悄悄丢设置）。
+        SafePersist();
     }
 
     /// <summary>
@@ -1071,8 +1071,7 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        Config.PartReuseNoticeSeen = true;
-        SafePersist();
+        Config.PartReuseNoticeSeen = true; // 落盘由 OnConfigChanged 收尾统一做
 
         OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
     }
@@ -1135,11 +1134,10 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnIsNavCollapsedChanged(bool value)
     {
-        // 用户显式操作 → 落盘记住（Compare 一下，构造期按 config 赋值不会白写一次）
+        // 用户显式操作 → 写回配置（Compare 一下，构造期按 config 赋值不会白写一次）；落盘由 OnConfigChanged 收尾统一做
         if (Config.NavCollapsed != value)
         {
             Config.NavCollapsed = value;
-            SafePersist();
         }
 
         OnPropertyChanged(nameof(IsNavCompact));
@@ -1182,9 +1180,8 @@ public partial class MainViewModel : ObservableObject
         if (value == null) return;
         if (string.Equals(value.Id, Config.Theme, StringComparison.OrdinalIgnoreCase)) return;
 
-        // 主题字典在启动时合并，切换后重启生效（§3「生效时机」采用重启方案）
+        // 主题字典在启动时合并，切换后重启生效（§3「生效时机」采用重启方案）；落盘由 OnConfigChanged 收尾统一做
         Config.Theme = value.Id;
-        SafePersist();
         ShowStatus(Loc["settings.theme.changed"]);
     }
 
@@ -1228,8 +1225,7 @@ public partial class MainViewModel : ObservableObject
         if (value == null) return;
         if (string.Equals(value.Id, Config.WtLivePreviewCacheMb, StringComparison.Ordinal)) return;
 
-        Config.WtLivePreviewCacheMb = value.Id;
-        SafePersist();
+        Config.WtLivePreviewCacheMb = value.Id; // 落盘由 OnConfigChanged 收尾统一做
         ApplyPreviewCacheLimit();
         ShowStatus(Loc.Format("settings.wtliveCacheSize.changed", value.DisplayName));
     }
@@ -1256,8 +1252,7 @@ public partial class MainViewModel : ObservableObject
         if (value == null) return;
         if (string.Equals(value.Id, Config.WtLiveImageQuality, StringComparison.OrdinalIgnoreCase)) return;
 
-        Config.WtLiveImageQuality = value.Id;
-        SafePersist();
+        Config.WtLiveImageQuality = value.Id; // 落盘由 OnConfigChanged 收尾统一做
         WtLive.SetQuality(value.Id);
         ShowStatus(Loc.Format("settings.wtliveQuality.changed", value.DisplayName));
     }
@@ -1297,8 +1292,7 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private void ApplyLanguage(LanguageOption option)
     {
-        Config.Language = option.Code;
-        SafePersist();
+        Config.Language = option.Code; // 落盘由 OnConfigChanged 收尾统一做
 
         LocalizationManager.Instance.Load(Config.ConfigDirectory, option.Code);
 
@@ -1559,29 +1553,13 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        AutoSave();
+        // 这里不需要再落盘：apply(picked) 早已把新目录写进 Config，OnConfigChanged 收尾就落过了
+        // （回滚路径同理 —— apply(current) 也会触发一次落盘，把旧目录写回去）
     }
 
-    [RelayCommand]
-    private void Save()
-    {
-        if (string.IsNullOrWhiteSpace(Config.ConfigDirectory))
-        {
-            ShowStatus(Loc["settings.configDirRequired"]);
-            return;
-        }
-
-        try
-        {
-            // 迁移已挂在目录变更瞬间（ChangeDirectory）；此处只负责落盘
-            PersistConfig();
-            ShowStatus(Loc["settings.saved"]);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(Loc.Format("settings.saveFailed", ex.Message));
-        }
-    }
+    // 说明：这里原先有个 `Save()` 命令（设置页底部的「保存配置」按钮）。**已删除** ——
+    // 现在所有配置项都在 OnConfigChanged 收尾处即时落盘，没有"待提交"的状态可言。
+    // 目录迁移仍挂在「浏览」选目录那一刻（ChangeDirectory），与落盘无关。
 
     // ---------- 存储占用（设置页「存储维护」卡片的横向存储条）----------
 
@@ -2137,8 +2115,7 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
-            Config.LastAppUpdateCheckUtc = DateTime.UtcNow.ToString("o");
-            AutoSave();
+            Config.LastAppUpdateCheckUtc = DateTime.UtcNow.ToString("o"); // 落盘由 OnConfigChanged 收尾统一做
 
             AppVersion.TryParse(AppInfo.Version, out var current);
 
@@ -2304,8 +2281,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (_appUpdateRelease == null) return;
 
-        Config.SkippedAppVersion = _appUpdateRelease.Version;
-        AutoSave();
+        Config.SkippedAppVersion = _appUpdateRelease.Version; // 落盘由 OnConfigChanged 收尾统一做
 
         AppUpdateState = AppUpdateUiState.Skipped;
         SetAppUpdateText("settings.appUpdate.skipped", "v" + _appUpdateRelease.Version);
@@ -2315,8 +2291,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void UnskipAppUpdateVersion()
     {
-        Config.SkippedAppVersion = "";
-        AutoSave();
+        Config.SkippedAppVersion = ""; // 落盘由 OnConfigChanged 收尾统一做
 
         AppUpdateState = _appUpdateRelease == null ? AppUpdateUiState.Idle : AppUpdateUiState.Available;
         SetAppUpdateText(_appUpdateRelease == null ? "settings.appUpdate.notChecked" : "settings.appUpdate.available");
@@ -2447,28 +2422,23 @@ public partial class MainViewModel : ObservableObject
         ApplyRebuiltSnapshot(snapshot);
     }
 
-    /// <summary>选完目录立即自动保存，无需再手动点"保存配置"。</summary>
-    private void AutoSave()
-    {
-        if (string.IsNullOrWhiteSpace(Config.ConfigDirectory))
-            return;
-
-        try
-        {
-            PersistConfig();
-            ShowStatus(Loc["settings.saved"]);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus(Loc.Format("settings.saveFailed", ex.Message));
-        }
-    }
-
     private void PersistConfig() => ConfigService.Save(Config.ConfigDirectory, Config);
 
-    /// <summary>落盘但**不抛**：写盘失败（磁盘满 / 目录被删 / 占用）只提示，绝不让命令处理器崩溃。</summary>
+    /// <summary>
+    /// 落盘但**不抛**：写盘失败（磁盘满 / 目录被删 / 占用）只提示，绝不让命令处理器崩溃。
+    /// <para>
+    /// 这是**全配置项即时保存的唯一落点**，由 <see cref="OnConfigChanged"/> 收尾调用 ——
+    /// 别再往各个设置项的回调里加第二处。
+    /// </para>
+    /// <para>
+    /// 配置目录还没配好时直接跳过：<c>ConfigService.Save</c> 会先 <c>CreateDirectory</c>，
+    /// 空路径会抛 —— 首次启动向导还没跑完就改设置，不该收到一条"保存失败"的假警报。
+    /// </para>
+    /// </summary>
     private void SafePersist()
     {
+        if (string.IsNullOrWhiteSpace(Config.ConfigDirectory)) return;
+
         try
         {
             PersistConfig();

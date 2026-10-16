@@ -214,12 +214,10 @@ public partial class SkinsViewModel : ObservableObject
         window.Owner = Application.Current?.MainWindow;
         if (window.ShowDialog() != true || window.Post == null) return;
 
-        // 记住本次的勾选，下次开窗按它预置（取消关窗走不到这里，记忆保持原样）
+        // 记住本次的勾选，下次开窗按它预置（取消关窗走不到这里，记忆保持原样）。
+        // 不用手动落盘：写属性就会触发 Config.PropertyChanged，由 MainViewModel.OnConfigChanged 统一落盘
         if (_config.WtLiveAutoImport != window.AutoImport)
-        {
             _config.WtLiveAutoImport = window.AutoImport;
-            PersistConfig();
-        }
 
         if (entryPostId == null)
         {
@@ -969,17 +967,9 @@ public partial class SkinsViewModel : ObservableObject
 
         if (!noMore) return;
 
+        // 记住"不再提示"：写属性即触发 Config.PropertyChanged，由 MainViewModel.OnConfigChanged 统一落盘
+        // （原先这里还自己 ConfigService.Save 一次；失败只是下次再提示一次，不值得留第二处落盘）
         _config.FirstOutputNoticeSeen = true;
-
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory))
-                ConfigService.Save(_config.ConfigDirectory, _config);
-        }
-        catch
-        {
-            // 写不进去也不影响本次使用，只是下次会再提示一次
-        }
     }
 
     /// <summary>读取该载具的激活设置并刷新各包的激活标记。</summary>
@@ -1976,48 +1966,28 @@ public partial class SkinsViewModel : ObservableObject
             ? _config.ImportDeleteSourceUserSkins
             : _config.ImportDeleteSourceFolder;
 
-    /// <summary>记住本次的「删除源 / 删除压缩包」勾选，下次以同样方式导入时默认沿用。</summary>
+    /// <summary>
+    /// 记住本次的「删除源 / 删除压缩包」勾选，下次以同样方式导入时默认沿用。
+    /// 落盘不归这里管：这些属性一写就触发 <c>Config.PropertyChanged</c>，
+    /// 由 <c>MainViewModel.OnConfigChanged</c> 收尾统一写 config.json。
+    /// </summary>
     private void RememberImportChoices(ImportSourceType sourceType, ImportPreviewViewModel preview)
     {
-        var changed = false;
-
         // 只在选项**本次确实提供过**时记录，避免把未显示的勾选状态误写成默认值
         if (preview.CanDeleteSource)
         {
             if (sourceType == ImportSourceType.UserSkins)
-            {
-                changed |= _config.ImportDeleteSourceUserSkins != preview.DeleteSource;
                 _config.ImportDeleteSourceUserSkins = preview.DeleteSource;
-            }
             else
-            {
-                changed |= _config.ImportDeleteSourceFolder != preview.DeleteSource;
                 _config.ImportDeleteSourceFolder = preview.DeleteSource;
-            }
         }
 
         if (preview.CanDeleteArchive)
-        {
-            changed |= _config.ImportDeleteArchive != preview.DeleteArchive;
             _config.ImportDeleteArchive = preview.DeleteArchive;
-        }
 
-        if (changed) PersistConfig();
+        // 原先这里还有 `if (changed) PersistConfig();` —— 已删：那是第二处落盘，与统一落点重复
     }
 
-    /// <summary>把配置改动写入 config.json（失败不影响导入流程）。</summary>
-    private void PersistConfig()
-    {
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(_config.ConfigDirectory))
-                ConfigService.Save(_config.ConfigDirectory, _config);
-        }
-        catch
-        {
-            // 记忆失败只是下次默认值不生效，不影响本次导入
-        }
-    }
 
     // ---------- 拖入导入（§3.1：拖入涂装文件夹 / 压缩包）----------
 

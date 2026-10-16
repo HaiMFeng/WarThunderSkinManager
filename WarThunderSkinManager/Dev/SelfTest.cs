@@ -2569,6 +2569,54 @@ internal static class SelfTest
                 if (clipboardOffenders.Count > 0)
                     log.AppendLine("自检异常：剪贴板访问必须走 Services/Infrastructure/ClipboardService"
                                  + "（统一绕开 WPF SetText 缺陷 + 有界重试）");
+
+                // 配置**即时落盘**（设置页已无「保存」按钮）：全配置项的唯一落点是 OnConfigChanged 收尾的
+                // SafePersist()。这条断言防两件事：① 有人把落盘挪回各个设置项的回调里（漏一处就丢设置）；
+                // ② 手动保存入口复活（那意味着"改了没存"的状态又回来了）。
+                var vmSourcePath = Path.Combine(sourceRoot, "ViewModels", "MainViewModel.cs");
+                if (File.Exists(vmSourcePath))
+                {
+                    var vmSource = File.ReadAllText(vmSourcePath, Encoding.UTF8);
+
+                    // 取 OnConfigChanged 的方法体：内层块缩进更深，所以首个 "\n    }" 就是它自己的收尾大括号
+                    var handlerAt = vmSource.IndexOf("private void OnConfigChanged", StringComparison.Ordinal);
+                    var handlerEnd = handlerAt < 0
+                        ? -1
+                        : vmSource.IndexOf("\n    }", handlerAt, StringComparison.Ordinal);
+                    var handlerBody = handlerEnd > handlerAt ? vmSource[handlerAt..handlerEnd] : "";
+
+                    var persistsInHandler = handlerBody.Contains("SafePersist()", StringComparison.Ordinal);
+                    var manualSaveGone = !vmSource.Contains("private void Save()", StringComparison.Ordinal)
+                                         && !settingsXaml.Contains("{loc:Loc settings.save}", StringComparison.Ordinal);
+
+                    log.AppendLine($"配置落盘   : OnConfigChanged 收尾统一落盘 = {persistsInHandler}、"
+                                 + $"手动保存入口已移除 = {manualSaveGone} → {(persistsInHandler && manualSaveGone)}");
+
+                    if (!persistsInHandler || !manualSaveGone)
+                        log.AppendLine("自检异常：配置项必须在 OnConfigChanged 收尾处统一落盘（SafePersist），"
+                                     + "且设置页不该再有手动保存入口（否则会出现「改了没存」的丢设置）");
+
+                    // 「唯一落点」：除白名单外，不许有第二处写 config.json —— 多一处就多一次"改了没存"的机会
+                    // （SkinsViewModel 原先有两处手写 ConfigService.Save，都是漏网之鱼）。
+                    // 白名单：MainViewModel（统一落点 + 启动期版本迁移）、SetupWizardWindow（向导建立配置目录那一刻）、
+                    // ConfigService 自身、SelfTest。
+                    var persistOffenders = new List<string>();
+                    foreach (var file in Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+                    {
+                        var name = Path.GetFileName(file);
+                        if (name is "MainViewModel.cs" or "SetupWizardWindow.xaml.cs" or "ConfigService.cs" or "SelfTest.cs")
+                            continue;
+                        if (File.ReadAllText(file, Encoding.UTF8).Contains("ConfigService.Save(", StringComparison.Ordinal))
+                            persistOffenders.Add(name);
+                    }
+
+                    log.AppendLine($"配置落盘点 : 白名单之外的 config.json 写入点 = {persistOffenders.Count}（应 0）"
+                                 + $"{(persistOffenders.Count == 0 ? "" : " → " + string.Join(" / ", persistOffenders))}");
+
+                    if (persistOffenders.Count > 0)
+                        log.AppendLine("自检异常：config.json 只应由 MainViewModel.OnConfigChanged 收尾统一写"
+                                     + "（向导建立目录那一刻除外）；别处再写一份会漏出「改了没存」");
+                }
             }
 
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----

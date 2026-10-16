@@ -22,7 +22,11 @@
             <TextBlock Text="{loc:Loc settings.title}" Style="{StaticResource PageTitle}"/>
             <TextBlock Text="{loc:Loc settings.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
 
-            <!-- 目录配置（必须设置在前：三个目录决定程序能否工作） -->
+            <!-- 目录配置（必须设置在前：三个目录决定程序能否工作）。
+                 目录框一律用**默认的失焦更新**（不写 UpdateSourceTrigger=PropertyChanged）：
+                 逐键更新会让每敲一个字都改一次 Config —— 那等于逐键重配服务（改配置目录还会重载收藏）、
+                 逐键重扫账户（改 Saves 目录）、逐个键写一次盘，而且会把"打到一半的路径"存进配置。
+                 失焦提交一次，语义刚好是"这个框填完了" -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.directories}" Style="{StaticResource SectionTitle}" Margin="0,0,0,16"/>
@@ -35,7 +39,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
-                                     Text="{Binding Config.UserSkinsDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+                                     Text="{Binding Config.UserSkinsDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
                                         Command="{Binding BrowseUserSkinsCommand}"/>
@@ -55,7 +59,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
-                                     Text="{Binding Config.ResourceDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+                                     Text="{Binding Config.ResourceDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
                                         Command="{Binding BrowseResourceCommand}"/>
@@ -75,7 +79,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
-                                     Text="{Binding Config.ConfigDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+                                     Text="{Binding Config.ConfigDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
                                         Command="{Binding BrowseConfigCommand}"/>
@@ -96,7 +100,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Style="{StaticResource BaseTextBox}" Margin="0,0,8,0"
-                                     Text="{Binding Config.SavesDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+                                     Text="{Binding Config.SavesDirectory}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Button Content="{loc:Loc common.browse}" Style="{StaticResource SecondaryButton}"
                                         Command="{Binding BrowseSavesCommand}"/>
@@ -420,11 +424,6 @@
                             HorizontalAlignment="Left" Command="{Binding ResetDataCommand}"/>
                 </StackPanel>
             </Border>
-
-            <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
-                <Button Content="{loc:Loc settings.save}" Style="{StaticResource PrimaryButton}"
-                        Command="{Binding SaveCommand}"/>
-            </StackPanel>
             </StackPanel>
         </ScrollViewer>
     </Grid>
