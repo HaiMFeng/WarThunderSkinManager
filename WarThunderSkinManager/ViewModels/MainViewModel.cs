@@ -229,7 +229,8 @@ public partial class MainViewModel : ObservableObject
     /// 两个复制入口共用的落盘 + 反馈。
     /// 剪贴板是**全局独占**资源：<see cref="ClipboardService"/> 内部改用单格式
     /// <c>SetDataObject</c>（WPF 的 <c>SetText</c> 会在半成功状态下把剪贴板留着不放，
-    /// 表现为"其他程序一直提示剪贴板被占用"）并做有界重试；真抢不到才提示"稍后再试"。
+    /// 表现为"其他程序一直提示剪贴板被占用"），并且**以"写完后读回来对不对"判成败** ——
+    /// 这条路径会把文本写进去却抛 <c>CLIPBRD_E_CANT_OPEN</c>，按异常判会给出假失败提示。
     /// </summary>
     private void CopyToClipboard(string text, string copiedKey)
     {
