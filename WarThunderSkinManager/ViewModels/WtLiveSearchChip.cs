@@ -87,9 +87,14 @@ public partial class WtLiveSearchChip : ObservableObject
 internal static class WtLiveSearchChipCatalog
 {
     /// <summary>
-    /// 载具图标（Font Awesome <c>jet-fighter</c>，与导航「载具管理」同一字形 —— 自检「载具图标」会核对三处一致）。
+    /// 载具图标（Font Awesome <c>plane</c>，与导航「载具管理」同一字形 —— 自检「载具图标」会核对三处一致）。
+    /// <para>
+    /// 字形选择有一条**只能靠眼睛**的约束：与同排其它导航图标的**线条粗细 / 细节密度**要一致。
+    /// 曾试过 <c>jet-fighter</c>（F0FB，语义上更贴近"载具"），但它的笔触明显更密更重，
+    /// 摆在导航里与 paintbrush / clone / gear 一排不协调，已回退（见界面设计规范 §2.6）。
+    /// </para>
     /// </summary>
-    internal const string VehicleIcon = "\uF0FB";
+    internal const string VehicleIcon = "\uF072";
 
     /// <summary>标签图标（Font Awesome <c>tag</c>）。</summary>
     internal const string TagIcon = "\uF02B";
