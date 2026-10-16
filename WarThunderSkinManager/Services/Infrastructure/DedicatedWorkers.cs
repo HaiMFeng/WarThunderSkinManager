@@ -32,7 +32,8 @@ namespace WarThunderSkinManager.Services;
 /// </para>
 /// <para>
 /// <b>取消</b>：每个 worker 在取下一个活之前检查令牌；令牌取消后已取走的那个活会**跑完**
-/// （与 <c>Parallel.ForEach</c> 的行为一致：在活与活之间生效）。若结束时令牌已取消，
+/// （与 <c>Parallel.ForEach</c> 的行为一致：在活与活之间生效）。若**入口**就已取消，
+/// 直接抛 <see cref="OperationCanceledException"/>（一根线程都不建）；若结束时令牌已取消，
 /// 本方法抛 <see cref="OperationCanceledException"/>（调用方据此把结果标成"已取消"）。
 /// </para>
 /// <para>
@@ -65,6 +66,10 @@ internal static class DedicatedWorkers
             ct.ThrowIfCancellationRequested();
             return;
         }
+
+        // 令牌已取消：与"没有活"同一判据 —— 别为一批注定不跑的活先把 N 根线程建出来再原地退出。
+        // 各条退出路径（关窗清理、遮罩取消）都会取消令牌，这里早退就是"少起几根线程"。
+        ct.ThrowIfCancellationRequested();
 
         var workers = Math.Clamp(degree, 1, items.Count);
         var queue = new ConcurrentQueue<T>(items);

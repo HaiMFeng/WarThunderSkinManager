@@ -185,7 +185,8 @@
                             <Button Grid.Column="1" VerticalAlignment="Center"
                                     Command="{Binding ToggleNavCommand}"
                                     IsEnabled="{Binding NavToggleEnabled}"
-                                    ToolTip="{Binding NavToggleTip}">
+                                    ToolTip="{Binding NavToggleTip}"
+                                    ToolTipService.ShowOnDisabled="True">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
                                         <!-- 字形也走 Setter（不能写在外层 Content 上：本地值优先级高于触发器） -->

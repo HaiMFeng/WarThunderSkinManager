@@ -519,9 +519,11 @@ public partial class MainViewModel : ObservableObject
                     {
                         var items = kind switch
                         {
-                            // 配置目录：带走配置与用户数据；previews 缓存不迁（按需重建）
+                            // 配置目录：带走配置与**用户数据**；缓存（previews / wtlive-cache）不迁，按需重建。
+                            // loadouts（各载具的激活状态）、wtlive（收藏作者）、countries.json（国家归类覆盖）
+                            // 原先漏在清单外 —— 换配置目录后它们会被静默丢下（发布前审查发现）。
                             "config" => (IReadOnlyList<string>)new[]
-                                { "config.json", "lang", "mappings", "index", "ref" },
+                                { "config.json", "lang", "mappings", "index", "ref", "loadouts", "wtlive", "countries.json" },
                             "userSkins" => new[] { "WTSM" },
                             _ => Directory.GetFileSystemEntries(oldDir)
                                 .Select(entry => Path.GetFileName(entry)!)
@@ -1316,6 +1318,11 @@ public partial class MainViewModel : ObservableObject
         // 「更新应用」卡片的状态行 / 版本摘要 / 进度行按记下的语言键重建
         RefreshAppUpdateTexts();
 
+        // 这两个也是"构造式派生字符串"（在状态变化时算一次，不像 loc:Loc 会跟着语言表自己刷新）：
+        // 导航折叠按钮的悬停提示、关于页的桌面快捷方式按钮文案 —— 漏了它们就会在新语言下留着旧语言
+        OnPropertyChanged(nameof(NavToggleTip));
+        OnPropertyChanged(nameof(DesktopShortcutActionText));
+
         // 「更新资源」行条目的显示名与状态文案跟随语言（§3.15）
         foreach (var item in ResourceItems)
             item.RefreshTexts();
@@ -1531,6 +1538,10 @@ public partial class MainViewModel : ObservableObject
 
         apply(picked); // 先变更（迁移预检与静态刷新要用新值）
 
+        // 迁移期间**暂停自动落盘**（见 _persistSuspended 的说明）：此刻 Config 已是新目录，
+        // 立即落盘会把 config.json 写进目标目录、让迁移把它跳过；正确顺序是
+        // "迁移把旧 config.json 搬过去 → 再用新路径重写一份"，所以等迁移跑完再统一落盘。
+        _persistSuspended = true;
         try
         {
             if (!await MigrateChangedDirectoriesAsync(oldConfig, oldResource, oldUserSkins))
@@ -1539,7 +1550,7 @@ public partial class MainViewModel : ObservableObject
                 PartExclusionService.Configure(Config.ConfigDirectory);
                 VehicleExtraPartsService.Configure(Config.ConfigDirectory);
                 DataTables.Configure(Config.ConfigDirectory);
-                return;
+                return; // 回滚后旧目录的 config.json 原样（迁移器已把搬走的部分搬回），无需落盘
             }
         }
         catch (Exception ex)
@@ -1552,9 +1563,13 @@ public partial class MainViewModel : ObservableObject
             ShowStatus(Loc.Format("migrate.failed", ex.Message));
             return;
         }
+        finally
+        {
+            _persistSuspended = false;
+        }
 
-        // 这里不需要再落盘：apply(picked) 早已把新目录写进 Config，OnConfigChanged 收尾就落过了
-        // （回滚路径同理 —— apply(current) 也会触发一次落盘，把旧目录写回去）
+        // 迁移完成 → 用新路径统一落盘：旧 config.json 虽已被搬到新目录，但里面记的还是旧路径
+        SafePersist();
     }
 
     // 说明：这里原先有个 `Save()` 命令（设置页底部的「保存配置」按钮）。**已删除** ——
@@ -2425,6 +2440,16 @@ public partial class MainViewModel : ObservableObject
     private void PersistConfig() => ConfigService.Save(Config.ConfigDirectory, Config);
 
     /// <summary>
+    /// 目录迁移进行中 → **暂停自动落盘**（见 <see cref="ChangeDirectory"/>）。
+    /// <para>
+    /// 原因：迁移的第一步就 <c>apply(picked)</c> 把新目录写进了 <c>Config</c>，而迁移此时还没开始搬 ——
+    /// 若此刻落盘，config.json 会被直接写进迁移**目标**目录；迁移器随后把它当成"目标已存在"跳过，
+    /// 旧目录里那份反而留在原地（发布前审查发现：本版把落盘从"迁移成功后"提前到了"改动瞬间"）。
+    /// </para>
+    /// </summary>
+    private bool _persistSuspended;
+
+    /// <summary>
     /// 落盘但**不抛**：写盘失败（磁盘满 / 目录被删 / 占用）只提示，绝不让命令处理器崩溃。
     /// <para>
     /// 这是**全配置项即时保存的唯一落点**，由 <see cref="OnConfigChanged"/> 收尾调用 ——
@@ -2437,6 +2462,7 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private void SafePersist()
     {
+        if (_persistSuspended) return; // 目录迁移进行中：由 ChangeDirectory 在迁移结束后统一落盘
         if (string.IsNullOrWhiteSpace(Config.ConfigDirectory)) return;
 
         try

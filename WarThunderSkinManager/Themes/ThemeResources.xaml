@@ -474,8 +474,15 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
                             Padding="{TemplateBinding Padding}" ClipToBounds="True">
-                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                          VerticalAlignment="Center"/>
+                        <!-- 内边距**之内**再夹一层裁切：折叠时窗格 68、按钮 48（外边距 10）、内容区只有 24 宽，
+                             图标正好占满 —— 标签必须在这里被裁掉。
+                             只靠 bd 的 ClipToBounds 是不够的：它裁在**按钮外缘**（窗格 x=58），而标签从
+                             x=46 起（= 外边距 10 + 内边距 12 + 图标 24），于是首字仍会露出约 12px
+                             （发布前审查实测出的问题）。这一层让裁切线正好落在内容区右缘。 -->
+                        <Border ClipToBounds="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"/>
+                        </Border>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -512,12 +519,8 @@
         </Style.Triggers>
     </Style>
 
-    <!-- 导航项激活态派生样式（供 BasedOn 使用） -->
-    <Style x:Key="NavButtonActive" TargetType="Button" BasedOn="{StaticResource NavButton}">
-        <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
-        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
+    <!-- 说明：这里原有 `NavButtonActive`（导航项激活态派生样式），全仓无人引用 ——
+         激活态实际由各导航项自带的 Style.Triggers 内联实现（MainWindow.xaml），已删。 -->
 
     <!-- ============ 标题栏按钮（字形取自统一图标字体 Font Awesome 7 Free Solid） ============
          调用方以 Content 给字形（如最小化 `&#xF2D1;`）；悬停 = 主题表面色**圆角底**（120ms 淡入），
