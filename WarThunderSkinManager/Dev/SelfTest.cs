@@ -606,7 +606,7 @@ internal static class SelfTest
             {
                 ("窗口最小化", 0xF2D1), ("窗口最大化", 0xF2D0), ("窗口还原", 0xF2D2),
                 ("窗口关闭", 0xF00D), ("置顶", 0xF08D),
-                ("涂装管理", 0xF1FC), ("载具管理", 0xF072), ("多源复用", 0xF24D),
+                ("涂装管理", 0xF1FC), ("载具管理", 0xF0FB), ("多源复用", 0xF24D),
                 ("WT Live", 0xF290), ("设置", 0xF013),
                 // 「下载图标」这一个字形同时用在三处：工具栏的下载列表入口 / 卡片右下角下载按钮 / 列表空态插图
                 ("拖入导入", 0xF56F), ("下载图标", 0xF063), ("下载重试", 0xF021),
@@ -2601,6 +2601,43 @@ internal static class SelfTest
 
                 log.AppendLine($"导航顺序   : WT Live 在载具管理之前 = {navOrderOk}"
                              + $"（位置 {wtLiveAt} < {vehiclesAt}；含隐藏的多源复用时应为「涂装管理 → WT Live → 多源复用 → 载具管理 → 设置 → 关于」）");
+
+                // 载具图标**三处必须同一字形**：导航「载具管理」/ 载具管理页空状态 / WT Live 搜索候选 chip。
+                // 这条原先只写在 WtLiveSearchChip.cs 的注释里（"与导航同一字形"），全靠人自觉；
+                // 换图标时最容易只改一两处 —— 同一个概念会在三处长得不一样。
+                static int GlyphOf(string text, string pattern)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(text, pattern);
+                    return m.Success ? Convert.ToInt32(m.Groups[1].Value, 16) : -1;
+                }
+
+                var vehicleViewPath = Path.Combine(sourceRoot, "Views", "VehicleManagementView.xaml");
+                var chipPath = Path.Combine(sourceRoot, "ViewModels", "WtLiveSearchChip.cs");
+
+                // 先切出「载具管理」那个按钮块，再在块里取字形 —— 用固定长度的窗口去"够"很脆
+                // （按钮里先是一大段 Style.Triggers，图标隔了 600 多个字符；窗口给小了就会判成没找到）
+                var vehiclesAt2 = mainWindowXaml.IndexOf(@"{x:Static vm:TabKey.Vehicles}", StringComparison.Ordinal);
+                var vehiclesEnd = vehiclesAt2 < 0
+                    ? -1
+                    : mainWindowXaml.IndexOf("</Button>", vehiclesAt2, StringComparison.Ordinal);
+                var vehiclesBlock = vehiclesEnd > vehiclesAt2 ? mainWindowXaml[vehiclesAt2..vehiclesEnd] : "";
+
+                var navGlyph = GlyphOf(vehiclesBlock, @"&#x([0-9A-Fa-f]{4});");
+                var emptyGlyph = GlyphOf(
+                    File.Exists(vehicleViewPath) ? File.ReadAllText(vehicleViewPath, Encoding.UTF8) : "",
+                    @"&#x([0-9A-Fa-f]{4});""[^\n]*FontSize=""26""");
+                var chipGlyph = GlyphOf(
+                    File.Exists(chipPath) ? File.ReadAllText(chipPath, Encoding.UTF8) : "",
+                    @"VehicleIcon\s*=\s*""\\u([0-9A-Fa-f]{4})""");
+
+                var vehicleGlyphOk = navGlyph > 0 && navGlyph == emptyGlyph && navGlyph == chipGlyph;
+
+                log.AppendLine($"载具图标   : 导航 U+{navGlyph:X4} / 空状态 U+{emptyGlyph:X4} / 搜索候选 U+{chipGlyph:X4}"
+                             + $"（三处应相同）= {vehicleGlyphOk}");
+
+                if (!vehicleGlyphOk)
+                    log.AppendLine("自检异常：载具图标三处不一致（导航 / 载具管理页空状态 / WT Live 搜索候选）"
+                                 + " → 同一个概念会显示成三种图标");
 
                 // 「关于」页迁移（§3.16）：关于 / 应用自更新**只应**出现在「关于」页 ——
                 // 两页各留一份是这类"搬家"最容易犯的错（改了一处、另一处还在，界面看着像没迁）

@@ -86,8 +86,10 @@ public partial class WtLiveSearchChip : ObservableObject
 /// </summary>
 internal static class WtLiveSearchChipCatalog
 {
-    /// <summary>载具图标（与导航「载具管理」同一字形）。</summary>
-    internal const string VehicleIcon = "\uF072";
+    /// <summary>
+    /// 载具图标（Font Awesome <c>jet-fighter</c>，与导航「载具管理」同一字形 —— 自检「载具图标」会核对三处一致）。
+    /// </summary>
+    internal const string VehicleIcon = "\uF0FB";
 
     /// <summary>标签图标（Font Awesome <c>tag</c>）。</summary>
     internal const string TagIcon = "\uF02B";

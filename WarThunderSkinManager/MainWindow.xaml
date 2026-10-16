@@ -285,7 +285,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
+                                <TextBlock Text="&#xF0FB;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.vehicles}" VerticalAlignment="Center"/>
                             </StackPanel>
