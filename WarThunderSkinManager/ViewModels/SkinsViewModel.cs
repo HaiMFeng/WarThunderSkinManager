@@ -133,6 +133,17 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 静默导入（WT Live「一键导入」）的解构**并行度上限**：留一半线程池给界面。
+    /// <para>
+    /// 这条路径与用户的浏览**并存**（没有遮罩挡着，用户还在翻瀑布流），而缩略图解码、
+    /// 预览图取字节（<c>WTLiveService.FetchImageCachedAsync</c>）同样走 <c>Task.Run</c> ——
+    /// 并行解构把池线程占满时，它们只能排队等线程池注入新线程（每秒才一两个），
+    /// 用户看到的就是"导入期间浏览卡顿"。上限 4 兼顾多核机器上的导入速度与界面余量。
+    /// </para>
+    /// </summary>
+    internal static readonly int SilentImportDegree = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
+
+    /// <summary>
     /// 让 <see cref="HasActiveDownloads"/> 随下载列表**实时通知界面**：
     /// 列表增删（订阅 / 退订条目）与每条的状态变化都会触发它。
     /// </summary>
@@ -527,17 +538,31 @@ public partial class SkinsViewModel : ObservableObject
             {
                 if (previewImagePath != null && File.Exists(previewImagePath))
                 {
-                    foreach (var package in result.Packages)
-                        PreviewStore.SaveFromFile(_config.ConfigDirectory, package.Id, previewImagePath);
+                    // **放后台**：每张要整幅解码 + PNG 重编码（几十毫秒），包多时是一段可感知的 UI 冻结。
+                    // 更要紧的是它就落在"完成气泡"后面 —— UI 线程被占住时气泡根本渲染不出来，
+                    // 等它空出来时 3 秒的墙钟早已走完，气泡直接被判过期回收（看着就像"被吞掉"）。
+                    var previewSource = previewImagePath;
+                    var configDir = _config.ConfigDirectory;
+                    var ids = result.Packages.Select(p => p.Id).ToList();
+
+                    await Task.Run(() =>
+                    {
+                        foreach (var id in ids)
+                            PreviewStore.SaveFromFile(configDir, id, previewSource);
+                    });
 
                     // 预览文件已落盘 → 立即刷新缩略图（当前载具页面上无需切页即可看到）
-                    RefreshPreviews(result.Packages.Select(p => p.Id));
+                    RefreshPreviews(ids);
                 }
 
                 item.State = WtLiveDownloadState.Completed;
                 item.SetStateText("wtlive.state.completed", result.Packages.Count);
-                ShowStatus(Loc.Format("wtlive.imported", result.Packages.Count));
                 item.ClearStagedParts(); // 这条流程已经走完 → 复用状态作废，暂存文件随 finally 清掉
+
+                // 完成提示：**静默导入唯一的那一条**（静默路径下 RunImportAsync 内部那条已让位）。
+                // 因此它带着来源与告警数，且发在**所有重活之后** —— 不会再被自己的后续工作挤掉
+                if (!result.Canceled)
+                    ShowStatus(Loc.Format("wtlive.imported", result.Packages.Count, result.Warnings.Count));
             }
             else
             {
@@ -1892,9 +1917,12 @@ public partial class SkinsViewModel : ObservableObject
                 var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
 
                 // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch。
-                // 被抑制时 scope 是空作用域：Report 之类全是空操作，进度自然丢弃
+                // 被抑制时 scope 是空作用域：Report 之类全是空操作，进度自然丢弃。
+                // 静默导入显式收窄并行度（见 SilentImportDegree）：那条路径与用户的浏览并存，
+                // 不能把线程池占满 —— 否则瀑布流缩略图的解码/取字节要排队等池注入线程
                 result = await Task.Run(() => ImportService.Commit(
-                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl));
+                    candidates, _config.ResourceDirectory, sourceType, sourcePath, reporter, cts.Token, sourceUrl,
+                    silent ? SilentImportDegree : 0));
             }
 
             PartCatalog.Invalidate(); // 库变了 → 部件表（跨载具复用候选）下次访问重建
@@ -1923,7 +1951,11 @@ public partial class SkinsViewModel : ObservableObject
                 await RefreshLibraryAsync();
             }
 
-            ShowStatus(message);
+            // 完成提示**只发一条**：静默导入的调用方（WT Live 下载流程）随后会弹一条更具体的
+            // 完成气泡（带来源 + 包数 + 告警数），两条几乎同义的完成气泡挤在一起时前一条会被后一条
+            // 盖过去 —— 看着就像"完成提示被吞掉了"。但"没导入出东西 / 被取消"这两种结论调用方
+            // 不会另发，仍由这里说。
+            if (!(silent && !result.Canceled && result.Packages.Count > 0)) ShowStatus(message);
 
             return result;
         }

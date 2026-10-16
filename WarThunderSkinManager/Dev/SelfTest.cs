@@ -3137,6 +3137,22 @@ internal static class SelfTest
                          + $"间隔 = {WTLiveService.RetryDelay.TotalSeconds} 秒（应 1，固定不退避），"
                          + $"停滞超时 = {WTLiveService.StallTimeout.TotalSeconds} 秒（应 30）");
 
+            // ---- 静默导入的低扰动（§3.17「一键导入」）----
+            // 那条路径与用户的浏览并存（没有遮罩挡着）：并行解构不能吃满线程池，否则缩略图解码 /
+            // 预览图取字节（同样走 Task.Run）只能排队等池注入新线程 —— 表现就是"浏览卡顿"。
+            var silentDegreeOk = SkinsViewModel.SilentImportDegree is >= 2 and <= 4
+                                 && SkinsViewModel.SilentImportDegree <= Environment.ProcessorCount;
+
+            var degreeRuleOk = ImportService.ResolveDegree(0) is >= 2 and <= ImportService.MaxDegree // 默认：按核数，2..8
+                               && ImportService.ResolveDegree(-5) == ImportService.ResolveDegree(0)  // 负数当默认
+                               && ImportService.ResolveDegree(1) == 1                                // 显式小值原样生效
+                               && ImportService.ResolveDegree(3) == 3
+                               && ImportService.ResolveDegree(99) == ImportService.MaxDegree;         // 越界夹到上限
+
+            log.AppendLine($"静默导入扰动: 并行度上限 = {SkinsViewModel.SilentImportDegree}"
+                         + $"（应 2..4，且 ≤ 核数 {Environment.ProcessorCount}）= {silentDegreeOk}，"
+                         + $"Commit 并行度解析（0→按核数 / 1→1 / 3→3 / 99→{ImportService.MaxDegree}）= {degreeRuleOk}");
+
             // ---- 重试只补尚未完成的部分（§3.17）----
             // 已下好的那一路（压缩包 / 预览图）留着暂存文件跨重试复用：重试只下载尚未完成的那一路，
             // 已下好的那一路**保留它的进度段**（压缩包 80% / 预览图 20%），不再从 0 重来。

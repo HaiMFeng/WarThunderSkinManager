@@ -180,10 +180,18 @@ public static class ImportService
     /// <param name="sourceUrl">
     /// 来源链接（WT Live 帖子网址等；可选）：整批候选同源，写入每个新包的 <see cref="PackageMeta.SourceUrl"/>。
     /// </param>
+    /// <param name="maxDegreeOfParallelism">
+    /// 解构并行度上限；<c>0</c> = 按 CPU 核数取默认（见 <see cref="ResolveDegree"/>）。
+    /// <para>
+    /// **静默导入**（WT Live「一键导入」）会显式给一个小值：那条路径没有遮罩挡着，用户还在
+    /// 翻瀑布流，而缩略图解码 / 预览图取字节也走 <c>Task.Run</c> —— 同一批线程池线程被并行解构
+    /// 占满时，它们只能排队等池注入新线程（每秒才一两个），表现就是"浏览卡顿"。
+    /// </para>
+    /// </param>
     public static ImportResult Commit(IReadOnlyList<ImportCandidate> candidates, string resourceDir,
         ImportSourceType sourceType, string sourcePath,
         IProgress<ImportProgress>? progress = null, CancellationToken cancellationToken = default,
-        string? sourceUrl = null)
+        string? sourceUrl = null, int maxDegreeOfParallelism = 0)
     {
         // **按来源分组**（§3.1）：一个压缩包 / 一个导入文件夹 / UserSkins 的一个顶层文件夹 = 一个来源
         // = 一个导入记录（各自一个 Id）。未铺分组键的调用（键为空）→ 整批算一个来源，与旧行为一致。
@@ -217,7 +225,7 @@ public static class ImportService
 
         var options = new ParallelOptions
         {
-            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
+            MaxDegreeOfParallelism = ResolveDegree(maxDegreeOfParallelism),
             CancellationToken = cancellationToken
         };
 
@@ -268,6 +276,21 @@ public static class ImportService
 
         return result;
     }
+
+    /// <summary>解构并行度的**上限**：再多也不会更快（哈希/复制受 IO 与内存带宽限制），只会更抢线程池。</summary>
+    internal const int MaxDegree = 8;
+
+    /// <summary>
+    /// 解析 <see cref="Commit"/> 的并行度：<paramref name="requested"/> ≤ 0 → 按核数取默认
+    /// （夹在 2..<see cref="MaxDegree"/> 之间）；显式给了值就夹在 1..<see cref="MaxDegree"/> 之间。
+    /// <para>
+    /// 抽成静态纯函数是给自检直接钉的：默认口径与"显式值生效且不会越界"这两条都不能漂。
+    /// </para>
+    /// </summary>
+    internal static int ResolveDegree(int requested)
+        => requested > 0
+            ? Math.Clamp(requested, 1, MaxDegree)
+            : Math.Clamp(Environment.ProcessorCount, 2, MaxDegree);
 
     /// <summary>
     /// 给一批候选打上**来源分组键**（§3.1）：一个压缩包 / 一个导入文件夹调一次。

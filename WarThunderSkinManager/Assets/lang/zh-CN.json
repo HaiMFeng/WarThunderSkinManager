@@ -667,7 +667,7 @@
   "wtlive.state.completed": "已导入 {0} 个涂装包",
   "wtlive.state.nothing": "完成（无可导入内容）",
   "wtlive.state.failed": "失败：{0}",
-  "wtlive.imported": "WT Live 涂装导入完成：{0} 个涂装包",
+  "wtlive.imported": "WT Live 涂装导入完成：{0} 个涂装包，{1} 条告警",
   "wtlive.previewFailed": "预览图下载失败：本次下载未安装（可点下载列表里的「重试」重新下载）",
   "wtlive.downloadFailed": "WT Live 下载失败：{0}",
   "pkg.editor.resource": "资源包",
