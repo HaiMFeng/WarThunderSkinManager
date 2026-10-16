@@ -2443,6 +2443,25 @@ internal static class SelfTest
             var metaEn = enTableForPlaceholders.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, @"manually save|no need to|Save button|automatically saved|auto-saved")).Select(p => p.Key).ToList();
 
+            // 追加片段必须**自带前导分隔符**：这些值是拼在主体句后面的（`text += Loc.Format(...)` 或
+            // `" " + Loc.Format(...)`），开头那个 `；` / `; ` 或外层括号就是分隔手段 ——
+            // 一旦被"顺手改成一句正经话"，拼出来就会连成一串
+            // （改英文复数时真踩到过：`…贴图 3 张source items cleaned: 2`）。
+            var fragmentKeys = new[]
+            {
+                "import.cleaned", "import.cleanupSkipped", "import.archive.skipped", "import.deletedArchives",
+                "skins.syncWarnings", "import.cleanupFailed", "import.deleteArchiveFailed",
+                "pkg.related.clearedOutput", "gsync.skippedSuffix",
+            };
+
+            static bool HasLeadingSeparator(string v)
+                => v.StartsWith(';') || v.StartsWith('(') || v.StartsWith('；') || v.StartsWith('（');
+
+            var fragmentBadZh = fragmentKeys
+                .Where(k => zhTable.TryGetValue(k, out var v) && !HasLeadingSeparator(v)).ToList();
+            var fragmentBadEn = fragmentKeys
+                .Where(k => enTableForPlaceholders.TryGetValue(k, out var v) && !HasLeadingSeparator(v)).ToList();
+
             // ---- 文档引用一致性（长任务登记表 ↔ 已知问题清单）----
             // 「线程池与长任务约定」§6 的登记表用 `KI-0xx` 指回「已知问题」：那一条被修掉、随版本归档
             // 移出清单之后，这里的引用就成了悬空编号 —— 必须同步把登记表那一行改成 ✅ 并去掉关联编号。
@@ -2763,6 +2782,14 @@ internal static class SelfTest
                              ? "\n  机制叙述：" + string.Join(" / ", metaZh.Concat(metaEn).Take(8))
                              : "")
                          + $"\n  括号举例：{string.Join(" / ", parenZh.Take(6))}");
+
+            log.AppendLine($"追加片段   : 缺前导分隔符 中 {fragmentBadZh.Count} / 英 {fragmentBadEn.Count} 条（应 0："
+                         + "它们是拼在主体句后面的，少了分隔就会连成一串）"
+                         + (fragmentBadZh.Count + fragmentBadEn.Count > 0
+                             ? "\n  " + string.Join(" / ", fragmentBadZh.Concat(fragmentBadEn)) : ""));
+
+            if (fragmentBadZh.Count + fragmentBadEn.Count > 0)
+                log.AppendLine("自检异常：追加片段丢了前导分隔符 → 与主体句拼起来会连读（见上方键名）");
 
             if (hardcodedTexts.Count > 0)
                 log.AppendLine($"自检异常：XAML 里有写死的用户可见文本（{hardcodedTexts.Count} 处）→ 其它语言下不会翻译");
