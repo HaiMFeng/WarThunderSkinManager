@@ -220,12 +220,16 @@
                             </StackPanel>
                         </Button>
 
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Vehicles}"
-                                Tag="{loc:Loc nav.vehicles}">
+                        <!-- 导航顺序（自上而下）：涂装管理 → WT Live → 多源复用 → 载具管理 → 设置。
+                             「WT Live」在前、「载具管理」在后（用户指定）：浏览/下载是常用入口，
+                             而载具管理是配置性质的后置动作；多源复用仍夹在中间（默认隐藏，
+                             隐藏时可见顺序就是「涂装管理 → WT Live → 载具管理 → 设置」） -->
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.WtLive}"
+                                Tag="{loc:Loc nav.wtlive}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.Vehicles}">
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.WtLive}">
                                             <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
                                             <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
                                             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -234,9 +238,9 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
+                                <TextBlock Text="&#xF290;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:Loc nav.vehicles}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc nav.wtlive}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
@@ -265,12 +269,12 @@
                             </StackPanel>
                         </Button>
 
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.WtLive}"
-                                Tag="{loc:Loc nav.wtlive}">
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Vehicles}"
+                                Tag="{loc:Loc nav.vehicles}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.WtLive}">
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.Vehicles}">
                                             <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
                                             <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
                                             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -279,9 +283,9 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF290;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
+                                <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:Loc nav.wtlive}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc nav.vehicles}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 

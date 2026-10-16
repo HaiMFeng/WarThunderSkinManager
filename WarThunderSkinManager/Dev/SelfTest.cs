@@ -2510,6 +2510,18 @@ internal static class SelfTest
                 if (!paneWidthsOk)
                     log.AppendLine("自检异常：MainWindow.xaml 的导航宽度动画终点与 MainViewModel 的 "
                                  + "NavCompactWidth / NavExpandedWidth 对不上 → 动画结束会被拽回（切换顿一下）");
+
+                // 导航顺序（用户指定）：涂装管理 → WT Live → 多源复用 → 载具管理 → 设置。
+                // 只钉"WT Live 在载具管理之前"这一条相对次序 —— 多源复用默认隐藏，隐藏时可见顺序
+                // 就是「涂装管理 → WT Live → 载具管理 → 设置」。改动顺序时这条会提醒你确认是不是有意的。
+                var wtLiveAt = mainWindowXaml.IndexOf(
+                    @"CommandParameter=""{x:Static vm:TabKey.WtLive}""", StringComparison.Ordinal);
+                var vehiclesAt = mainWindowXaml.IndexOf(
+                    @"CommandParameter=""{x:Static vm:TabKey.Vehicles}""", StringComparison.Ordinal);
+                var navOrderOk = wtLiveAt >= 0 && vehiclesAt >= 0 && wtLiveAt < vehiclesAt;
+
+                log.AppendLine($"导航顺序   : WT Live 在载具管理之前 = {navOrderOk}"
+                             + $"（位置 {wtLiveAt} < {vehiclesAt}；含隐藏的多源复用时应为「涂装管理 → WT Live → 多源复用 → 载具管理 → 设置」）");
             }
 
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----
