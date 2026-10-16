@@ -2462,6 +2462,15 @@ internal static class SelfTest
             var fragmentBadEn = fragmentKeys
                 .Where(k => enTableForPlaceholders.TryGetValue(k, out var v) && !HasLeadingSeparator(v)).ToList();
 
+            // 排版残留：界面文案里不该出现 Markdown / HTML 标记。
+            // 真踩到过：一条 hint 里留着 `**激活时按原始 blk 逐字节部署**`，界面上会把星号原样显示出来
+            // （子代理评阅发现，在此之前没人肉眼看过）。`\n` 不算 —— 多行提示是刻意用来分段的。
+            var markupPattern = @"\*\*|`|\[[^\]]+\]\(|</?(b|br|i|em|strong)>";
+            var markupZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, markupPattern)).Select(p => p.Key).ToList();
+            var markupEn = enTableForPlaceholders.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, markupPattern)).Select(p => p.Key).ToList();
+
             // ---- 文档引用一致性（长任务登记表 ↔ 已知问题清单）----
             // 「线程池与长任务约定」§6 的登记表用 `KI-0xx` 指回「已知问题」：那一条被修掉、随版本归档
             // 移出清单之后，这里的引用就成了悬空编号 —— 必须同步把登记表那一行改成 ✅ 并去掉关联编号。
@@ -2790,6 +2799,13 @@ internal static class SelfTest
 
             if (fragmentBadZh.Count + fragmentBadEn.Count > 0)
                 log.AppendLine("自检异常：追加片段丢了前导分隔符 → 与主体句拼起来会连读（见上方键名）");
+
+            log.AppendLine($"排版残留   : 含 Markdown / HTML 标记 中 {markupZh.Count} / 英 {markupEn.Count} 条（应 0）"
+                         + (markupZh.Count + markupEn.Count > 0
+                             ? "\n  " + string.Join(" / ", markupZh.Concat(markupEn)) : ""));
+
+            if (markupZh.Count + markupEn.Count > 0)
+                log.AppendLine("自检异常：界面文案里出现 Markdown / HTML 标记 → 会被原样显示（如 **加粗** 的星号）");
 
             if (hardcodedTexts.Count > 0)
                 log.AppendLine($"自检异常：XAML 里有写死的用户可见文本（{hardcodedTexts.Count} 处）→ 其它语言下不会翻译");
