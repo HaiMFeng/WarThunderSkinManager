@@ -2471,6 +2471,32 @@ internal static class SelfTest
             var markupEn = enTableForPlaceholders.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, markupPattern)).Select(p => p.Key).ToList();
 
+            // 术语一致：跨语言 / 跨页面的术语分裂（靠人肉眼查容易漏，只能钉词表）
+            // ① 英文把 WT Live 页的"涂装"写成 camouflages，全程序其余处一律 skin →
+            //    只有游戏里 camo 纹理那一层可以用：`part.tag.camo` 与 `pkg.editor.mode.notice`（讲 set_tex）
+            // ② "资源库"在中文里被写成"皮肤库"、英文被写成 "skin library" → 统一 resource library
+            var camoAllowedKeys = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "part.tag.camo", "pkg.editor.mode.notice",
+            };
+
+            var camoEn = enTableForPlaceholders
+                .Where(p => !camoAllowedKeys.Contains(p.Key)
+                            && p.Value.Contains("camouflage", StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Key)
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToList();
+
+            var skinLibraryZh = zhTable
+                .Where(p => p.Value.Contains("皮肤库", StringComparison.Ordinal))
+                .Select(p => p.Key).ToList();
+
+            var skinLibraryEn = enTableForPlaceholders
+                .Where(p => p.Value.Contains("skin library", StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Key).ToList();
+
+            var termSplitOk = camoEn.Count == 0 && skinLibraryZh.Count == 0 && skinLibraryEn.Count == 0;
+
             // ---- 文档引用一致性（长任务登记表 ↔ 已知问题清单）----
             // 「线程池与长任务约定」§6 的登记表用 `KI-0xx` 指回「已知问题」：那一条被修掉、随版本归档
             // 移出清单之后，这里的引用就成了悬空编号 —— 必须同步把登记表那一行改成 ✅ 并去掉关联编号。
@@ -2806,6 +2832,16 @@ internal static class SelfTest
 
             if (markupZh.Count + markupEn.Count > 0)
                 log.AppendLine("自检异常：界面文案里出现 Markdown / HTML 标记 → 会被原样显示（如 **加粗** 的星号）");
+
+            log.AppendLine($"术语一致   : 英文混用 camouflage = {camoEn.Count}（应 0；仅 part.tag.camo 与 set_tex 说明可用）、"
+                         + $"中文「皮肤库」= {skinLibraryZh.Count}（应 0）、英文 \"skin library\" = {skinLibraryEn.Count}（应 0）"
+                         + $"→ {termSplitOk}");
+
+            if (!termSplitOk)
+                log.AppendLine("自检异常：术语分裂 —— 同一样东西在不同页面/语言里换了词 "
+                             + $"（camouflage：{string.Join(", ", camoEn)}；"
+                             + $"皮肤库：{string.Join(", ", skinLibraryZh)}；"
+                             + $"skin library：{string.Join(", ", skinLibraryEn)}）");
 
             if (hardcodedTexts.Count > 0)
                 log.AppendLine($"自检异常：XAML 里有写死的用户可见文本（{hardcodedTexts.Count} 处）→ 其它语言下不会翻译");
