@@ -139,7 +139,14 @@ public enum TabKey
     /// <summary>「WT Live」页：浏览 live.warthunder.com 上的公开涂装（按载具筛选 / 下载导入）。</summary>
     WtLive,
 
-    Settings
+    Settings,
+
+    /// <summary>
+    /// 「关于」页：版本 / 构建 / 作者与链接 + **程序自更新**（自设置页迁来）。
+    /// 与设置页分开是因为"查版本、看有没有新版本"和"改配置"是两种意图；
+    /// 挪走之后设置页也收成了单列（原先那个右侧关于栏是窄窗下挤压内容区的元凶）。
+    /// </summary>
+    About
 }
 
 /// <summary>主窗口视图模型。承载导航状态与配置（三个目录）。</summary>
@@ -1075,11 +1082,15 @@ public partial class MainViewModel : ObservableObject
     internal const double NavCompactWidth = 68;
 
     /// <summary>
-    /// 窗口窄于这个宽度就**自动紧凑**（**不覆盖**用户的选择，见 <see cref="IsNavCompact"/>）：
-    /// 展开态要在 220 导航之外再放下「28 边距 ×2 + 620 表单 + 设置页右侧的关于列」，
-    /// 低于 ≈1020 时设置页那一行会明显挤压。窗口拉宽后自动恢复用户的展开态。
+    /// 窗口窄于这个宽度就**自动紧凑**（**不覆盖**用户的选择，见 <see cref="IsNavCompact"/>）。
+    /// <para>
+    /// 口径：展开态要在 220 导航之外再放下「28 边距 ×2 + 620 表单 + 20 余量」= 220 + 56 + 640 = 916 → 取 920。
+    /// 620 是全应用最宽的固定内容（设置页的表单列；原先右侧还有一列「关于」，
+    /// 迁到「关于」页之后设置页收成单列，这个阈值也跟着从 1020 降下来）。
+    /// 窗口拉宽后自动恢复用户的展开态。
+    /// </para>
     /// </summary>
-    internal const double NavExpandMinWidth = 1020;
+    internal const double NavExpandMinWidth = 920;
 
     /// <summary>主窗口当前宽度（由 <c>MainWindow.SizeChanged</c> 推来，做法同卡片宽度回推）。初值取"够宽"，避免首帧误判成紧凑。</summary>
     private double _windowWidth = double.PositiveInfinity;

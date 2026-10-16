@@ -2521,7 +2521,31 @@ internal static class SelfTest
                 var navOrderOk = wtLiveAt >= 0 && vehiclesAt >= 0 && wtLiveAt < vehiclesAt;
 
                 log.AppendLine($"导航顺序   : WT Live 在载具管理之前 = {navOrderOk}"
-                             + $"（位置 {wtLiveAt} < {vehiclesAt}；含隐藏的多源复用时应为「涂装管理 → WT Live → 多源复用 → 载具管理 → 设置」）");
+                             + $"（位置 {wtLiveAt} < {vehiclesAt}；含隐藏的多源复用时应为「涂装管理 → WT Live → 多源复用 → 载具管理 → 设置 → 关于」）");
+
+                // 「关于」页迁移（§3.16）：关于 / 应用自更新**只应**出现在「关于」页 ——
+                // 两页各留一份是这类"搬家"最容易犯的错（改了一处、另一处还在，界面看着像没迁）
+                static string ReadView(string root, string name)
+                {
+                    var path = Path.Combine(root, "Views", name);
+                    return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : "";
+                }
+
+                var settingsXaml = ReadView(sourceRoot, "SettingsView.xaml");
+                var aboutXaml = ReadView(sourceRoot, "AboutView.xaml");
+                var settingsHasNone = !settingsXaml.Contains("settings.appUpdate", StringComparison.Ordinal)
+                                      && !settingsXaml.Contains("settings.about", StringComparison.Ordinal)
+                                      && !settingsXaml.Contains("AppUpdate", StringComparison.Ordinal);
+                var aboutHasBoth = aboutXaml.Contains("settings.appUpdate", StringComparison.Ordinal)
+                                   && aboutXaml.Contains("settings.about", StringComparison.Ordinal);
+                var aboutMovedOk = settingsHasNone && aboutHasBoth;
+
+                log.AppendLine($"关于页迁移 : 设置页已无「关于 / 应用自更新」= {settingsHasNone}"
+                             + $"、关于页两者齐全 = {aboutHasBoth} → {aboutMovedOk}");
+
+                if (!aboutMovedOk)
+                    log.AppendLine("自检异常：「关于」与「应用自更新」没有完整迁到 Views/AboutView.xaml"
+                                 + "（要么设置页还留着一份，要么关于页缺内容）");
             }
 
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----

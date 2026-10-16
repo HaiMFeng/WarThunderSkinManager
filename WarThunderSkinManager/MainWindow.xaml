@@ -125,7 +125,8 @@
                                         <BeginStoryboard>
                                             <Storyboard>
                                                 <!-- To 必须与 MainViewModel.NavCompactWidth（68）一致：
-                                                     差值会在动画结束时被 FillBehavior=Stop 一把拽回来；自检会核对这两个数 -->
+                                                     差值会在动画结束时被 FillBehavior=Stop 一把拽回来；自检会核对这两个数
+                                                     （展开态 220 同理，与 NavExpandedWidth 对齐） -->
                                                 <DoubleAnimation Storyboard.TargetProperty="Width"
                                                                  To="68" Duration="0:0:0.2" FillBehavior="Stop">
                                                     <DoubleAnimation.EasingFunction>
@@ -220,10 +221,11 @@
                             </StackPanel>
                         </Button>
 
-                        <!-- 导航顺序（自上而下）：涂装管理 → WT Live → 多源复用 → 载具管理 → 设置。
+                        <!-- 导航顺序（自上而下）：涂装管理 → WT Live → 多源复用 → 载具管理 → 设置 → 关于。
                              「WT Live」在前、「载具管理」在后（用户指定）：浏览/下载是常用入口，
                              而载具管理是配置性质的后置动作；多源复用仍夹在中间（默认隐藏，
-                             隐藏时可见顺序就是「涂装管理 → WT Live → 载具管理 → 设置」） -->
+                             隐藏时可见顺序就是「涂装管理 → WT Live → 载具管理 → 设置 → 关于」）。
+                             「关于」垫在最后：版本与更新的查看频率最低 -->
                         <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.WtLive}"
                                 Tag="{loc:Loc nav.wtlive}">
                             <Button.Style>
@@ -306,6 +308,27 @@
                                 <TextBlock Text="&#xF013;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.settings}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- 关于（§3.16）：版本 / 构建 / 作者与链接 + 程序自更新（自设置页迁来） -->
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.About}"
+                                Tag="{loc:Loc nav.about}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.About}">
+                                            <Setter Property="Background" Value="{StaticResource BrushSurface2}"/>
+                                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xF05A;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
+                                           Width="24" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc nav.about}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -473,6 +496,39 @@
                                 </Style>
                             </views:SettingsView.Style>
                         </views:SettingsView>
+
+                        <!-- 关于（§3.16）：版本 / 构建 / 作者与链接 + 程序自更新（自设置页迁来） -->
+                        <views:AboutView>
+                            <views:AboutView.Style>
+                                <Style TargetType="UserControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="RenderTransform">
+                                        <Setter.Value>
+                                            <TranslateTransform Y="0"/>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab}" Value="{x:Static vm:TabKey.About}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="0" To="1" Duration="0:0:0.25"/>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         From="10" To="0" Duration="0:0:0.25">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </views:AboutView.Style>
+                        </views:AboutView>
                     </Grid>
                 </Border>
             </Grid>
