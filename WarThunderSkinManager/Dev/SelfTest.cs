@@ -2435,6 +2435,14 @@ internal static class SelfTest
             var blkTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, @"replace_tex|set_tex|\bparam\b")).Select(p => p.Key).ToList();
 
+            // 界面机制叙述：文案里不该出现"怎么实现 / 有没有按钮"这类元叙述 ——
+            // 「无需手动提交」「自动保存」等于在替用户回忆一个不该被回忆的步骤（用户点名要求去掉）。
+            // 注意只抓**保存机制**这一类：「下次进游戏不必再手动挑一次」说的是游戏里的动作，是真实信息，不算。
+            var metaZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, @"无需手动|手动保存|手动提交|自动保存|保存按钮|点「保存")).Select(p => p.Key).ToList();
+            var metaEn = enTableForPlaceholders.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, @"manually save|no need to|Save button|automatically saved|auto-saved")).Select(p => p.Key).ToList();
+
             // ---- 文档引用一致性（长任务登记表 ↔ 已知问题清单）----
             // 「线程池与长任务约定」§6 的登记表用 `KI-0xx` 指回「已知问题」：那一条被修掉、随版本归档
             // 移出清单之后，这里的引用就成了悬空编号 —— 必须同步把登记表那一行改成 ✅ 并去掉关联编号。
@@ -2748,8 +2756,12 @@ internal static class SelfTest
                          + (missingCodeKeys.Count > 0 ? "\n  缺 key：" + string.Join(" / ", missingCodeKeys.Take(8)) : ""));
             log.AppendLine($"措辞体检  : 中文表 括号补充 {parenZh.Count} 条（只算替代一句话的，值/单位/数量不算）、"
                          + $"内部术语 {devTermZh.Count} 条、"
-                         + $"进阶 blk 术语 {blkTermZh.Count} 条（后两类里文件/协议名要清掉，blk 术语是进阶功能本身的概念）"
+                         + $"进阶 blk 术语 {blkTermZh.Count} 条（后两类里文件/协议名要清掉，blk 术语是进阶功能本身的概念）、"
+                         + $"界面机制叙述 中 {metaZh.Count} / 英 {metaEn.Count} 条（应 0：不许替用户回忆保存按钮之类）"
                          + (devTermZh.Count > 0 ? "\n  内部术语：" + string.Join(" / ", devTermZh.Take(8)) : "")
+                         + (metaZh.Count + metaEn.Count > 0
+                             ? "\n  机制叙述：" + string.Join(" / ", metaZh.Concat(metaEn).Take(8))
+                             : "")
                          + $"\n  括号举例：{string.Join(" / ", parenZh.Take(6))}");
 
             if (hardcodedTexts.Count > 0)
