@@ -2412,9 +2412,26 @@ internal static class SelfTest
             }
 
             // 措辞体检：括号补充（「（…）」/「 (…)」）与内部术语（数据文件名 / 协议字段 / 章节号）
-            var parenZh = zhTable.Where(p => p.Value.Contains('（')).Select(p => p.Key).ToList();
-            var devTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
-                    p.Value, @"\.json|\.csv|§|status=|lang_group|<语言代码>")).Select(p => p.Key).ToList();
+            // 括号类**只算"补充说明"**：括号里只是**值 / 单位 / 数量**的（「已复制（{0}）」
+            // 「{2:F1} MB/s」「（{0} 条告警）」「（空）」）是中文界面惯例，不该被算成啰嗦。
+            // 判据：括号内容含占位符 `{…}`，或就是「空」/英文复数标记「s」→ 视为值。
+            // 于是这条报告的语义是："还有多少处括号在替代一句话"，与「尽量避免」的口径一致。
+            static bool IsValueLikeParen(string inner)
+                => inner.Contains('{') || inner.Trim() is "空" or "s";
+
+            var parenZh = zhTable
+                .Where(p => System.Text.RegularExpressions.Regex.Matches(p.Value, @"（([^）]*)）")
+                    .Any(m => !IsValueLikeParen(m.Groups[1].Value)))
+                .Select(p => p.Key)
+                .ToList();
+            // 内部术语：数据文件名 / 协议字段 / 章节号。**文件选择器的过滤器串除外** ——
+            // 那类值（「映射文件|*.json|所有文件|*.*」）是给系统对话框看的，`*.json` 必须原样保留
+            var devTermZh = zhTable
+                .Where(p => !p.Value.Contains("*."))
+                .Where(p => System.Text.RegularExpressions.Regex.IsMatch(
+                    p.Value, @"\.json|\.csv|§|status=|lang_group|<语言代码>"))
+                .Select(p => p.Key)
+                .ToList();
             var blkTermZh = zhTable.Where(p => System.Text.RegularExpressions.Regex.IsMatch(
                     p.Value, @"replace_tex|set_tex|\bparam\b")).Select(p => p.Key).ToList();
 
@@ -2729,7 +2746,8 @@ internal static class SelfTest
                          + (missingLocKeys.Count > 0 ? "\n  缺 key：" + string.Join(" / ", missingLocKeys.Take(8)) : ""));
             log.AppendLine($"代码文案  : 扫了 {codeScanned} 个 .cs 文件，Loc[...] / Loc.Format(...) 里查不到的 key = {missingCodeKeys.Count}（应 0）"
                          + (missingCodeKeys.Count > 0 ? "\n  缺 key：" + string.Join(" / ", missingCodeKeys.Take(8)) : ""));
-            log.AppendLine($"措辞体检  : 中文表 括号补充 {parenZh.Count} 条、内部术语 {devTermZh.Count} 条、"
+            log.AppendLine($"措辞体检  : 中文表 括号补充 {parenZh.Count} 条（只算替代一句话的，值/单位/数量不算）、"
+                         + $"内部术语 {devTermZh.Count} 条、"
                          + $"进阶 blk 术语 {blkTermZh.Count} 条（后两类里文件/协议名要清掉，blk 术语是进阶功能本身的概念）"
                          + (devTermZh.Count > 0 ? "\n  内部术语：" + string.Join(" / ", devTermZh.Take(8)) : "")
                          + $"\n  括号举例：{string.Join(" / ", parenZh.Take(6))}");
