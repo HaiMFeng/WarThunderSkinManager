@@ -168,6 +168,7 @@
   "settings.gc.storage.other": "该磁盘其他内容",
   "settings.gc.storage.free": "剩余可用",
   "settings.gc.storage.measuring": "正在统计存储占用…",
+  "settings.gc.storage.measured": "存储占用统计完成",
   "settings.gc.storage.unavailable": "读不到磁盘信息：可能是网络盘，或驱动器尚未就绪。",
   "settings.gc.storage.refresh": "重新统计存储占用",
   "settings.danger": "危险操作",

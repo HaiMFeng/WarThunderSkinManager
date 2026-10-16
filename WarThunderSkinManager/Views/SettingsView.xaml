@@ -509,9 +509,10 @@
                          宽度走**星宽**（占比经 ProportionToStarLength 换算）→ 条随卡片宽度自适应，
                          不必把条的像素宽回推到 ViewModel；圆角由 code-behind 在 SizeChanged 里挂
                          RectangleGeometry 裁（WPF 没有内建圆角 Clip，同「界面设计规范」§2.7）。
-                         **卡片里不放任何动态文字**：统计进度 / 读不到磁盘信息一律走顶部气泡
-                         （见 MainViewModel.StartStorageMeasure）—— 说明行一会儿出现一会儿消失
-                         会把下面那个按钮顶得上下跳。没有能画的数字时本块整体收起，卡片高度稳定。 -->
+                         **卡片里不放任何动态文字**：统计开始 / 收尾 / 读不到磁盘信息一律走顶部气泡
+                         （见 MainViewModel.StartStorageMeasure 与 ShouldAnnounceStorageCompletion）——
+                         说明行一会儿出现一会儿消失会把下面那个按钮顶得上下跳。
+                         没有能画的数字时本块整体收起，卡片高度稳定。 -->
                     <StackPanel Margin="0,0,0,16">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">

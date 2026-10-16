@@ -168,6 +168,7 @@
   "settings.gc.storage.other": "Other content on this drive",
   "settings.gc.storage.free": "Free space",
   "settings.gc.storage.measuring": "Measuring storage usage…",
+  "settings.gc.storage.measured": "Storage usage measurement complete",
   "settings.gc.storage.unavailable": "Cannot read drive information: it may be a network drive, or the drive is not ready.",
   "settings.gc.storage.refresh": "Measure storage usage again",
   "settings.danger": "Danger Zone",

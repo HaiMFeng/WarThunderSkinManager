@@ -1473,7 +1473,7 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private StorageUsage? _storageUsage;
 
-    /// <summary>正在后台统计存储占用（界面显示「统计中…」，并临时禁掉重测按钮）。</summary>
+    /// <summary>正在后台统计存储占用（界面据此禁掉重测按钮）。</summary>
     [ObservableProperty] private bool _storageMeasuring;
 
     /// <summary>「所在磁盘」一行：卷根 + 该磁盘总容量（如 <c>D:\ · 总容量 1.82 TB</c>）。</summary>
@@ -1485,6 +1485,24 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>当前在途的那一趟统计（非 null 时兼任"这一趟是否仍是最新"的凭据）。</summary>
     private CancellationTokenSource? _storageMeasureCts;
+
+    /// <summary>
+    /// 顺带重测慢到这个时长，才值得补一句"统计完成"。
+    /// <para>
+    /// 再快的那些，条自己就冒出来了，每进一次设置页都弹一条纯属打扰；
+    /// 而慢到超过这个量级的，用户会开始怀疑"是不是卡住了" —— 那时必须给个收尾
+    /// （气泡本身只显示 3 秒，"正在统计…"早过期了）。
+    /// </para>
+    /// </summary>
+    internal static readonly TimeSpan StorageMeasureNoticeDelay = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>
+    /// 这一趟统计跑完要不要弹"统计完成"：**用户主动点的**一定有收尾（他在等结果）；
+    /// **顺带重测的**只在慢到会被察觉时补一句（见 <see cref="StorageMeasureNoticeDelay"/>）。
+    /// 抽成静态纯函数是给自检直接钉规则的。
+    /// </summary>
+    internal static bool ShouldAnnounceStorageCompletion(bool announce, TimeSpan elapsed)
+        => announce || elapsed >= StorageMeasureNoticeDelay;
 
     /// <summary>
     /// 卡片右上「重新统计存储占用」：**显式操作** → 顶部气泡里说明"正在统计…"（见 <see cref="StartStorageMeasure"/>）。
@@ -1508,7 +1526,11 @@ public partial class MainViewModel : ObservableObject
     /// 进设置页 / 回收完成 / 换目录都是顺带重测，条本身（与置灰的重测按钮）就是反馈，
     /// 每次都弹一条会把气泡刷成噪音。
     /// <para>
-    /// 反过来"**读不到磁盘信息**"无论哪条路径都弹一次：那时整块条会收起，
+    /// 收尾提示则见 <see cref="ShouldAnnounceStorageCompletion"/>：主动点的**一定要有**
+    /// —— 否则"正在统计…"过期后就再没有下文，看着像卡死；顺带重测的只在这趟确实够久时补一句。
+    /// </para>
+    /// <para>
+    /// 另外"**读不到磁盘信息**"无论哪条路径都弹一次：那时整块条会收起，
     /// 不说明就成了"静默消失"（与「已知问题」KI-003 同一条教训）。
     /// 目录没配时也只在主动点击时才提示（未配目录这件事别处已有引导）。
     /// </para>
@@ -1535,6 +1557,7 @@ public partial class MainViewModel : ObservableObject
 
         var token = cts.Token;   // 先取出来：Dispose 影响的只是 cts.Token 这个属性，已取出的 token 照样能读取消状态
         var dispatcher = Application.Current?.Dispatcher;
+        var startedAt = Stopwatch.GetTimestamp();
 
         StorageMeasuring = true;
         if (announce) ShowStatus(Loc["settings.gc.storage.measuring"]);
@@ -1542,6 +1565,9 @@ public partial class MainViewModel : ObservableObject
         Task.Run(() => StorageUsageService.Measure(resourceDir, token), token).ContinueWith(t =>
         {
             if (t.IsCanceled) return;   // 被新的一趟取代 → 什么都不做
+
+            // 计时在**线程池这边**取：统计一结束就算出来，不受 UI 线程忙闲影响
+            var announceDone = ShouldAnnounceStorageCompletion(announce, Stopwatch.GetElapsedTime(startedAt));
 
             // Background 优先级：统计结果不与入场动画 / 渲染抢 UI 线程
             dispatcher?.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
@@ -1553,6 +1579,7 @@ public partial class MainViewModel : ObservableObject
 
                 // 没有能画的数字（网络盘 / 未就绪 / 无权限）→ 说明原因，别让条静静地消失
                 if (StorageUsage == null) ShowStatus(Loc["settings.gc.storage.unavailable"]);
+                else if (announceDone) ShowStatus(Loc["settings.gc.storage.measured"]);
             }));
         });
     }

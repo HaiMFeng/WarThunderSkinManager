@@ -3536,12 +3536,23 @@ internal static class SelfTest
             var storageNullOk = StorageUsageService.Measure(null) == null
                                 && StorageUsageService.Measure(Path.Combine(workDir, "no-such-dir")) == null;
 
+            // 收尾提示规则：**主动点重测一定给"统计完成"**（否则气泡只活 3 秒，"正在统计…"过期后
+            // 再没有下文，看着就像卡死），顺带重测只在这趟确实慢到会被察觉时补一句
+            var noticeRuleOk =
+                MainViewModel.ShouldAnnounceStorageCompletion(announce: true, TimeSpan.Zero)
+                && MainViewModel.ShouldAnnounceStorageCompletion(announce: true, TimeSpan.FromSeconds(30))
+                && !MainViewModel.ShouldAnnounceStorageCompletion(announce: false, TimeSpan.FromMilliseconds(200))
+                && MainViewModel.ShouldAnnounceStorageCompletion(
+                       announce: false, MainViewModel.StorageMeasureNoticeDelay);
+
             log.AppendLine($"存储条     : 本目录占用 = {DataResetService.FormatSize(storage?.OwnBytes ?? -1)}（应 500 KB），"
                          + $"三段相加 == 磁盘总容量 = {storageSumOk}（应 True）"
                          + $"，占比 → 星宽 = {starShapeOk}（应 True：0.4 出星宽 0.4）"
                          + $"，越界夹取 = {starClampOk}（应 True：-1→0 / 3→1 / NaN→0 / null→0）"
                          + $"，容量分档 = {sizeTiersOk}（应 True：GB / TB）"
                          + $"，读不到磁盘信息 → null = {storageNullOk}（应 True：界面据此收起条并弹气泡）");
+            log.AppendLine($"统计收尾提示: 主动重测必有完成提示、顺带重测只有慢到 "
+                         + $"{MainViewModel.StorageMeasureNoticeDelay.TotalSeconds} 秒才补一句 = {noticeRuleOk}（应 True）");
 
             // ---- 存储条的**布局**：三段星宽是不是真的按占比落到了 ColumnDefinition 上 ----
             // 这一条不是多余的：ColumnDefinition **不在可视化树里**，DataContext 能否流到它身上必须实测
