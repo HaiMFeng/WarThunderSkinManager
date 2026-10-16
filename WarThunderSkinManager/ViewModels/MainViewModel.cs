@@ -193,14 +193,15 @@ public partial class MainViewModel : ObservableObject
     public string AboutVersion => AppInfo.Version;
 
     /// <summary>
-    /// 「关于」区的**构建哈希**一行（如"构建 1449859a"）；没有哈希时为空串 → 界面整行隐藏。
+    /// 「关于」卡的**构建哈希**（只给值，不含"构建"字样 —— 标签由界面上的 <c>FieldLabel</c> 出，
+    /// 这样它和「作者 / 版本」两行是同一套行结构：同字号、同间距、同对齐）。
+    /// 没有哈希时为空串 → 界面整行隐藏。
     /// </summary>
     /// <remarks>
-    /// 同一版本号可能对应多个构建（改了代码但没改版本号）——没有这一行就没法确认"装的是哪次构建"。
+    /// 同一版本号可能对应多个构建（改了代码但没改版本号）——没有这一行就没法确认"装的是哪次构建"
+    /// （实测踩过：装的是修 bug 之前的构建却看不出来）。
     /// </remarks>
-    public string AboutBuildText => AppInfo.BuildHash.Length == 0
-        ? ""
-        : Loc.Format("settings.about.build", AppInfo.BuildHash);
+    public string AboutBuildValue => AppInfo.BuildHash;
 
     /// <summary>项目主页（设置页「关于」超链接 / 按钮）。</summary>
     public string ProjectUrl { get; } = "https://github.com/HaiMFeng/WarThunderSkinManager";
@@ -1937,7 +1938,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(AppUpdateHasDetails));
         OnPropertyChanged(nameof(AppUpdateCanUnskip));
         OnPropertyChanged(nameof(AppUpdateReleaseUrl));
-        OnPropertyChanged(nameof(SettingsEnabled));
+        OnPropertyChanged(nameof(HeavyActionsEnabled));
         OnPropertyChanged(nameof(IsMaintenance));
     }
 
@@ -1947,8 +1948,12 @@ public partial class MainViewModel : ObservableObject
     /// <summary>「更新流程进行中」= 其它会改库 / 改配置的重操作一律禁用（§7.3 第 4 条）</summary>
     public bool IsMaintenance => Volatile.Read(ref _appUpdateBusy) == 1;
 
-    /// <summary>设置页重操作区的可用性（维护中一律禁用，双保险：命令内也会 early return）</summary>
-    public bool SettingsEnabled => !IsMaintenance;
+    /// <summary>
+    /// 「重操作区」可用性（维护中一律禁用，双保险：命令内也会 early return）。
+    /// 目前唯一的绑定方是**「关于」页**的「更新资源」卡 —— 它原先在设置页，随卡片一起迁过去了；
+    /// 名字不带页面（原叫 <c>SettingsEnabled</c>）就是为了不让"卡片搬个家"变成改名负债。
+    /// </summary>
+    public bool HeavyActionsEnabled => !IsMaintenance;
 
     public bool AppUpdateCanCheck => AppUpdateState
         is AppUpdateUiState.Idle or AppUpdateUiState.UpToDate or AppUpdateUiState.Failed
@@ -2185,11 +2190,11 @@ public partial class MainViewModel : ObservableObject
 
         Interlocked.Exchange(ref _appUpdateBusy, 1);
         OnPropertyChanged(nameof(IsMaintenance));
-        OnPropertyChanged(nameof(SettingsEnabled));
+        OnPropertyChanged(nameof(HeavyActionsEnabled));
 
         // ⚠️ 下载阶段**不能开全屏遮罩**：下载可能持续几分钟，遮罩会挡住卡片上的「取消下载」
         // 按钮（实测踩过：取消入口完全不可达）。所以下载改为**卡片内反馈**（进度条 + 速度 + 取消），
-        // 其它重操作由 `IsMaintenance` / `SettingsEnabled` 闸门挡住（「更新资源」卡等已在 XAML 绑定）。
+        // 其它重操作由 `IsMaintenance` / `HeavyActionsEnabled` 闸门挡住（「更新资源」卡等已在 XAML 绑定）。
         AppUpdateState = AppUpdateUiState.Downloading;
         SetAppUpdateText("settings.appUpdate.downloading");
         AppUpdateProgress = 0;
@@ -2266,7 +2271,7 @@ public partial class MainViewModel : ObservableObject
 
             Interlocked.Exchange(ref _appUpdateBusy, 0);
             OnPropertyChanged(nameof(IsMaintenance));
-            OnPropertyChanged(nameof(SettingsEnabled));
+            OnPropertyChanged(nameof(HeavyActionsEnabled));
         }
     }
 

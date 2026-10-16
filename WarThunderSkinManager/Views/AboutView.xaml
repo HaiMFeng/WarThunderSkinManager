@@ -9,15 +9,32 @@
             <TextBlock Text="{loc:Loc about.title}" Style="{StaticResource PageTitle}"/>
             <TextBlock Text="{loc:Loc about.subtitle}" Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
 
-            <!-- 关于（自设置页右侧那一列迁来，改成页面里的卡片）：Logo + 使用声明 +
-                 作者 / 版本 / 构建 + 项目与发布页链接 + 桌面快捷方式（两态按钮见
-                 docs/应用自更新设计.md §7.4） -->
+            <!-- 关于（自设置页右侧那一列迁来）：Logo 与作者 / 版本 / 构建并排 + 使用声明 + 链接与桌面快捷方式。
+                 几条**刻意的取舍**：
+                 · 卡片里**不再重复「关于」小标题** —— 页面主标题已经叫「关于」（原先是 250 宽侧栏里的小节，
+                   需要自己的标题；现在它就是一整页的主角，再挂一个小标题纯属冗余）；
+                 · 三行信息**共用一套列**（标签列 MinWidth 64）→ 三个值的左边缘严格对齐，
+                   不随标签文字长短（"作者 / 版本 / 构建" vs "Author / Version / Build"）漂移；
+                 · 「构建」与「作者 / 版本」是**同级字段**：同一 FieldLabel 标签、同字号、同 12 间距、同 6 行距；
+                   差别只在可点性 —— 可点的两行是 Primary 链接（带下划线），构建是只读文本（Secondary 一档）；
+                 · Logo 96 与信息块垂直居中对齐，右下方留白由信息块自身宽度决定（不再拉满整行）。
+                 没有哈希时（某些本地构建）构建整行隐藏。 -->
             <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc settings.about}" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>   <!-- 左：Logo -->
+                        <ColumnDefinition Width="*"/>      <!-- 右：信息 / 声明 / 按钮 -->
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>     <!-- Logo + 三行信息 -->
+                        <RowDefinition Height="Auto"/>     <!-- 使用声明（整宽） -->
+                        <RowDefinition Height="Auto"/>     <!-- 链接按钮 -->
+                        <RowDefinition Height="Auto"/>     <!-- 桌面快捷方式 -->
+                    </Grid.RowDefinitions>
 
                     <!-- 大尺寸镂空 Logo：OpacityMask 以主题色染色（灰轮廓图随亮暗主题适配） -->
-                    <Grid Width="96" Height="96" HorizontalAlignment="Left" Margin="0,0,0,14">
+                    <Grid Grid.Row="0" Grid.Column="0" Width="96" Height="96"
+                          HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,20,0">
                         <Rectangle Fill="{StaticResource BrushTextSecondary}">
                             <Rectangle.OpacityMask>
                                 <ImageBrush ImageSource="/Assets/logo-outline.png" Stretch="Uniform"/>
@@ -25,55 +42,62 @@
                         </Rectangle>
                     </Grid>
 
-                    <!-- 使用声明（一句话版；完整声明见项目 README） -->
-                    <TextBlock Text="{loc:Loc settings.about.disclaimer}" Style="{StaticResource PageSubtitle}"
-                               TextWrapping="Wrap" Margin="0,0,0,14"/>
-
-                    <Grid>
+                    <!-- 三行信息：一张 Grid 管三行 → 标签列宽一致、值列左边缘一致 -->
+                    <Grid Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto" MinWidth="64"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{loc:Loc settings.about.author}" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Margin="12,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc settings.about.author}"
+                                   Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Margin="12,0,0,0">
                             <Hyperlink Command="{Binding OpenLinkCommand}" CommandParameter="{Binding AuthorUrl}"
                                        Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
                                 <Run Text="{Binding AboutAuthor, Mode=OneWay}"/>
                             </Hyperlink>
                         </TextBlock>
-                    </Grid>
-                    <Grid Margin="0,6,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{loc:Loc settings.about.version}" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Margin="12,0,0,0"
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc settings.about.version}"
+                                   Style="{StaticResource FieldLabel}" Margin="0,6,0,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="12,6,0,0"
                                    ToolTip="{loc:Loc settings.about.versionTip}">
                             <Hyperlink Command="{Binding CopyVersionCommand}"
                                        Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
                                 <Run Text="{Binding AboutVersion, Mode=OneWay}"/>
                             </Hyperlink>
                         </TextBlock>
+
+                        <!-- 构建短哈希：同一版本号可能对应多个构建（改了代码但没改版本号）——
+                             没有这一行就没法确认"装的是哪次构建"（实测踩过：装的是修 bug 之前的构建却看不出来）。
+                             与上面两行同结构、同字号、同间距；只读 → 不用链接色，退一档用 Secondary -->
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc settings.about.build}"
+                                   Style="{StaticResource FieldLabel}" Margin="0,6,0,0"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding AboutBuildValue}"
+                                   Margin="12,6,0,0" TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource BrushTextSecondary}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AboutBuildValue}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
 
-                    <!-- 构建短哈希：同一版本号可能对应多个构建（改了代码但没改版本号）——
-                         没有这一行就没法确认"装的是哪次构建"（实测踩过：装的是修 bug 之前的构建却看不出来）。
-                         没有哈希时（某些本地构建）整行隐藏 -->
-                    <TextBlock Text="{Binding AboutBuildText}" Margin="0,4,0,0" FontSize="11"
-                               Foreground="{StaticResource BrushTextMuted}" TextTrimming="CharacterEllipsis">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding AboutBuildText}" Value="">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <!-- 使用声明（一句话版；完整声明见项目 README） -->
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{loc:Loc settings.about.disclaimer}"
+                               Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,18,0,0"/>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,16,0,0">
                         <Button Content="{loc:Loc settings.about.openProject}" Style="{StaticResource SecondaryButton}"
                                 Command="{Binding OpenLinkCommand}"
                                 CommandParameter="{Binding ProjectUrl}"/>
@@ -84,15 +108,16 @@
 
                     <!-- 桌面快捷方式（§7.4）：两态按钮（与安装器共用同一个固定名字，幂等）。
                          便携运行时也能用（指向当前 exe）——这是它存在的主要理由 -->
-                    <Button Content="{Binding DesktopShortcutActionText}" Style="{StaticResource SecondaryButton}"
+                    <Button Grid.Row="3" Grid.ColumnSpan="2" Content="{Binding DesktopShortcutActionText}"
+                            Style="{StaticResource SecondaryButton}"
                             HorizontalAlignment="Left" Margin="0,8,0,0"
                             Command="{Binding ToggleDesktopShortcutCommand}"/>
-                </StackPanel>
+                </Grid>
             </Border>
 
             <!-- 更新应用（§3.16）：安装器渠道 + 应用内自更新；规格见 docs/应用自更新设计.md。
-                 这是本页的第二张卡（**程序版本**）；数据表的「更新资源」仍留在设置页，
-                 两张卡措辞要能区分"程序"与"数据表" -->
+                 这是本页的第二张卡（**程序版本**）；第三张是「更新资源」（**数据表版本**）——
+                 两张卡措辞要能区分"程序"与"数据表"，顺序沿用设置页当年的口径：程序版本在前 -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.appUpdate}" Style="{StaticResource SectionTitle}"
@@ -251,6 +276,54 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+
+            <!-- 更新资源（§3.15）：数据表可从上游仓库（War-Thunder-Datamine）检查 / 下载新版本。
+                 与「应用自更新」同页（数据表版本紧随程序版本）；IsEnabled 跟随 HeavyActionsEnabled：
+                 应用更新进行中禁用（§7.3 第 4 条的"维护中闸门"） -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0"
+                    IsEnabled="{Binding HeavyActionsEnabled}">
+                <StackPanel IsEnabled="{Binding ResourceBlockEnabled}">
+                    <TextBlock Text="{loc:Loc settings.resourceUpdate}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{loc:Loc settings.resourceUpdate.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+                    <ItemsControl ItemsSource="{Binding ResourceItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" MinWidth="230"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Margin="12,0,12,0"
+                                               Foreground="{StaticResource BrushTextSecondary}"/>
+                                    <Button Grid.Column="2" Content="{loc:Loc settings.resource.update}"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding DataContext.UpdateResourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasUpdate}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="{loc:Loc settings.resource.check}" Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Left" Margin="0,12,0,0" Command="{Binding CheckResourceUpdatesCommand}"/>
+                </StackPanel>
+            </Border>
+
         </StackPanel>
     </ScrollViewer>
 </UserControl>

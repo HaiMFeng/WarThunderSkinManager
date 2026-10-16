@@ -2533,18 +2533,19 @@ internal static class SelfTest
 
                 var settingsXaml = ReadView(sourceRoot, "SettingsView.xaml");
                 var aboutXaml = ReadView(sourceRoot, "AboutView.xaml");
-                var settingsHasNone = !settingsXaml.Contains("settings.appUpdate", StringComparison.Ordinal)
-                                      && !settingsXaml.Contains("settings.about", StringComparison.Ordinal)
-                                      && !settingsXaml.Contains("AppUpdate", StringComparison.Ordinal);
-                var aboutHasBoth = aboutXaml.Contains("settings.appUpdate", StringComparison.Ordinal)
-                                   && aboutXaml.Contains("settings.about", StringComparison.Ordinal);
-                var aboutMovedOk = settingsHasNone && aboutHasBoth;
+                var settingsHasNone = !settingsXaml.Contains("AppUpdate", StringComparison.Ordinal)
+                                      && !settingsXaml.Contains("settings.about.", StringComparison.Ordinal)
+                                      && !settingsXaml.Contains("settings.resourceUpdate", StringComparison.Ordinal);
+                var aboutHasAll = aboutXaml.Contains("settings.about.disclaimer", StringComparison.Ordinal)
+                                  && aboutXaml.Contains("settings.appUpdate", StringComparison.Ordinal)
+                                  && aboutXaml.Contains("settings.resourceUpdate", StringComparison.Ordinal);
+                var aboutMovedOk = settingsHasNone && aboutHasAll;
 
-                log.AppendLine($"关于页迁移 : 设置页已无「关于 / 应用自更新」= {settingsHasNone}"
-                             + $"、关于页两者齐全 = {aboutHasBoth} → {aboutMovedOk}");
+                log.AppendLine($"关于页迁移 : 设置页已无「关于 / 应用自更新 / 更新资源」= {settingsHasNone}"
+                             + $"、关于页三者齐全 = {aboutHasAll} → {aboutMovedOk}");
 
                 if (!aboutMovedOk)
-                    log.AppendLine("自检异常：「关于」与「应用自更新」没有完整迁到 Views/AboutView.xaml"
+                    log.AppendLine("自检异常：「关于」「应用自更新」「更新资源」没有完整迁到 Views/AboutView.xaml"
                                  + "（要么设置页还留着一份，要么关于页缺内容）");
             }
 
@@ -3248,6 +3249,17 @@ internal static class SelfTest
                 (typeof(MainViewModel), nameof(MainViewModel.NavToggleEnabled)),
                 (typeof(MainViewModel), nameof(MainViewModel.NavToggleTip)),
                 (typeof(MainViewModel), nameof(MainViewModel.ToggleNavCommand)),
+                // 「关于」页（§3.15 / §3.16）：版本 / 构建 / 快捷方式 / 更新资源（数据表版本）
+                (typeof(MainViewModel), nameof(MainViewModel.AboutAuthor)),
+                (typeof(MainViewModel), nameof(MainViewModel.AboutVersion)),
+                (typeof(MainViewModel), nameof(MainViewModel.AboutBuildValue)),
+                (typeof(MainViewModel), nameof(MainViewModel.CopyVersionCommand)),
+                (typeof(MainViewModel), nameof(MainViewModel.DesktopShortcutActionText)),
+                (typeof(MainViewModel), nameof(MainViewModel.ToggleDesktopShortcutCommand)),
+                (typeof(MainViewModel), nameof(MainViewModel.ResourceItems)),
+                (typeof(MainViewModel), nameof(MainViewModel.CheckResourceUpdatesCommand)),
+                (typeof(MainViewModel), nameof(MainViewModel.UpdateResourceCommand)),
+                (typeof(MainViewModel), nameof(MainViewModel.HeavyActionsEnabled)),
             };
             var missingBindings = string.Join(", ", bindingPaths
                 .Where(p => p.Owner.GetProperty(p.Name) is null)
