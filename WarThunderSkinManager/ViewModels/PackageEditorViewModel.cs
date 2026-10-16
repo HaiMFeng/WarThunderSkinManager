@@ -133,7 +133,8 @@ public partial class PackageEditorViewModel : ObservableObject
     {
         try
         {
-            var image = Clipboard.GetImage();
+            // 统一走 ClipboardService（有界重试；被占用与"没有图片"都回 null）
+            var image = ClipboardService.TryGetImage();
             if (image == null)
             {
                 ShowStatus(Loc["pkg.editor.clipboardEmpty"]);

@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -212,22 +211,34 @@ public partial class MainViewModel : ObservableObject
     /// <summary>作者主页。</summary>
     public string AuthorUrl { get; } = "https://github.com/HaiMFeng";
 
-    /// <summary>复制版本号到剪贴板（设置页「关于」点版本号）：**带构建哈希**，便于定位具体构建。</summary>
+    /// <summary>
+    /// 复制**版本号 + 缩略构建号**到剪贴板（「关于」页点版本号）：如 <c>v0.1.5-dev+1449859a</c>。
+    /// 一句话说清"哪一版、哪次构建"，够短、适合贴在对话里；要完整构建号点「构建」那一行。
+    /// </summary>
     [RelayCommand]
-    private void CopyVersion()
+    private void CopyVersion() => CopyToClipboard(AppInfo.VersionCopyText, "settings.about.copiedWithBuild");
+
+    /// <summary>
+    /// 复制**完整构建号**到剪贴板（「关于」页点构建号）：源码修订号全串，
+    /// 贴给作者 / 提 issue 时用它才能精确定位到那一次构建。
+    /// </summary>
+    [RelayCommand]
+    private void CopyBuild() => CopyToClipboard(AppInfo.BuildHashFull, "settings.about.copiedBuild");
+
+    /// <summary>
+    /// 两个复制入口共用的落盘 + 反馈。
+    /// 剪贴板是**全局独占**资源：<see cref="ClipboardService"/> 内部改用单格式
+    /// <c>SetDataObject</c>（WPF 的 <c>SetText</c> 会在半成功状态下把剪贴板留着不放，
+    /// 表现为"其他程序一直提示剪贴板被占用"）并做有界重试；真抢不到才提示"稍后再试"。
+    /// </summary>
+    private void CopyToClipboard(string text, string copiedKey)
     {
-        var full = "v" + AppInfo.InformationalVersion;
+        if (text.Length == 0) return; // 没有构建号的构建：点它不该弹一句"已复制（空）"的空话
 
         try
         {
-            Clipboard.SetText(full);
-            ShowStatus(Loc.Format("settings.about.copiedWithBuild", full));
-        }
-        catch (ExternalException)
-        {
-            // 剪贴板是系统级互斥资源，被其他程序占用时立即失败（CLIPBRD_E_CANT_OPEN）——
-            // **不自动重试**（占用方无响应时重试会卡死 UI），提示稍后尝试
-            ShowStatus(Loc["settings.about.busy"]);
+            if (ClipboardService.TrySetText(text)) ShowStatus(Loc.Format(copiedKey, text));
+            else ShowStatus(Loc["settings.about.busy"]);
         }
         catch (Exception ex)
         {

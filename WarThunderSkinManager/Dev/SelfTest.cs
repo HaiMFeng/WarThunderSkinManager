@@ -2547,6 +2547,28 @@ internal static class SelfTest
                 if (!aboutMovedOk)
                     log.AppendLine("自检异常：「关于」「应用自更新」「更新资源」没有完整迁到 Views/AboutView.xaml"
                                  + "（要么设置页还留着一份，要么关于页缺内容）");
+
+                // 剪贴板访问**只走 ClipboardService**（踩过：WPF 的 Clipboard.SetText 会把字符串包成
+                // 多格式 DataObject 再 flush，常抛 CLIPBRD_E_CANT_OPEN 并在这种半成功状态下把剪贴板
+                // 留着不放 → 其他程序一直提示"剪贴板被占用"，直到本程序退出）。
+                // 统一入口还顺带保证了"有界重试"这条口径只写一遍。
+                // 例外只有两个：剪贴板服务自身，以及本自检文件（它的注释与判据里必然出现该字样）
+                var clipboardOffenders = new List<string>();
+                foreach (var file in Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+                {
+                    var name = Path.GetFileName(file);
+                    if (name is "ClipboardService.cs" or "SelfTest.cs") continue;
+                    if (File.ReadAllText(file, Encoding.UTF8).Contains("Clipboard.", StringComparison.Ordinal))
+                        clipboardOffenders.Add(name);
+                }
+
+                log.AppendLine($"剪贴板入口 : 绕过 ClipboardService 直接用 Clipboard 的文件 = {clipboardOffenders.Count}"
+                             + $"（应 0，ClipboardService / SelfTest 除外）"
+                             + $"{(clipboardOffenders.Count == 0 ? "" : " → " + string.Join(" / ", clipboardOffenders))}");
+
+                if (clipboardOffenders.Count > 0)
+                    log.AppendLine("自检异常：剪贴板访问必须走 Services/Infrastructure/ClipboardService"
+                                 + "（统一绕开 WPF SetText 缺陷 + 有界重试）");
             }
 
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----
@@ -3254,6 +3276,7 @@ internal static class SelfTest
                 (typeof(MainViewModel), nameof(MainViewModel.AboutVersion)),
                 (typeof(MainViewModel), nameof(MainViewModel.AboutBuildValue)),
                 (typeof(MainViewModel), nameof(MainViewModel.CopyVersionCommand)),
+                (typeof(MainViewModel), nameof(MainViewModel.CopyBuildCommand)),
                 (typeof(MainViewModel), nameof(MainViewModel.DesktopShortcutActionText)),
                 (typeof(MainViewModel), nameof(MainViewModel.ToggleDesktopShortcutCommand)),
                 (typeof(MainViewModel), nameof(MainViewModel.ResourceItems)),
@@ -3620,9 +3643,21 @@ internal static class SelfTest
             var hashOk = buildHash.Length == 0
                 || (buildHash.Length == 8 && buildHash.All(Uri.IsHexDigit));
 
+            // 两个复制入口的口径（「关于」页）：版本行复制"版本号 + 缩略构建号"，
+            // 构建行复制"完整构建号"——两者必须能对上（完整串以缩略串开头、且确实是 InformationalVersion 的 + 段）
+            var versionCopyOk = buildHash.Length == 0
+                ? AppInfo.VersionCopyText == AppInfo.Version
+                : AppInfo.VersionCopyText == AppInfo.Version + "+" + buildHash;
+            var fullHashOk = AppInfo.BuildHashFull.Length == 0
+                || (AppInfo.BuildHashFull.Length >= buildHash.Length
+                    && AppInfo.BuildHashFull.StartsWith(buildHash, StringComparison.Ordinal)
+                    && AppInfo.InformationalVersion.EndsWith(AppInfo.BuildHashFull, StringComparison.Ordinal));
+
             log.AppendLine($"构建标识   : 版本 = {AppInfo.Version}（应 v 开头且不含 +）= {versionClean}，"
                          + $"完整串含源码修订号 = {AppInfo.InformationalVersion.Contains('+')}，"
                          + $"构建哈希 = '{buildHash}'（应 8 位十六进制，或空）= {hashOk}（应 True）");
+            log.AppendLine($"构建复制   : 版本行复制 = '{AppInfo.VersionCopyText}'（应 版本 + 缩略构建号）= {versionCopyOk}，"
+                         + $"构建行复制 = '{AppInfo.BuildHashFull}'（应完整修订号，以缩略号开头）= {fullHashOk}");
 
             // Releases API 解析 + 频道过滤 + 资产选择（fixture 覆盖真实形状：草稿 / 只有 zip / 缺 digest）
             const string releasesJson = """

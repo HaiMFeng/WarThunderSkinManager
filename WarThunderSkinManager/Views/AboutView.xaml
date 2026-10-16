@@ -28,8 +28,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>     <!-- Logo + 三行信息 -->
                         <RowDefinition Height="Auto"/>     <!-- 使用声明（整宽） -->
-                        <RowDefinition Height="Auto"/>     <!-- 链接按钮 -->
-                        <RowDefinition Height="Auto"/>     <!-- 桌面快捷方式 -->
+                        <RowDefinition Height="Auto"/>     <!-- 三个入口按钮（整宽一行） -->
                     </Grid.RowDefinitions>
 
                     <!-- 大尺寸镂空 Logo：OpacityMask 以主题色染色（灰轮廓图随亮暗主题适配） -->
@@ -75,12 +74,23 @@
 
                         <!-- 构建短哈希：同一版本号可能对应多个构建（改了代码但没改版本号）——
                              没有这一行就没法确认"装的是哪次构建"（实测踩过：装的是修 bug 之前的构建却看不出来）。
-                             与上面两行同结构、同字号、同间距；只读 → 不用链接色，退一档用 Secondary -->
+                             与上面两行同结构、同字号、同间距；点它复制**完整**构建号
+                             （版本那一行的复制内容只带缩略号，两者口径不同，所以提示里都写清楚）。
+                             没有哈希时标签与值**一起**隐藏（只留一个孤零零的"构建"更奇怪） -->
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc settings.about.build}"
-                                   Style="{StaticResource FieldLabel}" Margin="0,6,0,0"/>
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding AboutBuildValue}"
-                                   Margin="12,6,0,0" TextTrimming="CharacterEllipsis"
-                                   Foreground="{StaticResource BrushTextSecondary}">
+                                   Margin="0,6,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AboutBuildValue}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Margin="12,6,0,0"
+                                   ToolTip="{loc:Loc settings.about.buildTip}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
@@ -90,6 +100,10 @@
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
+                            <Hyperlink Command="{Binding CopyBuildCommand}"
+                                       Foreground="{StaticResource BrushPrimary}" TextDecorations="Underline">
+                                <Run Text="{Binding AboutBuildValue, Mode=OneWay}"/>
+                            </Hyperlink>
                         </TextBlock>
                     </Grid>
 
@@ -97,6 +111,10 @@
                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{loc:Loc settings.about.disclaimer}"
                                Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,18,0,0"/>
 
+                    <!-- 三个入口排一行（项目主页 / 发行版本 / 桌面快捷方式）：都是"往外走"的动作，
+                         一行既省高度也便于一眼扫全；按钮文案长短不一，用 8px 间距分隔。
+                         桌面快捷方式（§7.4）是两态按钮（与安装器共用同一个固定名字，幂等），
+                         便携运行时也能用（指向当前 exe）——这是它存在的主要理由 -->
                     <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,16,0,0">
                         <Button Content="{loc:Loc settings.about.openProject}" Style="{StaticResource SecondaryButton}"
                                 Command="{Binding OpenLinkCommand}"
@@ -104,14 +122,9 @@
                         <Button Content="{loc:Loc settings.about.releases}" Style="{StaticResource SecondaryButton}"
                                 Margin="8,0,0,0" Command="{Binding OpenLinkCommand}"
                                 CommandParameter="{Binding ReleasesUrl}"/>
+                        <Button Content="{Binding DesktopShortcutActionText}" Style="{StaticResource SecondaryButton}"
+                                Margin="8,0,0,0" Command="{Binding ToggleDesktopShortcutCommand}"/>
                     </StackPanel>
-
-                    <!-- 桌面快捷方式（§7.4）：两态按钮（与安装器共用同一个固定名字，幂等）。
-                         便携运行时也能用（指向当前 exe）——这是它存在的主要理由 -->
-                    <Button Grid.Row="3" Grid.ColumnSpan="2" Content="{Binding DesktopShortcutActionText}"
-                            Style="{StaticResource SecondaryButton}"
-                            HorizontalAlignment="Left" Margin="0,8,0,0"
-                            Command="{Binding ToggleDesktopShortcutCommand}"/>
                 </Grid>
             </Border>
 

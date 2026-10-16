@@ -35,4 +35,18 @@ public static class AppInfo
         InformationalVersion.Split('+', 2) is { Length: 2 } parts
             ? parts[1].Trim() is { Length: > 8 } hash ? hash[..8] : parts[1].Trim()
             : "";
+
+    /// <summary>
+    /// **完整**构建号（源码修订号全串，三四十个字符）。「关于」页点「构建」复制它 ——
+    /// 贴给作者 / 提 issue 时用它才能精确定位到那一次构建。
+    /// </summary>
+    public static string BuildHashFull { get; } =
+        InformationalVersion.Split('+', 2) is { Length: 2 } parts ? parts[1].Trim() : "";
+
+    /// <summary>
+    /// 「关于」页点「版本」要复制的内容：**版本号 + 缩略构建号**（如 <c>v0.1.5-dev+1449859a</c>）。
+    /// 一句话说清"哪一版、哪次构建"，又短得适合贴在对话里；要完整构建号点「构建」那一行。
+    /// </summary>
+    public static string VersionCopyText { get; } =
+        BuildHash.Length == 0 ? Version : Version + "+" + BuildHash;
 }
