@@ -109,4 +109,11 @@ public partial class AppConfig : ObservableObject
     /// （跳过导入预览窗），只在窗口顶部提示导入结果。**记住上次选择，默认不勾**。
     /// </summary>
     [ObservableProperty] private bool _wtLiveAutoImport;
+
+    /// <summary>
+    /// 左侧导航是否**折叠**（只显示图标，界面设计规范 §5.13）。**默认展开**。
+    /// 折叠是"我给内容区让路"的长期偏好（窄窗 / 小屏用户会一直用），所以持久化、重开保持；
+    /// 它**只管用户的选择**——窗口太窄时的自动紧凑是派生状态，不写回这里。
+    /// </summary>
+    [ObservableProperty] private bool _navCollapsed;
 }

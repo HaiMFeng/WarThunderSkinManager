@@ -15,6 +15,7 @@
         AllowDrop="True"
         DragOver="Window_DragOver"
         DragLeave="Window_DragLeave"
+        SizeChanged="OnWindowSizeChanged"
         Drop="Window_Drop">
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"/>
@@ -100,18 +101,103 @@
             <!-- 主体：左侧导航 + 右侧内容 -->
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220"/>
+                    <!-- 导航列 **Auto**：宽度由 NavPane 自己持有（要动画的就是它这一个值）。
+                         展开 220 / 折叠 64 的令牌见界面设计规范 §2.3 / §5.13 -->
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 左侧导航（顶部分隔线由标题栏底线贯通提供） -->
-                <Border Grid.Column="0" Background="{StaticResource BrushCanvas}"
+                <!-- 左侧导航（顶部分隔线由标题栏底线贯通提供）。
+                     折叠态 = 只显示图标：**不切标签的 Visibility，而是让 64 宽的窗格把它裁掉**
+                     （NavButton 模板开了 ClipToBounds）→ 宽度动画与"标签滑出"是同一个动作，
+                     不会出现"先跳字、再变宽"。
+                     宽度：初值由 NavPaneWidth 绑定给出（WPF 初始帧不执行 EnterActions，
+                     所以不能只靠动画）；状态**变化**时才由下面两条 EnterActions 补 200ms 过渡。
+                     CubicEase EaseOut 与页面切换同一曲线，见 §6 -->
+                <Border x:Name="NavPane" Grid.Column="0" Width="{Binding NavPaneWidth}"
+                        Background="{StaticResource BrushCanvas}"
                         BorderThickness="0,0,1,0" BorderBrush="{StaticResource BrushBorder}">
-                    <StackPanel Margin="0,14,0,0">
-                        <TextBlock Text="{loc:Loc nav.header}" Margin="22,0,0,8" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{StaticResource BrushTextMuted}"/>
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNavCompact}" Value="True">
+                                    <DataTrigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Width"
+                                                                 To="64" Duration="0:0:0.2" FillBehavior="Stop">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <CubicEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsNavCompact}" Value="False">
+                                    <DataTrigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Width"
+                                                                 To="220" Duration="0:0:0.2" FillBehavior="Stop">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <CubicEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
 
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Skins}">
+                    <StackPanel Margin="0,14,0,0">
+                        <!-- 「导航」标题 + 折叠按钮同一行：折叠后标题收起，按钮**右对齐位置不动**
+                             （两态下都在右上角，点起来手感一致）。 -->
+                        <Grid Margin="22,0,10,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="{loc:Loc nav.header}" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <!-- 折叠后 64 宽的窗格里放不下这行小标题（也不该被裁成半个字）→ 整块收起 -->
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsNavCompact}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- 折叠 / 展开（仅图标 → **必须**有悬停提示，提示随形态切换）。
+                                 窗口太窄时展开没有意义（展开了也还是紧凑态）→ 禁用并说明原因（见 VM） -->
+                            <Button Grid.Column="1" VerticalAlignment="Center"
+                                    Command="{Binding ToggleNavCommand}"
+                                    IsEnabled="{Binding NavToggleEnabled}"
+                                    ToolTip="{Binding NavToggleTip}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                        <!-- 字形也走 Setter（不能写在外层 Content 上：本地值优先级高于触发器） -->
+                                        <Setter Property="Content" Value="&#xF053;"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsNavCompact}" Value="True">
+                                                <Setter Property="Content" Value="&#xF054;"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </Grid>
+
+                        <!-- 导航项：`Tag` = 折叠态下的悬停提示文案（折起来就只剩图标，没有提示就读不出是什么） -->
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Skins}"
+                                Tag="{loc:Loc nav.skins}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Style.Triggers>
@@ -124,13 +210,14 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF1FC;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                <TextBlock Text="&#xF1FC;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.skins}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Vehicles}">
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Vehicles}"
+                                Tag="{loc:Loc nav.vehicles}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Style.Triggers>
@@ -143,14 +230,15 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                <TextBlock Text="&#xF072;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.vehicles}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
                         <!-- 多源复用（§3.13）：仅在设置开启后可见 -->
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.PartReuse}">
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.PartReuse}"
+                                Tag="{loc:Loc nav.partReuse}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -167,13 +255,14 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF24D;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                <TextBlock Text="&#xF24D;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.partReuse}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.WtLive}">
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.WtLive}"
+                                Tag="{loc:Loc nav.wtlive}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Style.Triggers>
@@ -186,13 +275,14 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF290;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                <TextBlock Text="&#xF290;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.wtlive}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Settings}">
+                        <Button Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:TabKey.Settings}"
+                                Tag="{loc:Loc nav.settings}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                     <Style.Triggers>
@@ -205,7 +295,7 @@
                                 </Style>
                             </Button.Style>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF013;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                <TextBlock Text="&#xF013;" FontFamily="{StaticResource IconFont}" FontSize="14" TextAlignment="Center"
                                            Width="24" VerticalAlignment="Center"/>
                                 <TextBlock Text="{loc:Loc nav.settings}" VerticalAlignment="Center"/>
                             </StackPanel>

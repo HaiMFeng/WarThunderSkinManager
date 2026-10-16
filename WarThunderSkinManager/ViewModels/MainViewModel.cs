@@ -353,6 +353,10 @@ public partial class MainViewModel : ObservableObject
         _selectedTheme = Themes.FirstOrDefault(
             t => string.Equals(t.Id, config.Theme, StringComparison.OrdinalIgnoreCase)) ?? Themes[0];
 
+        // 左侧导航折叠状态：同样直接写字段（ctor 里不必落盘、也不必广播 ——
+        // 绑定首次求值时读的就是这个值，所以启动即恢复上次形态，且不会闪一下再变）
+        _isNavCollapsed = config.NavCollapsed;
+
         // 清晰度 / 缓存上限下拉：同上，当前档位直接写字段（未知值回落默认档）
         WtLiveQualities = WtLiveQualityCatalog.QualityIds
             .Select(id => new WtLiveOptionItem(id, () => WtLiveQualityCatalog.DisplayName(id))).ToList();
@@ -1048,6 +1052,88 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
     }
+
+    // ---------- 左侧导航折叠（界面设计规范 §5.13）----------
+
+    /// <summary>
+    /// 左侧导航是否折叠（只显示图标）。**持久化**在 `config.json` 的 <c>navCollapsed</c>：
+    /// 折叠是"我给内容区让路"的长期偏好，不该每次重开都复位（窄窗 / 小屏用户会一直用）。
+    /// </summary>
+    [ObservableProperty] private bool _isNavCollapsed;
+
+    /// <summary>展开态窗格宽度（界面设计规范 §2.3）。</summary>
+    private const double NavExpandedWidth = 220;
+
+    /// <summary>折叠态窗格宽度：10 外边距 + 10 内边距 + 24 图标格 + 10 内边距 + 10 外边距 → 图标在窗格里居中。</summary>
+    private const double NavCompactWidth = 64;
+
+    /// <summary>
+    /// 窗口窄于这个宽度就**自动紧凑**（**不覆盖**用户的选择，见 <see cref="IsNavCompact"/>）：
+    /// 展开态要在 220 导航之外再放下「28 边距 ×2 + 620 表单 + 设置页右侧的关于列」，
+    /// 低于 ≈1020 时设置页那一行会明显挤压。窗口拉宽后自动恢复用户的展开态。
+    /// </summary>
+    internal const double NavExpandMinWidth = 1020;
+
+    /// <summary>主窗口当前宽度（由 <c>MainWindow.SizeChanged</c> 推来，做法同卡片宽度回推）。初值取"够宽"，避免首帧误判成紧凑。</summary>
+    private double _windowWidth = double.PositiveInfinity;
+
+    /// <summary>窗口是否宽到能容纳展开态。</summary>
+    public bool NavHasRoom => _windowWidth >= NavExpandMinWidth;
+
+    /// <summary>
+    /// 界面**实际呈现**的形态 = 用户选择折叠 **或** 窗口不够宽（自动紧凑）。
+    /// 视图只看这一个属性（窗格宽度 / 图标内边距 / 悬停提示都由它驱动）；
+    /// 用派生状态而不是"窗口一窄就改写用户选择"，是为了让拉宽窗口能自动回到用户要的形态。
+    /// </summary>
+    public bool IsNavCompact => IsNavCollapsed || !NavHasRoom;
+
+    /// <summary>导航窗格宽度：展开 220 / 折叠 64。视图绑它拿初值（动画只在形态**变化**时补过渡）。</summary>
+    public double NavPaneWidth => IsNavCompact ? NavCompactWidth : NavExpandedWidth;
+
+    /// <summary>折叠按钮是否可用：窗口太窄时展开没有意义（展开了也还是紧凑态）→ 禁用并给出说明。</summary>
+    public bool NavToggleEnabled => NavHasRoom;
+
+    /// <summary>折叠按钮的悬停提示：按钮只有图标，没有提示就不可读（界面设计规范 §2.6）。</summary>
+    public string NavToggleTip => !NavHasRoom
+        ? Loc["nav.expandBlocked"]
+        : Loc[IsNavCollapsed ? "nav.expand" : "nav.collapse"];
+
+    partial void OnIsNavCollapsedChanged(bool value)
+    {
+        // 用户显式操作 → 落盘记住（Compare 一下，构造期按 config 赋值不会白写一次）
+        if (Config.NavCollapsed != value)
+        {
+            Config.NavCollapsed = value;
+            SafePersist();
+        }
+
+        OnPropertyChanged(nameof(IsNavCompact));
+        OnPropertyChanged(nameof(NavPaneWidth));
+        OnPropertyChanged(nameof(NavToggleTip));
+    }
+
+    /// <summary>
+    /// 主窗口宽度变化（`SizeChanged` 推来）：**只在跨过"能否展开"的阈值时**才广播 ——
+    /// 否则拖动窗口的过程中每一帧都要让绑定重算一遍窗格宽度。
+    /// </summary>
+    public void UpdateNavWidth(double windowWidth)
+    {
+        if (Math.Abs(_windowWidth - windowWidth) < 1) return;
+
+        var hadRoom = NavHasRoom;
+        _windowWidth = windowWidth;
+        if (hadRoom == NavHasRoom) return; // 没跨阈值 → 形态不变，不打扰界面
+
+        OnPropertyChanged(nameof(NavHasRoom));
+        OnPropertyChanged(nameof(IsNavCompact));
+        OnPropertyChanged(nameof(NavPaneWidth));
+        OnPropertyChanged(nameof(NavToggleEnabled));
+        OnPropertyChanged(nameof(NavToggleTip));
+    }
+
+    /// <summary>折叠 / 展开左侧导航（用户显式操作 → 落盘记住，见 <see cref="IsNavCollapsed"/>）。</summary>
+    [RelayCommand]
+    private void ToggleNav() => IsNavCollapsed = !IsNavCollapsed;
 
     // ---------- 主题（界面设计规范 §3）----------
 

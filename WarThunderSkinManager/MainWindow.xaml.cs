@@ -28,13 +28,29 @@ public partial class MainWindow : Window
     public MainWindow(AppConfig config)
     {
         InitializeComponent();
-        DataContext = new MainViewModel(config);
+
+        var viewModel = new MainViewModel(config);
+        DataContext = viewModel;
+
+        // 先按 XAML 里声明的宽度报一次：左侧导航要据此决定展开还是自动紧凑，
+        // 而它**首帧就得是对的**（等 SizeChanged 再纠正会看到导航先展开再收起来）。
+        // 之后交给 SizeChanged 保持同步（屏幕比 1120 窄时窗口会被系统压缩，那次由它纠正）。
+        viewModel.UpdateNavWidth(Width);
 
         // 首次启动向导：目录未配置时自动弹出（Loaded 后弹，主窗口可作 Owner）
         Loaded += (_, _) => (DataContext as MainViewModel)?.ShowWizardIfNeeded();
 
         // 关窗守卫：WT Live 下载进行中 → 确认；确认后取消下载并清理暂存（§3.15）
         Closing += OnWindowClosing;
+    }
+
+    /// <summary>
+    /// 窗口尺寸变化 → 回推给 VM：只有跨过"能否展开导航"的阈值时它才会广播，
+    /// 所以拖动窗口的过程中不会让绑定反复重算（界面设计规范 §5.13）。
+    /// </summary>
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel) viewModel.UpdateNavWidth(e.NewSize.Width);
     }
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)

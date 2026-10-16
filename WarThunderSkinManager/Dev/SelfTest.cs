@@ -2472,6 +2472,31 @@ internal static class SelfTest
                 }
             }
 
+            // ---- 左侧导航折叠态的可读性（界面设计规范 §5.13）----
+            // 折叠后导航项只剩图标，"这行到底是什么"全靠悬停提示 —— 而提示文案挂在各导航项的 `Tag` 上
+            // （NavButton 样式在折叠态把它当 ToolTip）。**漏一个就是点不开也看不懂的图标**，所以在这里钉住数量。
+            if (Directory.Exists(sourceRoot))
+            {
+                var mainWindowPath = Path.Combine(sourceRoot, "MainWindow.xaml");
+                var navItems = 0;
+                var navTagged = 0;
+
+                if (File.Exists(mainWindowPath))
+                {
+                    var mainWindowXaml = File.ReadAllText(mainWindowPath, Encoding.UTF8);
+                    navItems = System.Text.RegularExpressions.Regex
+                        .Matches(mainWindowXaml, @"CommandParameter=""\{x:Static vm:TabKey\.\w+\}""").Count;
+                    navTagged = System.Text.RegularExpressions.Regex
+                        .Matches(mainWindowXaml, @"Tag=""\{loc:Loc nav\.\w+\}""").Count;
+                }
+
+                log.AppendLine($"导航折叠   : 导航项 {navItems} 个、带悬停提示（Tag）{navTagged} 个（应相等）");
+
+                if (navItems > 0 && navTagged != navItems)
+                    log.AppendLine($"自检异常：MainWindow.xaml 有 {navItems - navTagged} 个导航项没给 Tag → "
+                                 + "折叠后只有图标，没有悬停提示就读不出它是什么（界面设计规范 §5.13）");
+            }
+
             // ---- **虚拟化列表的行模板不得依赖元素树位置**（§5.7.1「虚拟化下的铁律」）----
             // 容器滚出视口被回收时**脱离视觉树**（那一刻没有祖先），滚回来复用又赶上下一次解析时机不定 ——
             // `RelativeSource AncestorType` / `ElementName` / `x:Reference` 这类"按树找"的写法都会**踩空**，
@@ -3165,6 +3190,13 @@ internal static class SelfTest
                 (typeof(StorageUsage), nameof(StorageUsage.OwnPercentText)),
                 (typeof(StorageUsage), nameof(StorageUsage.OtherPercentText)),
                 (typeof(StorageUsage), nameof(StorageUsage.FreePercentText)),
+                // 左侧导航折叠（界面设计规范 §5.13）：形态 / 窗格宽 / 折叠按钮的可用与提示
+                (typeof(MainViewModel), nameof(MainViewModel.IsNavCollapsed)),
+                (typeof(MainViewModel), nameof(MainViewModel.IsNavCompact)),
+                (typeof(MainViewModel), nameof(MainViewModel.NavPaneWidth)),
+                (typeof(MainViewModel), nameof(MainViewModel.NavToggleEnabled)),
+                (typeof(MainViewModel), nameof(MainViewModel.NavToggleTip)),
+                (typeof(MainViewModel), nameof(MainViewModel.ToggleNavCommand)),
             };
             var missingBindings = string.Join(", ", bindingPaths
                 .Where(p => p.Owner.GetProperty(p.Name) is null)
@@ -3715,6 +3747,64 @@ internal static class SelfTest
                          + $"（应 0.4 / 0.2 / 0.4）= {barStarsOk}，条宽 = {barGrid?.ActualWidth ?? -1:0.#}"
                          + $"（应 > 0：有结果时不该被收起）");
             barHost.Children.Clear();
+
+            // ---- 左侧导航折叠态（界面设计规范 §5.13）----
+            // 折叠后只剩图标，两件事**只有真渲染一次才知道**：
+            // ① "这是什么"靠悬停提示，而提示是 NavButton 样式在折叠态从各导航项的 `Tag` 取的
+            //    （展开态置空）—— 样式里的 Setter + 绑定 + 触发器这条链子必须实测；
+            // ② 图标在 64 宽的窗格里居中：靠"外边距 10 + 内边距 10 + 图标格 24 + 内边距 10 + 外边距 10"，
+            //    改任一数字都会歪，所以直接把图标中心量出来比。
+            // DataContext 用匿名对象喂 `IsNavCompact`（视图只看这一个派生属性，见 MainViewModel）
+            static Button ProbeNavItem(object dataContext)
+            {
+                var icon = new TextBlock { Text = "X", Width = 24, TextAlignment = TextAlignment.Center };
+                var content = new StackPanel { Orientation = Orientation.Horizontal };
+                content.Children.Add(icon);
+                content.Children.Add(new TextBlock { Text = "涂装管理", VerticalAlignment = VerticalAlignment.Center });
+
+                return new Button
+                {
+                    DataContext = dataContext,
+                    Tag = "涂装管理",
+                    Style = Application.Current?.Resources["NavButton"] as Style,
+                    Content = content
+                };
+            }
+
+            static (Button Item, TextBlock Icon, Border Host) ArrangeNavProbe(object dataContext)
+            {
+                var item = ProbeNavItem(dataContext);
+                var host = new Border { Width = 64, Height = 200 };
+                host.Child = new StackPanel { Children = { item } };
+
+                host.Measure(new Size(64, 200));
+                host.Arrange(new Rect(0, 0, 64, 200));
+                host.UpdateLayout();
+
+                return (item, (TextBlock)((StackPanel)item.Content).Children[0], host);
+            }
+
+            var compactProbe = ArrangeNavProbe(new { IsNavCompact = true });
+            var expandedProbe = ArrangeNavProbe(new { IsNavCompact = false });
+
+            var iconCenterX = compactProbe.Icon.TranslatePoint(
+                new Point(compactProbe.Icon.ActualWidth / 2, 0), compactProbe.Host).X;
+
+            var navCompactOk = compactProbe.Item.ActualWidth > 0
+                               && Math.Abs(compactProbe.Item.ActualWidth - 44) < 1
+                               && Math.Abs(compactProbe.Item.Padding.Left - 10) < 0.01
+                               && Math.Abs(iconCenterX - 32) < 1          // 窗格 64 → 中心 32
+                               && (compactProbe.Item.ToolTip as string) == "涂装管理";
+
+            var navExpandedOk = Math.Abs(expandedProbe.Item.Padding.Left - 16) < 0.01
+                                && expandedProbe.Item.ToolTip == null;    // 标签就在眼前 → 不给提示
+
+            log.AppendLine($"导航折叠态 : 按钮宽 = {compactProbe.Item.ActualWidth:0.#}（应 44）、"
+                         + $"内边距 = {compactProbe.Item.Padding.Left:0.#}（应 10）、"
+                         + $"图标中心 = {iconCenterX:0.#}（应 32 = 窗格中心）、"
+                         + $"悬停提示 = 「{compactProbe.Item.ToolTip}」（应 = Tag 文案）→ {navCompactOk}");
+            log.AppendLine($"导航展开态 : 内边距 = {expandedProbe.Item.Padding.Left:0.#}（应 16）、"
+                         + $"悬停提示 = {(expandedProbe.Item.ToolTip == null ? "无（应无）" : expandedProbe.Item.ToolTip.ToString())} → {navExpandedOk}");
 
             // 安装身份（§4.3）：安装根与当前进程目录一致才算"安装版"
             var identityOk = AppUpdateService.IsCanonicalInstallPath(

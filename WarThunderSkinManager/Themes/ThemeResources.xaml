@@ -434,7 +434,13 @@
         </Setter>
     </Style>
 
-    <!-- ============ 左侧导航项 ============ -->
+    <!-- ============ 左侧导航项 ============
+         折叠态（`IsNavCompact`，界面设计规范 §5.13）由这一个样式统一处理，导航项自己不用各写一份：
+         · 内边距 16 → 10：折叠后窗格 64、按钮 44（左右外边距各 10）→ 图标正好居中；
+         · 标签**不切 Visibility**，靠模板的 `ClipToBounds` 把它裁掉 —— 宽度动画与"标签滑出"
+           因此是同一个动作，不会出现"先跳字、再变宽"（也少 5 份重复的触发器）；
+         · 只显示图标时**必须**能读出这是什么：文案由调用方挂在 `Tag` 上，本样式在折叠态把它当悬停提示；
+           展开态标签就在眼前，再来一条提示是噪音 → 置空。 -->
     <Style x:Key="NavButton" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
@@ -445,11 +451,12 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="14"/>
+        <Setter Property="ToolTip" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
-                            Padding="{TemplateBinding Padding}">
+                            Padding="{TemplateBinding Padding}" ClipToBounds="True">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="Center"/>
                     </Border>
@@ -479,6 +486,14 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsNavCompact}" Value="True">
+                <Setter Property="Padding" Value="10,0"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsNavCompact}" Value="False">
+                <Setter Property="ToolTip" Value="{x:Null}"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <!-- 导航项激活态派生样式（供 BasedOn 使用） -->
