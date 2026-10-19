@@ -2244,7 +2244,14 @@ public partial class MainViewModel : ObservableObject
 
             SetAppUpdateText("settings.appUpdate.verifying");
 
-            if (!AppUpdateService.VerifyFile(installerPath, release.AssetSize, release.Sha256, out var actual))
+            // 安装包几十 MB：完整 SHA-256 放后台算，否则 continuation 回 UI 线程后整窗冻结
+            var (verified, actual) = await Task.Run(() =>
+            {
+                var ok = AppUpdateService.VerifyFile(installerPath, release.AssetSize, release.Sha256, out var sha);
+                return (ok, sha);
+            });
+
+            if (!verified)
             {
                 try { File.Delete(installerPath); } catch { /* 删不掉也无所谓：下次下载覆盖 */ }
 
