@@ -304,7 +304,8 @@ public partial class SkinsViewModel : ObservableObject
     /// 检索一次缓存），不重复下载、进度也保留它们那一段。用户察觉卡死时可直接点它，
     /// 不必等自动重试跑完。
     /// </summary>
-    [RelayCommand]
+    /// <remarks>各行共用同一个命令实例：允许并发，否则点 A 行时 B/C 行一起变灰（每行本就有 <c>Gate</c> 串行化）。</remarks>
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task RetryWtLiveDownload(WtLiveDownloadItem? item)
     {
         if (item == null) return;
@@ -339,7 +340,8 @@ public partial class SkinsViewModel : ObservableObject
     /// 同时清掉留给重试复用的暂存文件。</item>
     /// </list>
     /// </summary>
-    [RelayCommand]
+    /// <remarks>与「重试」同理：各行共用同一实例，允许并发（条目自身的状态与 <c>Gate</c> 负责串行化）。</remarks>
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task CancelOrRemoveWtLiveDownload(WtLiveDownloadItem? item)
     {
         if (item == null) return;
