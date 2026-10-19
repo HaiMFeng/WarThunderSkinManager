@@ -57,6 +57,9 @@ public static class DeconstructionService
         // 表现为「部分贴图缺失」）
         var storedTo = new Dictionary<string, (string Hash, string Ext)>(StringComparer.OrdinalIgnoreCase);
 
+        // 贴图缺失也缓存（负结果）：同一 to 被多条映射引用时，别每条都再走一遍 File.Exists + 目录枚举
+        var missingTo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var mapping in blk.Mappings)
         {
             package.Mappings.Add(mapping);
@@ -65,12 +68,17 @@ public static class DeconstructionService
                 warnings.Add($"{blk.VehicleId}/{mapping.ToFile}：{issue}");
 
             if (string.IsNullOrWhiteSpace(mapping.ToFile)) continue;
+            if (missingTo.Contains(mapping.ToFile)) continue;
 
             if (!storedTo.TryGetValue(mapping.ToFile, out var stored))
             {
                 var resolved = BlkParser.ResolveTexture(blk.Directory, mapping.ToFile, out var caseWarning);
                 if (caseWarning != null) warnings.Add($"{blk.VehicleId}/{mapping.ToFile}：{caseWarning}");
-                if (resolved == null) continue; // 贴图缺失（parser 已记录 issue）
+                if (resolved == null)
+                {
+                    missingTo.Add(mapping.ToFile); // 贴图缺失（parser 已记录 issue）→ 记下，后续同名不再探测
+                    continue;
+                }
 
                 var hash = BlobStore.Store(resourceDir, resolved, out var ext);
                 stored = (hash, ext);
