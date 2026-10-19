@@ -1268,8 +1268,9 @@ public partial class SkinsViewModel : ObservableObject
             PreviewStore.Delete(_config.ConfigDirectory, id);
             PackageStore.Delete(_config.ResourceDirectory, id);
 
-            // §6.5：被删包独占的贴图成为无引用 blob → 后台静默回收（不阻塞界面）
-            BlobGc.CollectInBackground(_config.ResourceDirectory);
+            // §6.5：被删包独占的贴图成为无引用 blob → 后台静默回收（不阻塞界面）；
+            // 顺带清配置目录里的原子写 .tmp 残留（KI-014）
+            BlobGc.CollectInBackground(_config.ResourceDirectory, _config.ConfigDirectory);
 
             PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
 
@@ -1362,8 +1363,9 @@ public partial class SkinsViewModel : ObservableObject
                 deactivated.Add(item.VehicleId);
             }
 
-            // 被删包独占的贴图成为无引用 blob → 后台静默回收（§6.5，不阻塞界面）
-            BlobGc.CollectInBackground(resourceDir);
+            // 被删包独占的贴图成为无引用 blob → 后台静默回收（§6.5，不阻塞界面）；
+            // 顺带清配置目录里的原子写 .tmp 残留（KI-014）
+            BlobGc.CollectInBackground(resourceDir, configDir);
 
             PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
             LoadActivation();

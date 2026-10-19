@@ -1715,7 +1715,7 @@ public partial class MainViewModel : ObservableObject
 
         ShowStatus(Loc["settings.gc.running"]);
 
-        Task.Run(() => BlobGc.Collect(resourceDir)).ContinueWith(t =>
+        Task.Run(() => BlobGc.Collect(resourceDir, Config.ConfigDirectory)).ContinueWith(t =>
         {
             Application.Current?.Dispatcher.Invoke(() =>
             {

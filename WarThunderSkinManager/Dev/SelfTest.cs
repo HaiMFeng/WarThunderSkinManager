@@ -488,14 +488,46 @@ internal static class SelfTest
             var blobsBefore = BlobStore.EnumerateBlobs(resourceDir).Length;
             var blobsDir = BlobStore.BlobsDirectory(resourceDir);
             Directory.CreateDirectory(blobsDir);
-            File.WriteAllText(Path.Combine(blobsDir, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.tga"), "orphan");
-            File.WriteAllText(Path.Combine(blobsDir, "cafebabe.tga.12345678.tmp"), "tmp");
+            var orphanBlob = Path.Combine(blobsDir, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.tga");
+            var orphanTmp = Path.Combine(blobsDir, "cafebabe.tga.12345678.tmp");
+            File.WriteAllText(orphanBlob, "orphan");
+            File.WriteAllText(orphanTmp, "tmp");
+            // 宽限期（10 分钟）内的文件不会被回收 → 拨到 1 小时前，模拟"上次崩溃留下的残留"
+            File.SetLastWriteTimeUtc(orphanBlob, DateTime.UtcNow.AddHours(-1));
+            File.SetLastWriteTimeUtc(orphanTmp, DateTime.UtcNow.AddHours(-1));
 
-            var gcReport = BlobGc.Collect(resourceDir);
+            // KI-014：原子写残留（packages/<id>/meta.json.tmp、配置目录下的 *.tmp）也要被清扫；
+            // 宽限期内的（模拟"正在写"）必须留着。mtime 拨到 1 小时前模拟"上次崩在改名之前"。
+            var staleMetaTmp = Path.Combine(
+                Directory.GetDirectories(PackageStore.PackagesDirectory(resourceDir))[0], "meta.json.tmp");
+            File.WriteAllText(staleMetaTmp, "{}");
+            File.SetLastWriteTimeUtc(staleMetaTmp, DateTime.UtcNow.AddHours(-1));
+
+            var gcConfigDir = Path.Combine(workDir, "cfg-gc");
+            Directory.CreateDirectory(Path.Combine(gcConfigDir, "index"));
+            var staleConfigTmp = Path.Combine(gcConfigDir, "config.json.tmp");
+            var staleIndexTmp = Path.Combine(gcConfigDir, "index", "library.json.tmp");
+            var freshTmp = Path.Combine(gcConfigDir, "fresh.json.tmp");
+            foreach (var tmp in new[] { staleConfigTmp, staleIndexTmp, freshTmp })
+                File.WriteAllText(tmp, "{}");
+            File.SetLastWriteTimeUtc(staleConfigTmp, DateTime.UtcNow.AddHours(-1));
+            File.SetLastWriteTimeUtc(staleIndexTmp, DateTime.UtcNow.AddHours(-1));
+
+            var gcReport = BlobGc.Collect(resourceDir, gcConfigDir);
+            var tempsSweptOk = gcReport.DeletedTempFiles == 3
+                && !File.Exists(staleMetaTmp) && !File.Exists(staleConfigTmp) && !File.Exists(staleIndexTmp)
+                && File.Exists(freshTmp); // 宽限期内（刚写）→ 保留
+
             log.AppendLine($"blob {blobsBefore} 个（引用中 {gcReport.ReferencedBlobs}）+ 放入 1 个孤儿 + 1 个 .tmp"
-                         + $" → 删除 {gcReport.DeletedBlobs} 个、释放 {gcReport.FreedBytes} 字节（应为 2）");
+                         + $" → 删除 {gcReport.DeletedBlobs} 个（应为 2）、释放 {gcReport.FreedBytes} 字节");
             log.AppendLine($"引用中的 blob 全部保留 = {BlobStore.EnumerateBlobs(resourceDir).Length == blobsBefore}"
                          + $"，错误 {gcReport.Errors.Count} 条");
+            log.AppendLine($"原子写残留: 清扫 {gcReport.DeletedTempFiles} 个（应 3：包 meta / config / index）、"
+                         + $"宽限期内的保留 = {File.Exists(freshTmp)}（应 True）、全部符合 = {tempsSweptOk}（应 True）");
+            if (!tempsSweptOk)
+                log.AppendLine("自检异常：原子写 .tmp 残留没有被正确清扫（过期未删 / 宽限期内被误删）");
+            if (gcReport.DeletedBlobs != 2)
+                log.AppendLine($"自检异常：blob 回收应删除 2 个（1 个孤儿 + 1 个过期 .tmp），实际 {gcReport.DeletedBlobs}");
 
             // ---- 资源库索引快照（懒加载，§4）----
             log.AppendLine();
