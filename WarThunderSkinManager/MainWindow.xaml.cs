@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -112,20 +113,23 @@ public partial class MainWindow : Window
         }
 
         // WT Live 详情浮窗开着时（§5.7.1）：Esc 关窗、← → 切图；其余按键放行，
-        // 否则浮窗里的可复制正文、Tab 都跟着失灵
+        // 否则浮窗里的可复制正文、Tab 都跟着失灵。
+        // 光标在正文（只读 TextBox）里时不接管左右键——否则想选一段文字复制会变成切图
         if ((DataContext as MainViewModel)?.WtLive.Detail is { IsOpen: true } detail)
         {
+            var textFocused = Keyboard.FocusedElement is TextBoxBase;
+
             switch (e.Key)
             {
                 case Key.Escape:
                     detail.CloseCommand.Execute(null);
                     e.Handled = true;
                     return;
-                case Key.Left:
+                case Key.Left when !textFocused:
                     detail.PreviousCommand.Execute(null);
                     e.Handled = true;
                     return;
-                case Key.Right:
+                case Key.Right when !textFocused:
                     detail.NextCommand.Execute(null);
                     e.Handled = true;
                     return;
