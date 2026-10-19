@@ -757,8 +757,15 @@ public partial class PackageEditorViewModel : ObservableObject
         return candidate;
     }
 
+    /// <summary>
+    /// 属性页预览显示区固定 400×400（`PackageEditorWindow.xaml`）；按 640 宽解码足以覆盖高 DPI 下的清晰度，
+    /// 又不至于把整幅原图（常见 1024 以上）解进内存。口径与卡片缩略图（`SkinsViewModel.ThumbnailDecodeWidth`）一致。
+    /// </summary>
+    private const int PreviewDecodeWidth = 640;
+
     private void RefreshPreview()
-        => PreviewImage = PreviewStore.LoadImage(PreviewStore.FullPath(_configDir, _meta.Id));
+        => PreviewImage = PreviewStore.LoadImage(
+            PreviewStore.FullPath(_configDir, _meta.Id), PreviewDecodeWidth);
 
     private void ShowStatus(string message) => StatusMessage = message;
 }
