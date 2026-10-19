@@ -27,7 +27,8 @@ public static class BlobStore
     /// <summary>
     /// 将文件按内容存入 blob 库，返回内容哈希（不含扩展名）。
     /// **单次读取**：边算哈希边写临时文件——哈希 + 复制两遍读盘合为一遍，
-    /// 上百 GB 的批量导入 IO 减半（§3.1）。若同内容 blob 已存在则丢弃临时文件（零字节增量）。
+    /// 上百 GB 的批量导入 IO 减半（§3.1）。若同内容 blob 已存在则丢弃临时文件（零字节增量），
+    /// 并把它的最后写入时间刷新为"现在"（去重命中 = 刚被使用，见下方 <see cref="Touch"/>）。
     /// </summary>
     public static string Store(string resourceDir, string sourceFile, out string extension)
     {
@@ -59,6 +60,7 @@ public static class BlobStore
         if (File.Exists(dest))
         {
             File.Delete(tmp); // 同内容已存在 → 丢弃本份（零字节增量）
+            Touch(dest);      // 但"刚被使用"要落在 mtime 上：否则回收的宽限期可能把它当旧文件删掉
             return hash;
         }
 
@@ -76,6 +78,23 @@ public static class BlobStore
         }
 
         return hash;
+    }
+
+    /// <summary>
+    /// 把 blob 的 mtime 刷新为"现在"：回收的 10 分钟宽限期以 mtime 判断"是否可能还在写入"，
+    /// 去重命中说明这份内容刚被引用（新包的 meta 可能还没落盘，引用快照取早了）。
+    /// 刷新失败不致命（被杀软占用 / 恰好被回收删掉）——最坏是下次导入再写一遍。
+    /// </summary>
+    private static void Touch(string path)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 只影响宽限期保护，不影响本次导入的正确性
+        }
     }
 
     /// <summary>枚举库中所有 blob 文件。</summary>
