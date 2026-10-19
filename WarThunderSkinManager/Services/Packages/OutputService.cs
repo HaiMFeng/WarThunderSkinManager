@@ -234,26 +234,6 @@ public static class OutputService
         return report;
     }
 
-    /// <summary>为撞名的 to 生成唯一文件名：原文件名 + 贴图哈希前 8 位（仍撞则加序号）。保留原相对目录。</summary>
-    private static string UniqueTextureName(string to, string blobFile, List<(string To, string BlobFile)> used)
-    {
-        var directory = Path.GetDirectoryName(to) ?? "";
-        var stem = Path.GetFileNameWithoutExtension(to);
-        var extension = Path.GetExtension(to);
-        var suffix = blobFile.Length >= 8 ? blobFile[..8] : blobFile;
-
-        string Candidate(string marker) => directory.Length == 0
-            ? $"{stem}_{marker}{extension}"
-            : Path.Combine(directory, $"{stem}_{marker}{extension}");
-
-        var candidate = Candidate(suffix);
-        var index = 2;
-        while (used.Any(u => string.Equals(u.To, candidate, StringComparison.OrdinalIgnoreCase)))
-            candidate = Candidate($"{suffix}_{index++}");
-
-        return candidate;
-    }
-
     private static bool SameContent(string a, string b)
     {
         var fa = new FileInfo(a);
