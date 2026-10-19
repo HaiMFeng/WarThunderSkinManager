@@ -16,8 +16,9 @@ namespace WarThunderSkinManager.Services;
 /// ③ 提示不明显、容易漏看（12px 小字挂在标题栏角落）。
 /// </para>
 /// <para>
-/// 规则：最多同时 <see cref="MaxVisible"/> 条，超出时**顶掉最早的一条**（先进先出）；
-/// 每条默认显示 <see cref="DefaultLifetime"/>；点击气泡任意位置立即消除该条。
+/// 规则：最多同时 <see cref="MaxVisible"/> 条，超出时**顶掉最早的一条**（先进先出，与点击消除同一路径：
+/// 先标记退场播淡出，再由到期扫描出队）；每条默认显示 <see cref="DefaultLifetime"/>；
+/// 点击气泡任意位置立即消除该条。
 /// </para>
 /// <para>
 /// <b>为什么不用逐帧定时器推进度</b>：底部进度条的动画交给视图的 WPF <c>Storyboard</c>
@@ -32,7 +33,7 @@ namespace WarThunderSkinManager.Services;
 /// </remarks>
 public sealed class ToastService
 {
-    /// <summary>最多同时显示的气泡数；超出时顶掉最早的一条。</summary>
+    /// <summary>最多同时显示的气泡数；超出时顶掉最早的一条（退场动画期间会短暂多一条）。</summary>
     public const int MaxVisible = 4;
 
     /// <summary>每条气泡的默认展示时长（底部进度条动画也取它，见 <see cref="DefaultLifetimeDuration"/>）。</summary>
@@ -96,9 +97,21 @@ public sealed class ToastService
             Deadline = DateTime.UtcNow + DefaultLifetime
         });
 
-        // 超出上限 → 顶掉**最早**的一条（队列头部）
+        // 超出上限 → 顶掉**最早**的一条（队列头部）。走点击消除同一条路径（先标记退场播淡出，
+        // 由到期扫描真正出队），所以条数上限会短暂变成 MaxVisible + 1，而不是瞬跳消失
         while (Items.Count > MaxVisible)
-            Items.RemoveAt(0);
+        {
+            var oldest = Items[0];
+            if (oldest.IsDismissing)
+            {
+                Items.RemoveAt(0); // 已在退场中（或已到期）：直接出队，别再多顶一条正常显示的
+                continue;
+            }
+
+            oldest.IsDismissing = true;
+            oldest.Deadline = DateTime.UtcNow + ExitGrace;
+            break;
+        }
 
         if (!_timer.IsEnabled) _timer.Start();
     }
