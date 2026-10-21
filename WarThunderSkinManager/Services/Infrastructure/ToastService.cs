@@ -104,7 +104,9 @@ public sealed class ToastService
             var oldest = Items[0];
             if (oldest.IsDismissing)
             {
-                Items.RemoveAt(0); // 已在退场中（或已到期）：直接出队，别再多顶一条正常显示的
+                // 已在退场中：直接出队，别再多顶一条正常显示的。
+                // 代价是淡出动画可能被截断（连发时队首闪一下）——上限优先，这条路径不追求观感
+                Items.RemoveAt(0);
                 continue;
             }
 

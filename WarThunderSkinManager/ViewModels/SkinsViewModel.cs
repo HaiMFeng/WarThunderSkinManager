@@ -310,12 +310,14 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (item == null) return;
 
-        item.Cts?.Cancel(); // 掐断本轮（取消会走 catch → 标记「已取消」，随即被重跑覆盖）
-
         // 串行化：连点两次不会变成两轮并发（后一次等前一次收尾后才重跑）
         await item.Gate.WaitAsync();
         try
         {
+            // **拿到 Gate 之后**再掐：点两次时前一次可能已经把 Cts 换成新一轮的了，
+            // 在 Gate 外取消会打到已废弃的旧源 → 这一轮其实没被掐断，重试会白等一整轮
+            item.Cts?.Cancel(); // 取消会走 catch → 标记「已取消」，随即被重跑覆盖
+
             if (item.Running != null)
             {
                 try { await item.Running; }
@@ -346,27 +348,37 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (item == null) return;
 
-        if (item.IsCancelable)
+        // 与「重试」共用同一把 Gate：否则"重试 → 紧接着移除"会交错成
+        // "条目已移出列表、后台却又起了一轮下载并静默导入"
+        await item.Gate.WaitAsync();
+        try
         {
-            item.Cts?.Cancel(); // 取消 → 本轮 catch 里落成「已取消」，进度只留已完成的那一段
+            if (item.IsCancelable)
+            {
+                item.Cts?.Cancel(); // 取消 → 本轮 catch 里落成「已取消」，进度只留已完成的那一段
 
-            // 稍等本轮收尾（暂存清理在 finally 里做）；不阻塞界面
-            return;
+                // 稍等本轮收尾（暂存清理在 finally 里做）；不阻塞界面
+                return;
+            }
+
+            // 从列表移除：先掐断任何残余（已取消的条目其实已停），等收尾再移除，避免留着孤儿暂存
+            item.Cts?.Cancel();
+
+            if (item.Running != null)
+            {
+                try { await item.Running; }
+                catch { /* 本轮自己的异常已在内部处理 */ }
+            }
+
+            WtLiveDownloads.Remove(item);
+            CleanupStagedParts(item); // 条目都没了 → 留给重试复用的暂存文件一并清掉
+            item.Cts?.Dispose();
+            item.Cts = null;
         }
-
-        // 从列表移除：先掐断任何残余（已取消的条目其实已停），等收尾再移除，避免留着孤儿暂存
-        item.Cts?.Cancel();
-
-        if (item.Running != null)
+        finally
         {
-            try { await item.Running; }
-            catch { /* 本轮自己的异常已在内部处理 */ }
+            item.Gate.Release();
         }
-
-        WtLiveDownloads.Remove(item);
-        CleanupStagedParts(item); // 条目都没了 → 留给重试复用的暂存文件一并清掉
-        item.Cts?.Dispose();
-        item.Cts = null;
     }
 
     /// <summary>启动一轮下载 / 导入（每轮独立取消源，与程序退出联动）。</summary>
@@ -1269,7 +1281,7 @@ public partial class SkinsViewModel : ObservableObject
             PackageStore.Delete(_config.ResourceDirectory, id);
 
             // §6.5：被删包独占的贴图成为无引用 blob → 后台静默回收（不阻塞界面）；
-            // 顺带清配置目录里的原子写 .tmp 残留（KI-014）
+            // 顺带清配置目录里的原子写 .tmp 残留
             BlobGc.CollectInBackground(_config.ResourceDirectory, _config.ConfigDirectory);
 
             PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建
@@ -1364,7 +1376,7 @@ public partial class SkinsViewModel : ObservableObject
             }
 
             // 被删包独占的贴图成为无引用 blob → 后台静默回收（§6.5，不阻塞界面）；
-            // 顺带清配置目录里的原子写 .tmp 残留（KI-014）
+            // 顺带清配置目录里的原子写 .tmp 残留
             BlobGc.CollectInBackground(resourceDir, configDir);
 
             PartCatalog.Invalidate(); // 包没了 → 部件表下次访问重建

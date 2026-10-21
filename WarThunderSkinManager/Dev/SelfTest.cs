@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -442,7 +443,7 @@ internal static class SelfTest
                          + $"，多写的 @ 也认 = {WtLiveUser.NormalizeId("@147560834") == "147560834"}（应 True）");
 
             // 全表校验（§3.7 + 图标字体）：零宽等不可见字符应被清除；国旗占位符按设计保留
-            // （UI 字体链以 symbols_skyquake.ttf 收尾，渲染成国旗 / 弹药图标）
+            // （UI 字体链以 symbols_skyquake.ttf **打头**，占位符被它截住、渲染成国旗 / 弹药图标）
             var flagged = 0;
             var invisibleLeft = 0;
             var flagLost = 0;
@@ -496,12 +497,21 @@ internal static class SelfTest
             File.SetLastWriteTimeUtc(orphanBlob, DateTime.UtcNow.AddHours(-1));
             File.SetLastWriteTimeUtc(orphanTmp, DateTime.UtcNow.AddHours(-1));
 
-            // KI-014：原子写残留（packages/<id>/meta.json.tmp、配置目录下的 *.tmp）也要被清扫；
+            // 原子写残留（packages/<id>/meta.json.tmp、配置目录下的 *.tmp）也要被清扫；
             // 宽限期内的（模拟"正在写"）必须留着。mtime 拨到 1 小时前模拟"上次崩在改名之前"。
-            var staleMetaTmp = Path.Combine(
-                Directory.GetDirectories(PackageStore.PackagesDirectory(resourceDir))[0], "meta.json.tmp");
-            File.WriteAllText(staleMetaTmp, "{}");
-            File.SetLastWriteTimeUtc(staleMetaTmp, DateTime.UtcNow.AddHours(-1));
+            // 源目录可能一个包都没导入成功 → 不硬取 [0]，跳过包内那一条即可
+            var packagesDir = PackageStore.PackagesDirectory(resourceDir);
+            var firstPackageDir = Directory.Exists(packagesDir)
+                ? Directory.GetDirectories(packagesDir).FirstOrDefault()
+                : null;
+            var staleMetaTmp = firstPackageDir == null
+                ? ""
+                : Path.Combine(firstPackageDir, "meta.json.tmp");
+            if (staleMetaTmp.Length > 0)
+            {
+                File.WriteAllText(staleMetaTmp, "{}");
+                File.SetLastWriteTimeUtc(staleMetaTmp, DateTime.UtcNow.AddHours(-1));
+            }
 
             var gcConfigDir = Path.Combine(workDir, "cfg-gc");
             Directory.CreateDirectory(Path.Combine(gcConfigDir, "index"));
@@ -514,15 +524,17 @@ internal static class SelfTest
             File.SetLastWriteTimeUtc(staleIndexTmp, DateTime.UtcNow.AddHours(-1));
 
             var gcReport = BlobGc.Collect(resourceDir, gcConfigDir);
-            var tempsSweptOk = gcReport.DeletedTempFiles == 3
-                && !File.Exists(staleMetaTmp) && !File.Exists(staleConfigTmp) && !File.Exists(staleIndexTmp)
+            var expectedTemps = 2 + (staleMetaTmp.Length > 0 ? 1 : 0);
+            var tempsSweptOk = gcReport.DeletedTempFiles == expectedTemps
+                && (staleMetaTmp.Length == 0 || !File.Exists(staleMetaTmp))
+                && !File.Exists(staleConfigTmp) && !File.Exists(staleIndexTmp)
                 && File.Exists(freshTmp); // 宽限期内（刚写）→ 保留
 
             log.AppendLine($"blob {blobsBefore} 个（引用中 {gcReport.ReferencedBlobs}）+ 放入 1 个孤儿 + 1 个 .tmp"
                          + $" → 删除 {gcReport.DeletedBlobs} 个（应为 2）、释放 {gcReport.FreedBytes} 字节");
             log.AppendLine($"引用中的 blob 全部保留 = {BlobStore.EnumerateBlobs(resourceDir).Length == blobsBefore}"
                          + $"，错误 {gcReport.Errors.Count} 条");
-            log.AppendLine($"原子写残留: 清扫 {gcReport.DeletedTempFiles} 个（应 3：包 meta / config / index）、"
+            log.AppendLine($"原子写残留: 清扫 {gcReport.DeletedTempFiles} 个（应 {expectedTemps}：包 meta / config / index）、"
                          + $"宽限期内的保留 = {File.Exists(freshTmp)}（应 True）、全部符合 = {tempsSweptOk}（应 True）");
             if (!tempsSweptOk)
                 log.AppendLine("自检异常：原子写 .tmp 残留没有被正确清扫（过期未删 / 宽限期内被误删）");
@@ -653,6 +665,44 @@ internal static class SelfTest
             log.AppendLine($"图标字体   : {IconFontLoader.IconFullName} 可解析 = {iconFontOk}（应 True），"
                          + $"字形缺失 = {missingIcons.Count} / {iconCodes.Length}（应 0）"
                          + (missingIcons.Count > 0 ? $"（{string.Join('、', missingIcons)}）" : ""));
+
+            // ---- 游戏符号字体（symbols_skyquake，嵌入资源）----
+            // 国旗 / 弹药占位符靠它渲染：族名（字体 name 表）/ 嵌入资源 / 字形任一不对，界面**静默**变成方块。
+            // 这里断言"族名可解析 + 数据表里落入图标区段的所有码位都有字形"——
+            // 后者能挡住"换了一版字体、某个符号被删掉"这类只有肉眼才能发现的问题。
+            var symbolFace = new System.Windows.Media.Typeface(
+                new System.Windows.Media.FontFamily(IconFontLoader.FamilyName),
+                System.Windows.FontStyles.Normal, System.Windows.FontWeights.Normal,
+                System.Windows.FontStretches.Normal);
+
+            var symbolOk = symbolFace.TryGetGlyphTypeface(out var symbolGlyphs);
+
+            // 游戏符号字体**必须自带**的占位符字形（国旗 / 弹药，均落在标准区段；
+            // 用 Segoe UI 渲染只会得到普通方块，所以缺一个就是可感知的功能退化）。
+            // 清单来自字体实际字形表：换字体后若少了某个码位，这里会报出来（0.3.3 版补齐的弹药字形即 U+25CB…U+25E5）。
+            var symbolCodes = new (string Use, int Code)[]
+            {
+                ("国旗/控制图形", 0x2417), ("国旗/控制图形", 0x2419), ("国旗/控制图形", 0x2420),
+                ("国旗/块元素", 0x2580), ("国旗/块元素", 0x2582), ("国旗/块元素", 0x2583),
+                ("国旗/块元素", 0x2584), ("国旗/块元素", 0x2585),
+                ("图标/几何图形", 0x25C4), ("图标/几何图形", 0x25CA),
+                ("弹药/几何图形", 0x25CB), ("弹药/几何图形", 0x25CC), ("弹药/几何图形", 0x25CD),
+                ("弹药/几何图形", 0x25D0), ("弹药/几何图形", 0x25D4), ("弹药/几何图形", 0x25D7),
+                ("弹药/几何图形", 0x25D8), ("弹药/几何图形", 0x25E1), ("弹药/几何图形", 0x25E2),
+                ("弹药/几何图形", 0x25E5),
+                ("私用区图标", 0xF059)
+            };
+            var missingSymbols = symbolOk && symbolGlyphs != null
+                ? symbolCodes.Where(c => !symbolGlyphs.CharacterToGlyphMap.ContainsKey(c.Code)).ToList()
+                : symbolCodes.ToList();
+
+            log.AppendLine($"符号字体   : {IconFontLoader.FamilyName} 可解析 = {symbolOk}（应 True），"
+                         + $"占位符字形缺失 = {missingSymbols.Count} / {symbolCodes.Length}（应 0）"
+                         + (missingSymbols.Count > 0
+                             ? $"（{string.Join("、", missingSymbols.Select(c => $"{c.Use} U+{c.Code:X4}"))}）" : ""));
+
+            if (!symbolOk || missingSymbols.Count > 0)
+                log.AppendLine("自检异常：符号字体不可解析或占位符缺字形（国旗 / 弹药会渲染成方块）");
 
             // ---- 瀑布流面板（Controls/MasonryPanel）：WT Live 浏览页的布局，断言最短列落位 ----
             MasonrySelfTest.Run(log);

@@ -758,10 +758,11 @@ public partial class PackageEditorViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 属性页预览显示区固定 400×400（`PackageEditorWindow.xaml`）；按 640 宽解码足以覆盖高 DPI 下的清晰度，
-    /// 又不至于把整幅原图（常见 1024 以上）解进内存。口径与卡片缩略图（`SkinsViewModel.ThumbnailDecodeWidth`）一致。
+    /// 属性页预览显示区固定 400×400 DIP（`PackageEditorWindow.xaml`）；<see cref="System.Windows.Media.Imaging.BitmapImage.DecodePixelWidth"/>
+    /// 是**设备像素**，按 2× 取 800 才能覆盖 200% 缩放（1× 在 175% 起就会被上采样发软；
+    /// 与 WT Live 详情图的 2× 口径一致）。原图更小时 WPF 会按此宽度上采样，开销可忽略。
     /// </summary>
-    private const int PreviewDecodeWidth = 640;
+    private const int PreviewDecodeWidth = 800;
 
     private void RefreshPreview()
         => PreviewImage = PreviewStore.LoadImage(

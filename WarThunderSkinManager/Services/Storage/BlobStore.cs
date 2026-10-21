@@ -59,8 +59,24 @@ public static class BlobStore
         var dest = BlobPath(resourceDir, hash, extension);
         if (File.Exists(dest))
         {
-            File.Delete(tmp); // 同内容已存在 → 丢弃本份（零字节增量）
-            Touch(dest);      // 但"刚被使用"要落在 mtime 上：否则回收的宽限期可能把它当旧文件删掉
+            // 先落"刚被使用"的时间戳、再丢本份：两行之间回收可能正好把 dest 删掉，
+            // 那时要用 tmp 重新落定（否则调用方拿着 hash 写进 meta，指向一个不存在的 blob）
+            if (Touch(dest))
+            {
+                File.Delete(tmp); // 同内容已存在 → 丢弃本份（零字节增量）
+                return hash;
+            }
+
+            try
+            {
+                File.Move(tmp, dest, overwrite: true);
+            }
+            catch (IOException) when (File.Exists(dest))
+            {
+                // 另一 worker 又落定了同一内容 → 丢弃本份即可
+                File.Delete(tmp);
+            }
+
             return hash;
         }
 
@@ -83,17 +99,18 @@ public static class BlobStore
     /// <summary>
     /// 把 blob 的 mtime 刷新为"现在"：回收的 10 分钟宽限期以 mtime 判断"是否可能还在写入"，
     /// 去重命中说明这份内容刚被引用（新包的 meta 可能还没落盘，引用快照取早了）。
-    /// 刷新失败不致命（被杀软占用 / 恰好被回收删掉）——最坏是下次导入再写一遍。
+    /// 返回 <c>false</c> 表示**文件已不在**（被回收删掉 / 被占用）：调用方据此用临时副本重新落定。
     /// </summary>
-    private static void Touch(string path)
+    private static bool Touch(string path)
     {
         try
         {
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 只影响宽限期保护，不影响本次导入的正确性
+            return false;
         }
     }
 

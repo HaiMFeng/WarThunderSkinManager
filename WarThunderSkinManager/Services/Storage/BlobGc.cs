@@ -129,17 +129,20 @@ public static class BlobGc
     /// </summary>
     private static void SweepTempFiles(string resourceDir, string? configDir, DateTime cutoff, BlobGcReport report)
     {
+        // 目录迁移在跑：配置目录下的文件可能正被搬走（删/枚举会撞上），这一趟跳过 .tmp 清扫
+        if (AppBusy.IsBusy) return;
+
         try
         {
             var packagesDir = PackageStore.PackagesDirectory(resourceDir);
             if (Directory.Exists(packagesDir))
             {
                 foreach (var packageDir in Directory.EnumerateDirectories(packagesDir))
-                    SweepTempDirectory(packageDir, SearchOption.TopDirectoryOnly, cutoff, report);
+                    SweepTempDirectory(packageDir, cutoff, report);
             }
 
             if (!string.IsNullOrWhiteSpace(configDir) && Directory.Exists(configDir))
-                SweepTempDirectory(configDir, SearchOption.AllDirectories, cutoff, report);
+                SweepTempDirectory(configDir, cutoff, report);
         }
         catch (Exception ex)
         {
@@ -148,32 +151,58 @@ public static class BlobGc
         }
     }
 
-    private static void SweepTempDirectory(string dir, SearchOption scope, DateTime cutoff, BlobGcReport report)
+    /// <summary>
+    /// 逐层清扫一个目录树里的 <c>*.tmp</c>：**每个目录单独 try**，
+    /// 不能用一个递归枚举（任一个不可读子目录会让整趟清扫一个文件都删不掉）。
+    /// 不跟随符号链接（避免环）。
+    /// </summary>
+    private static void SweepTempDirectory(string root, DateTime cutoff, BlobGcReport report)
     {
-        string[] temps;
-        try
-        {
-            temps = Directory.GetFiles(dir, "*.tmp", scope);
-        }
-        catch (Exception ex)
-        {
-            report.Errors.Add($"{Path.GetFileName(dir)}/*.tmp: {ex.Message}");
-            return;
-        }
+        var pending = new Stack<string>();
+        pending.Push(root);
 
-        foreach (var tmp in temps)
+        while (pending.Count > 0)
         {
+            var dir = pending.Pop();
+
+            string[] temps;
             try
             {
-                if (File.GetLastWriteTimeUtc(tmp) > cutoff) continue; // 宽限期内：可能正在写
-                var length = new FileInfo(tmp).Length;
-                File.Delete(tmp);
-                report.DeletedTempFiles++;
-                report.FreedBytes += length;
+                temps = Directory.GetFiles(dir, "*.tmp", SearchOption.TopDirectoryOnly);
             }
             catch (Exception ex)
             {
-                report.Errors.Add($"{Path.GetFileName(tmp)}: {ex.Message}");
+                report.Errors.Add($"{Path.GetFileName(dir)}/*.tmp: {ex.Message}");
+                continue; // 本目录读不出：跳过它，不影响其它目录
+            }
+
+            foreach (var tmp in temps)
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(tmp) > cutoff) continue; // 宽限期内：可能正在写
+                    var length = new FileInfo(tmp).Length;
+                    File.Delete(tmp);
+                    report.DeletedTempFiles++;
+                    report.FreedBytes += length;
+                }
+                catch (Exception ex)
+                {
+                    report.Errors.Add($"{Path.GetFileName(tmp)}: {ex.Message}");
+                }
+            }
+
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0) continue;
+                    pending.Push(sub);
+                }
+            }
+            catch (Exception ex)
+            {
+                report.Errors.Add($"{Path.GetFileName(dir)}/: {ex.Message}");
             }
         }
     }

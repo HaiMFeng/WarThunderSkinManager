@@ -114,7 +114,7 @@ public partial class MainWindow : Window
 
         // WT Live 详情浮窗开着时（§5.7.1）：Esc 关窗、← → 切图；其余按键放行，
         // 否则浮窗里的可复制正文、Tab 都跟着失灵。
-        // 光标在正文（只读 TextBox）里时不接管左右键——否则想选一段文字复制会变成切图
+        // 焦点在文本输入控件内（详情正文 / 搜索框等）时不接管左右键——否则想选一段文字复制会变成切图
         if ((DataContext as MainViewModel)?.WtLive.Detail is { IsOpen: true } detail)
         {
             var textFocused = Keyboard.FocusedElement is TextBoxBase;

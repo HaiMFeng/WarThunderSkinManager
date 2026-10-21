@@ -1713,6 +1713,9 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        // 目录迁移等长时操作进行中 → 让路（回收会删文件，与搬家并发会造成访问冲突；按钮正常被遮罩挡住，这里兜底）
+        if (AppBusy.IsBusy) return;
+
         ShowStatus(Loc["settings.gc.running"]);
 
         Task.Run(() => BlobGc.Collect(resourceDir, Config.ConfigDirectory)).ContinueWith(t =>
@@ -1731,7 +1734,10 @@ public partial class MainViewModel : ObservableObject
                 }
 
                 var report = t.Result;
-                if (report.DeletedBlobs == 0)
+
+                // 条数与字节都按"blob + 原子写 .tmp 残留"合计：只清掉 .tmp 时不能说"没有可回收的贴图"
+                var deleted = report.DeletedBlobs + report.DeletedTempFiles;
+                if (deleted == 0)
                 {
                     ShowStatus(report.Errors.Count > 0
                         ? Loc.Format("settings.gc.doneWithErrors", 0,
@@ -1741,9 +1747,9 @@ public partial class MainViewModel : ObservableObject
                 }
 
                 ShowStatus(report.Errors.Count > 0
-                    ? Loc.Format("settings.gc.doneWithErrors", report.DeletedBlobs,
+                    ? Loc.Format("settings.gc.doneWithErrors", deleted,
                         DataResetService.FormatSize(report.FreedBytes), report.Errors.Count)
-                    : Loc.Format("settings.gc.done", report.DeletedBlobs,
+                    : Loc.Format("settings.gc.done", deleted,
                         DataResetService.FormatSize(report.FreedBytes)));
             });
         });
