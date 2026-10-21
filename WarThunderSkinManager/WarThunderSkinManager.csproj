@@ -39,10 +39,11 @@
          全程序图标统一取自这一套（Themes/ThemeResources.xaml 的 IconFont） -->
     <Resource Include="Assets\Fonts\fa-solid-900.otf" />
       <Resource Include="Assets\logo-outline.png" />
-      <!-- 游戏符号字体（族名 symbols_skyquake，仅 15 个符号字形）：国旗 / 弹药等占位符的渲染源
-           （源文件在仓库根目录，Link 引用；窗口字体链的**首位**——特殊字形被它截住渲染成图标，
-           正常字符回退到 Segoe UI / 雅黑；未安装的机器由 IconFontLoader 私有注册嵌入副本） -->
-      <Resource Include="..\symbols_skyquake.ttf" Link="Assets\symbols_skyquake.ttf" />
+      <!-- 游戏符号字体（内部族名 symbols_skyquake，仅十数个符号字形）：国旗 / 弹药等占位符的渲染源。
+           窗口字体链的**首位**——特殊字形被它截住渲染成图标，正常字符回退到 Segoe UI / 雅黑；
+           未安装的机器由 IconFontLoader 私有注册嵌入副本。
+           注：Wiki 页面 @font-face 里的 WTSymbols 只是 CSS 别名，WPF 侧的族名取自字体 name 表 -->
+      <Resource Include="Assets\symbols_skyquake.ttf" />
     </ItemGroup>
 
 </Project>
