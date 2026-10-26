@@ -21,7 +21,8 @@ public partial class SkinManagementView : UserControl
     private const double MaxCardWidth = 340;     // 卡片最大宽度（列数封顶后才会长大）
     private const int MaxColumns = 5;            // 列数上限：放宽卡片的最大尺寸
     private const double CardGap = 12;           // 卡片间距（与 ItemContainer Margin 一致）
-    private const double ScrollbarAllowance = 14;
+    private const double ScrollbarAllowance = 14; // 多列：滚动条 10 + 右侧余量 4（末列仍有 12 边距）
+    private const double ScrollbarWidth = 10;     // 紧凑态单列：扣除滚动条本身即可（容器右边距已归零）
 
     private static readonly TimeSpan SizeDuration = TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan ReorderDuration = TimeSpan.FromMilliseconds(180);
@@ -49,6 +50,17 @@ public partial class SkinManagementView : UserControl
         => UpdateCardSize(PackageList.ActualWidth);
 
     /// <summary>
+    /// 滚动条出现 / 消失会改变视口宽（= 卡片可用宽）：紧凑态单列时重新落一次尺寸，
+    /// 否则"有没有滚动条"这件事会变成右侧一条 10px 的空白。
+    /// </summary>
+    private void PackageList_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (Math.Abs(e.ViewportWidthChange) < 0.5) return;
+        if (DataContext is MainViewModel { IsCompactMode: true })
+            UpdateCardSize(PackageList.ActualWidth);
+    }
+
+    /// <summary>
     /// 把缩略图容器裁剪成圆角：WPF 的 <c>ClipToBounds</c> 只按矩形裁剪、不理会 CornerRadius，
     /// UniformToFill 的图片四个直角会盖在卡片圆角外。卡片尺寸随窗口自适应，因此在
     /// SizeChanged 里按当前尺寸设置带圆角的 <see cref="RectangleGeometry"/> 裁剪。
@@ -65,6 +77,19 @@ public partial class SkinManagementView : UserControl
     /// <summary>按列表可用宽度计算卡片尺寸并做过渡动画。</summary>
     private void UpdateCardSize(double listWidth)
     {
+        // 紧凑（窄条）：固定单列，**只扣滚动条**（容器右边距已在 PackageCardItemCompact 归零），
+        // 卡片宽度夹在 Min/MaxCardWidth 内 → 左右留白对称，不会出现"右侧多出两道边距"
+        if (DataContext is MainViewModel { IsCompactMode: true })
+        {
+            // 视口宽（已扣滚动条）是准的；首帧拿不到时退回"列表宽 - 滚动条"
+            var viewport = FindChild<ScrollViewer>(PackageList)?.ViewportWidth ?? 0;
+            var compactAvailable = viewport > 0 ? viewport : Math.Max(0, listWidth - ScrollbarWidth);
+            if (compactAvailable <= 0) return;
+
+            ApplyCardSize(Math.Clamp(compactAvailable, MinCardWidth, MaxCardWidth));
+            return;
+        }
+
         var available = Math.Max(0, listWidth - ScrollbarAllowance);
         if (available <= 0) return;
 
@@ -83,24 +108,30 @@ public partial class SkinManagementView : UserControl
 
         cardWidth = Math.Max(MinCardWidth, cardWidth);
 
-        // 紧凑（窄条）态由"窗口变窄"触发一次尺寸重算：这里**不进动画**，
-        // 否则收窄的 150ms 里卡片先被拉扁再回弹，看起来像闪一下
-        if (DataContext is MainViewModel { IsCompactMode: true })
-        {
-            var panel = FindCardsPanel();
-            if (panel != null)
-            {
-                panel.ItemWidth = cardWidth;
-                panel.ItemHeight = Math.Round(cardWidth * 0.72);
-            }
-        }
-        else
-        {
-            AnimateCardSize(cardWidth, Math.Round(cardWidth * 0.72));
-        }
+        AnimateCardSize(cardWidth, Math.Round(cardWidth * 0.72));
 
         if (DataContext is MainViewModel main)
             main.Skins.SetCardSize(cardWidth);
+    }
+
+    /// <summary>直接落卡片尺寸（紧凑态：不进 150ms 过渡，否则收窄 / 展开时会先被拉扁再回弹）。</summary>
+    private void ApplyCardSize(double width)
+    {
+        var height = Math.Round(width * 0.72);
+
+        var panel = FindCardsPanel();
+        if (panel != null)
+        {
+            // 先清掉可能还在跑的尺寸动画：动画优先级高于本地值，否则刚切到窄条时会被上一次动画拽住
+            panel.BeginAnimation(WrapPanel.ItemWidthProperty, null);
+            panel.BeginAnimation(WrapPanel.ItemHeightProperty, null);
+
+            panel.ItemWidth = width;
+            panel.ItemHeight = height;
+        }
+
+        if (DataContext is MainViewModel main)
+            main.Skins.SetCardSize(width);
     }
 
     /// <summary>把 WrapPanel 的卡片尺寸平滑过渡到目标值（窗口缩放时卡片大小带动画）。</summary>

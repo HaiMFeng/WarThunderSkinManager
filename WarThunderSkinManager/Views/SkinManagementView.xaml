@@ -40,6 +40,17 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+
+            <Style.Triggers>
+                <!-- 紧凑（窄条）态是单列：去掉容器**右侧**的 12 外边距 ——
+                     否则"卡片右边缘 → 卡片区右边缘"= 12(外边距) + 滚动条(10)，比左边宽出一大截。
+                     写在容器的 Style.Triggers 里（而不是换 ItemContainerStyle）：后者只对新生成的容器生效，
+                     已生成的卡片不会重建，切到窄条时右边距会留着。 -->
+                <DataTrigger Binding="{Binding DataContext.IsCompactMode, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                             Value="True">
+                    <Setter Property="Margin" Value="0,0,0,12"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
     </UserControl.Resources>
 
@@ -301,7 +312,8 @@
                                  PreviewMouseLeftButtonDown="PackageList_PreviewMouseLeftButtonDown"
                                  MouseDoubleClick="PackageList_MouseDoubleClick"
                                  Loaded="PackageList_Loaded"
-                                 SizeChanged="PackageList_SizeChanged">
+                                 SizeChanged="PackageList_SizeChanged"
+                                 ScrollViewer.ScrollChanged="PackageList_ScrollChanged">
                             <!-- 右键菜单：作用于当前选中的涂装包 -->
                             <ListBox.ContextMenu>
                                 <ContextMenu>
