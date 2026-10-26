@@ -154,6 +154,21 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>还能不能继续加载（页面首次可见 / 滚动到底时据此请求）。</summary>
     public bool CanLoadMore => !IsLoading && !IsExhausted && !HasError;
 
+    /// <summary>能否后退（标题旁的「←」按钮据此启用 / 置灰）。</summary>
+    public bool CanGoBack => _history.CanGoBack;
+
+    /// <summary>能否前进。</summary>
+    public bool CanGoForward => _history.CanGoForward;
+
+    /// <summary>
+    /// 恢复历史条目时，视图据此把列表滚回当时的位置（参数 = 垂直偏移 DIP）。
+    /// 用事件而不是让 VM 直接摸控件：滚动容器在视图层，VM 只表达"要回到哪里"。
+    /// </summary>
+    public event Action<double>? ScrollRestoreRequested;
+
+    /// <summary>视图在 ScrollChanged 里下发当前滚动偏移（进历史条目前取它）。</summary>
+    public void SetScrollOffset(double offset) => _scrollOffset = offset;
+
     /// <summary>下拉里最多列出的载具条数（其余靠继续输入收敛；键盘上下也够用）。</summary>
     private const int MaxVehicleSuggestions = 6;
 
@@ -183,6 +198,27 @@ public partial class WtLiveViewModel : ObservableObject
     /// <c>null</c> = 还不知道（首屏、列表刚重开）→ 一律照旧"加进来就取"。
     /// </summary>
     private (int First, int Last)? _visibleWindow;
+
+    /// <summary>
+    /// 浏览历史（浏览器式：条目 + 游标，见 <see cref="NavigationHistory{T}"/>）。
+    /// 上限 20：每个条目保存已加载卡片的引用（缩略图本身由可视窗口机制释放），再多就是白占内存。
+    /// </summary>
+    private readonly NavigationHistory<WtLiveNavEntry> _history = new(20);
+
+    /// <summary>正在恢复历史：期间的状态变化不记新历史、也不触发重新拉取。</summary>
+    private bool _restoringHistory;
+
+    /// <summary>列表当前滚动偏移（视图在 ScrollChanged 里下发；进历史条目前取它）。</summary>
+    private double _scrollOffset;
+
+    /// <summary>
+    /// 拉取会话号：恢复历史 / 换条件时自增。在途请求回来发现号变了就**整批丢弃**，
+    /// 否则后退 / 刷新之后旧请求的结果会追加到新列表里（列表与筛选条件对不上）。
+    /// </summary>
+    private int _session;
+
+    /// <summary>加载中收到的"换条件"补跑时，是否需要补记一条历史（见 <see cref="RefreshAfterNavigation"/>）。</summary>
+    private bool _refreshQueuedRecordsHistory;
 
     public WtLiveViewModel()
     {
@@ -258,7 +294,19 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (value == null || _rebuildingSortOptions) return; // 下拉重建时的瞬时 null / 同值换实例
 
-        Refresh();
+        RefreshAfterNavigation();
+    }
+
+    /// <summary>
+    /// 排序变化发生在**赋值之后**：历史里要记的是"换排序之前"的状态，
+    /// 所以在 Changing（旧值还在）里先把当前页写回历史。
+    /// </summary>
+    partial void OnSelectedSortOptionChanging(WtLiveOptionItem? oldValue, WtLiveOptionItem? newValue)
+    {
+        if (_rebuildingSortOptions || oldValue == null || newValue == null) return;
+        if (string.Equals(oldValue.Id, newValue.Id, StringComparison.Ordinal)) return;
+
+        BeginNavigation();
     }
 
     /// <summary>
@@ -406,6 +454,10 @@ public partial class WtLiveViewModel : ObservableObject
 
         _started = true;
         EnsureVehicleOptions();
+
+        // 首屏也是一条历史（"所有涂装"）：这样第一次换筛选后能后退回来
+        if (_history.Count == 0) PushNewEntry();
+
         RequestMore();
     }
 
@@ -428,13 +480,45 @@ public partial class WtLiveViewModel : ObservableObject
     [RelayCommand]
     private void Refresh()
     {
+        RememberCurrentEntry(); // 先把当前滚动 / 已加载范围写回：刷新后仍属于同一个"页"
+
         if (IsLoading)
         {
             _refreshQueued = true;
             return;
         }
 
+        StartRefresh();
+    }
+
+    /// <summary>
+    /// 筛选 / 排序变化后重新拉取，并记一条新历史（调用方已把新状态改好）。
+    /// 加载中同样排队；但历史在**真正开始这一轮**时才记 —— 排队期间又被改掉的那次不该留下空条目。
+    /// </summary>
+    private void RefreshAfterNavigation()
+    {
+        if (_restoringHistory) return;
+
+        if (IsLoading)
+        {
+            _refreshQueued = true;
+            _refreshQueuedRecordsHistory = true;
+            return;
+        }
+
+        PushNewEntry();
+        StartRefresh();
+    }
+
+    /// <summary>
+    /// 清空并从第一页重拉。**不碰历史**：手动刷新是"重载同一页"（不记新条目），
+    /// 换条件由调用方先 <see cref="BeginNavigation"/>（记旧状态）、再 <see cref="PushNewEntry"/>（记新状态）。
+    /// </summary>
+    private void StartRefresh()
+    {
         _refreshQueued = false;
+        _refreshQueuedRecordsHistory = false;
+        _session++; // 作废在途请求：后退 / 换条件后旧结果不能追加进新列表
         IsSuggestionsOpen = false;
 
         // 丢弃的卡片要**掐断在途缩略图**：不掐的话它们下完、解码完还是挂在已丢弃的卡片上
@@ -448,6 +532,132 @@ public partial class WtLiveViewModel : ObservableObject
         ErrorMessage = "";
 
         RequestMore();
+    }
+
+    // ---------- 浏览历史（后退 / 前进）----------
+
+    /// <summary>后退一格：先记住当前页的最新状态，再恢复上一条。</summary>
+    [RelayCommand(CanExecute = nameof(CanGoBack))]
+    private void GoBack()
+    {
+        if (!_history.CanGoBack) return;
+
+        RememberCurrentEntry();
+        if (_history.GoBack(out var entry)) ApplyHistoryEntry(entry);
+        NotifyHistoryChanged();
+    }
+
+    /// <summary>前进一格（只在"后退过、且之后没产生新历史"时可用）。</summary>
+    [RelayCommand(CanExecute = nameof(CanGoForward))]
+    private void GoForward()
+    {
+        if (!_history.CanGoForward) return;
+
+        RememberCurrentEntry();
+        if (_history.GoForward(out var entry)) ApplyHistoryEntry(entry);
+        NotifyHistoryChanged();
+    }
+
+    /// <summary>
+    /// 每次"用户要换一页"（搜索 / 标签 / 作者 / 载具 / 排序 / 删胶囊）**改状态之前**调用：
+    /// 把当前页的最新状态写回当前历史条目。不这么做，后退回来看到的会是刚进入这一页时的样子。
+    /// </summary>
+    private void BeginNavigation()
+    {
+        if (_restoringHistory) return;
+        RememberCurrentEntry();
+    }
+
+    /// <summary>把当前状态写成历史条目并替换游标所指的那条。</summary>
+    private void RememberCurrentEntry()
+    {
+        if (_history.Current == null) return;
+        _history.ReplaceCurrent(Snapshot());
+    }
+
+    /// <summary>新状态开始拉取时压入一条空条目（卡片随分页陆续填；离开前会被 <see cref="RememberCurrentEntry"/> 覆盖成完整快照）。</summary>
+    private void PushNewEntry()
+    {
+        _history.Push(new WtLiveNavEntry
+        {
+            SortId = SortId,
+            Chips = Chips.Select(c => new WtLiveChipSnapshot(c.Kind, c.Value, c.Text)).ToList(),
+            Items = Array.Empty<WtLiveCardItem>(),
+            NextPage = 0,
+            IsExhausted = false,
+            ScrollOffset = 0
+        });
+
+        NotifyHistoryChanged();
+    }
+
+    private WtLiveNavEntry Snapshot() => new()
+    {
+        SortId = SortId,
+        Chips = Chips.Select(c => new WtLiveChipSnapshot(c.Kind, c.Value, c.Text)).ToList(),
+        Items = Items.ToList(),
+        NextPage = _nextPage,
+        IsExhausted = IsExhausted,
+        ScrollOffset = _scrollOffset
+    };
+
+    /// <summary>
+    /// 恢复一条历史：换胶囊 / 排序、换回当时的卡片列表与分页游标，再把滚动位置交还视图。
+    /// 期间所有"状态变化"都是恢复的一部分，不记历史也不重新拉取。
+    /// </summary>
+    private void ApplyHistoryEntry(WtLiveNavEntry entry)
+    {
+        _restoringHistory = true;
+        try
+        {
+            // 离开当前这批卡片：掐断在途缩略图（它们回到历史里还能靠磁盘缓存重取）
+            foreach (var card in Items) ReleaseThumbnail(card);
+            _visibleWindow = null;
+
+            _session++;                 // 作废在途请求
+            _refreshQueued = false;
+            _refreshQueuedRecordsHistory = false;
+            IsLoading = false;
+            IsSuggestionsOpen = false;
+
+            Chips.Clear();
+            foreach (var chip in entry.Chips)
+                Chips.Add(new WtLiveSearchChip(chip.Kind, chip.Value, chip.Text));
+
+            if (SortOptions.FirstOrDefault(o => string.Equals(o.Id, entry.SortId, StringComparison.Ordinal))
+                is { } option && !ReferenceEquals(option, SelectedSortOption))
+            {
+                _rebuildingSortOptions = true;
+                try { SelectedSortOption = option; }
+                finally { _rebuildingSortOptions = false; }
+            }
+
+            Items.Clear();
+            foreach (var card in entry.Items) Items.Add(card);
+
+            _nextPage = entry.NextPage;
+            IsExhausted = entry.IsExhausted;
+            ErrorMessage = "";
+            _scrollOffset = entry.ScrollOffset;
+
+            ScrollRestoreRequested?.Invoke(entry.ScrollOffset);
+
+            // 离开得太早 / 首次请求还没回来时，条目里没有卡片：恢复后直接补拉第一页，
+            // 否则会停在一个空列表上（滚动条不出现，也不会触发"接近底部"的预取）
+            if (entry.Items.Count == 0 && !entry.IsExhausted) RequestMore();
+        }
+        finally
+        {
+            _restoringHistory = false;
+        }
+    }
+
+    private void NotifyHistoryChanged()
+    {
+        OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(CanGoForward));
+        GoBackCommand.NotifyCanExecuteChanged();
+        GoForwardCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>失败后重试当前页（失败不会推进页码，重试即重拉同一页）。</summary>
@@ -506,10 +716,12 @@ public partial class WtLiveViewModel : ObservableObject
 
         if (SearchText.Trim().Length == 0) return;
 
+        BeginNavigation(); // 先记下"加标签之前"的页状态
+
         var added = CommitTypedTags();
         IsSuggestionsOpen = false;
 
-        if (added) Refresh();
+        if (added) RefreshAfterNavigation();
     }
 
     /// <summary>
@@ -522,6 +734,8 @@ public partial class WtLiveViewModel : ObservableObject
     private void ApplySuggestion(WtLiveSearchSuggestion? suggestion)
     {
         if (suggestion == null) return;
+
+        BeginNavigation(); // 先记下"应用候选之前"的页状态
 
         switch (suggestion.Kind)
         {
@@ -551,7 +765,7 @@ public partial class WtLiveViewModel : ObservableObject
 
         // 必须在改完 SearchText **之后**关闭：OnSearchTextChanged 会重算下拉并把它重新展开
         IsSuggestionsOpen = false;
-        Refresh();
+        RefreshAfterNavigation();
     }
 
     /// <summary>
@@ -562,11 +776,13 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(vehicleId)) return;
 
+        BeginNavigation(); // 先记下当前页，后退能回到"按载具搜之前"
+
         SearchText = "";
         ClearChips();
         AppendVehicleChip(vehicleId, displayName);
         IsSuggestionsOpen = false;
-        Refresh();
+        RefreshAfterNavigation();
     }
 
     /// <summary>
@@ -582,11 +798,13 @@ public partial class WtLiveViewModel : ObservableObject
 
         Detail.CloseCommand.Execute(null); // 先关浮窗，否则结果被它盖着看不见
 
+        BeginNavigation(); // 先记下"点标签之前"的页状态
+
         SearchText = "";
         ClearChips();
         AppendTagChip(value);
         IsSuggestionsOpen = false;
-        Refresh();
+        RefreshAfterNavigation();
     }
 
     /// <summary>
@@ -604,10 +822,12 @@ public partial class WtLiveViewModel : ObservableObject
 
         Detail.CloseCommand.Execute(null); // 先关浮窗，否则结果被它盖着看不见
 
+        BeginNavigation(); // 先记下"点作者之前"的页状态
+
         SearchText = "";
         AppendUserChip(userId, displayName);
         IsSuggestionsOpen = false;
-        Refresh();
+        RefreshAfterNavigation();
     }
 
     /// <summary>卡片里点作者名（传整张卡片，省得视图拼参数）。</summary>
@@ -646,12 +866,13 @@ public partial class WtLiveViewModel : ObservableObject
     private void ClearSearch()
     {
         var hadFilter = HasFilter;
+        if (hadFilter) BeginNavigation(); // 先记下"清空之前"的页状态
 
         SearchText = "";
         ClearChips();
         IsSuggestionsOpen = false;
 
-        if (hadFilter) Refresh();
+        if (hadFilter) RefreshAfterNavigation();
     }
 
     // ---------- 胶囊（搜索条件的唯一载体）----------
@@ -728,8 +949,10 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (Chips.Count == 0) return false;
 
+        if (refresh) BeginNavigation(); // 先记下"删胶囊之前"的页状态
+
         Chips.RemoveAt(Chips.Count - 1);
-        if (refresh) Refresh();
+        if (refresh) RefreshAfterNavigation();
         return true;
     }
 
@@ -737,9 +960,11 @@ public partial class WtLiveViewModel : ObservableObject
     [RelayCommand]
     private void RemoveChip(WtLiveSearchChip? chip)
     {
-        if (chip == null || !Chips.Remove(chip)) return;
+        if (chip == null || !Chips.Contains(chip)) return;
 
-        Refresh();
+        BeginNavigation(); // 先记下"删胶囊之前"的页状态
+        Chips.Remove(chip);
+        RefreshAfterNavigation();
     }
 
     /// <summary>
@@ -925,6 +1150,10 @@ public partial class WtLiveViewModel : ObservableObject
 
     private async Task LoadNextPageAsync()
     {
+        // 这一趟属于哪个会话：等待期间用户换了条件 / 后退 → 结果必须**整批丢弃**，
+        // 否则旧查询的卡片会追加到新列表里（列表与筛选条件对不上）
+        var session = _session;
+
         IsLoading = true;
         ErrorMessage = "";
 
@@ -935,6 +1164,8 @@ public partial class WtLiveViewModel : ObservableObject
             var page = await WTLiveService.FetchFeedPageAsync(
                 _nextPage, VehicleFilter, TagQuery.Length > 0 ? TagQuery : null, SortId, UserFilter,
                 CancellationToken.None);
+
+            if (session != _session) return;
 
             foreach (var item in page.Items)
             {
@@ -958,13 +1189,25 @@ public partial class WtLiveViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ErrorMessage = Loc.Format("wtlive.list.failed", ex.Message);
+            if (session == _session) ErrorMessage = Loc.Format("wtlive.list.failed", ex.Message);
         }
         finally
         {
-            IsLoading = false;
+            if (session == _session)
+            {
+                IsLoading = false;
 
-            if (_refreshQueued) Refresh(); // 加载期间收到的「换条件重来」，现在补上
+                if (_refreshQueued) // 加载期间收到的「换条件重来」，现在补上
+                {
+                    var recordHistory = _refreshQueuedRecordsHistory;
+                    _refreshQueued = false;
+                    _refreshQueuedRecordsHistory = false;
+
+                    // 排队期间可能连着改了好几次条件：只在真正开始这一轮时记一条历史
+                    if (recordHistory) PushNewEntry();
+                    StartRefresh();
+                }
+            }
         }
     }
 
@@ -1088,4 +1331,35 @@ public partial class WtLiveViewModel : ObservableObject
     /// </summary>
     private static ImageSource DecodeThumbnail(byte[] bytes, int decodeWidth)
         => WtLiveImages.Decode(bytes, decodeWidth);
+
+    // ---------- 浏览历史条目（状态快照）----------
+
+    /// <summary>一个胶囊的可还原形态（与视图模型解耦：恢复时重新 new，不去复用旧对象）。</summary>
+    private readonly record struct WtLiveChipSnapshot(WtLiveChipKind Kind, string Value, string Text);
+
+    /// <summary>
+    /// 一条历史 = 当时这一页的**全部可还原状态**：筛选条件、排序、已加载的卡片、分页游标、滚动位置。
+    /// <para>
+    /// 卡片是**引用**（缩略图位图由可视窗口机制在滚远时释放），所以多个条目共享同一批卡片对象也安全；
+    /// 恢复时换回原引用，缩略图按需从磁盘缓存重取。
+    /// </para>
+    /// <para>
+    /// 不进快照的：<c>IsLoading</c> / <c>ErrorMessage</c> / 下拉与高亮（瞬时 UI）、
+    /// <c>_visibleWindow</c>（派生量）、清晰度档位（全局设置，不是页面状态）。
+    /// </para>
+    /// </summary>
+    private sealed class WtLiveNavEntry
+    {
+        public string SortId { get; init; } = "";
+
+        public IReadOnlyList<WtLiveChipSnapshot> Chips { get; init; } = Array.Empty<WtLiveChipSnapshot>();
+
+        public IReadOnlyList<WtLiveCardItem> Items { get; init; } = Array.Empty<WtLiveCardItem>();
+
+        public int NextPage { get; init; }
+
+        public bool IsExhausted { get; init; }
+
+        public double ScrollOffset { get; init; }
+    }
 }

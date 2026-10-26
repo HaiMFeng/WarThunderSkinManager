@@ -582,6 +582,8 @@
   "skins.wtlive": "Download from WT Live",
   "wtlive.page.title": "WT Live",
   "wtlive.refresh": "Refresh",
+  "wtlive.nav.back": "Back",
+  "wtlive.nav.forward": "Forward",
   "wtlive.search.placeholder": "Search vehicle / #tag / @user…",
   "wtlive.search.clear": "Show all skins",
   "wtlive.search.byVehicle": "Filtered by vehicle: {0}",

@@ -29,6 +29,9 @@ public partial class WtLiveView : UserControl
     /// <summary>已经订阅过胶囊集合的那个 VM（换了 VM 要重新订阅，且不能重复订阅）。</summary>
     private WtLiveViewModel? _chipAutoScrollSource;
 
+    /// <summary>已经订阅过"恢复滚动位置"的那个 VM（同 <see cref="_chipAutoScrollSource"/>，换 VM 要重订）。</summary>
+    private WtLiveViewModel? _historyScrollSource;
+
     /// <summary>列表重开的监听是否已挂上（挂一次就够，<see cref="HookListReset"/>）。</summary>
     private bool _listResetHooked;
 
@@ -39,7 +42,11 @@ public partial class WtLiveView : UserControl
     {
         InitializeComponent();
 
-        DataContextChanged += (_, _) => HookChipAutoScroll();
+        DataContextChanged += (_, _) =>
+        {
+            HookChipAutoScroll();
+            HookHistoryScroll();
+        };
 
         // 列表重开（换搜索条件 / 排序 / 手动刷新）→ 滚回顶部。
         // 挂 Loaded 而不是 DataContextChanged：这条挂的是**控件自己的条目集**（见 HookListReset），
@@ -332,11 +339,55 @@ public partial class WtLiveView : UserControl
     /// </summary>
     private void ListScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        // 历史快照要用"离开这一页时的滚动位置"：每次滚动报给 VM（一个 double 赋值，不碰布局）
+        ViewModel?.SetScrollOffset(e.VerticalOffset);
+
         if (ShouldPrefetch(e.ExtentHeight, e.ViewportHeight, e.VerticalOffset, e.VerticalChange,
                            PrefetchDistance, ref _prefetchOnCooldown))
         {
             ViewModel?.RequestMore();
         }
+    }
+
+    /// <summary>
+    /// 订阅"恢复历史滚动位置"：VM 在换回某条历史后发一个目标偏移，这里等这一轮布局跑完再滚过去。
+    /// 不清空就重订会重复滚（老 VM 的事件还挂着）。
+    /// </summary>
+    private void HookHistoryScroll()
+    {
+        if (ViewModel is not { } viewModel) return;
+        if (ReferenceEquals(viewModel, _historyScrollSource)) return;
+
+        if (_historyScrollSource != null)
+            _historyScrollSource.ScrollRestoreRequested -= OnScrollRestoreRequested;
+
+        _historyScrollSource = viewModel;
+        viewModel.ScrollRestoreRequested += OnScrollRestoreRequested;
+    }
+
+    private void OnScrollRestoreRequested(double offset)
+        => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => RestoreScroll(offset)));
+
+    /// <summary>
+    /// 把列表滚回历史位置。列表刚被整体换掉（Reset → ScrollToTop），
+    /// 虚拟化面板的内容高度是**估算**的，滚一次可能被夹在"还没算出来"的旧高度上，
+    /// 所以再补一次（Background 优先级时布局与估算都已稳定）。
+    /// </summary>
+    private void RestoreScroll(double offset)
+    {
+        if (offset <= 0)
+        {
+            ListScroll.ScrollToTop();
+            return;
+        }
+
+        ListScroll.ScrollToVerticalOffset(offset);
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            if (Math.Abs(ListScroll.VerticalOffset - offset) > 1)
+                ListScroll.ScrollToVerticalOffset(offset);
+        }));
     }
 
     /// <summary>

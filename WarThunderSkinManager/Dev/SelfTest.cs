@@ -655,7 +655,8 @@ internal static class SelfTest
                 // 「下载图标」这一个字形同时用在三处：工具栏的下载列表入口 / 卡片右下角下载按钮 / 列表空态插图
                 ("拖入导入", 0xF56F), ("下载图标", 0xF063), ("下载重试", 0xF021),
                 ("缩略图占位", 0xF03E), ("部件", 0xF12E), ("标签", 0xF02B),
-                ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023)
+                ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023),
+                ("后退", 0xF060), ("前进", 0xF061)
             };
             var missingIcons = iconFontOk && iconGlyphs != null
                 ? iconCodes.Where(c => !iconGlyphs.CharacterToGlyphMap.ContainsKey(c.Code))
@@ -703,6 +704,37 @@ internal static class SelfTest
 
             if (!symbolOk || missingSymbols.Count > 0)
                 log.AppendLine("自检异常：符号字体不可解析或占位符缺字形（国旗 / 弹药会渲染成方块）");
+
+            // ---- 浏览历史（NavigationHistory：浏览器式"条目 + 游标"）----
+            // WT Live 的后退 / 前进全靠它：游标移动、新条目丢弃前进项、超容量从头裁剪，三者任一错都会串页。
+            var nav = new NavigationHistory<string>(3);
+            var navEmpty = nav.Count == 0 && !nav.CanGoBack && !nav.CanGoForward;
+
+            nav.Push("A"); nav.Push("B"); nav.Push("C");
+            var navPushed = nav.Current == "C" && nav.CanGoBack && !nav.CanGoForward;
+
+            var navBackOk = nav.GoBack(out var navPrev) && navPrev == "B" && nav.CanGoForward;
+            var navForwardOk = nav.GoForward(out var navNext) && navNext == "C";
+            nav.GoBack(out _);              // 回到 B
+            nav.Push("D");                  // 在中间位置产生新条目 → 丢掉前进项 C
+            var navTruncated = nav.Count == 3 && nav.Current == "D" && !nav.CanGoForward;
+
+            nav.Push("E");                  // 容量 3：最旧的 A 被挤掉
+            var navCapacity = nav.Count == 3 && nav.Current == "E"
+                && nav.GoBack(out var navD) && navD == "D"
+                && nav.GoBack(out var navB) && navB == "B" && !nav.CanGoBack;
+
+            nav.ReplaceCurrent("B2");       // 原地更新（滚动 / 翻页后离开前写回）
+            var navReplaced = nav.Current == "B2";
+
+            var navOk = navEmpty && navPushed && navBackOk && navForwardOk && navTruncated
+                        && navCapacity && navReplaced;
+            log.AppendLine($"浏览历史   : 空栈 = {navEmpty}（应 True）、压 3 条 = {navPushed}（应 True）、"
+                         + $"后退 / 前进 = {navBackOk && navForwardOk}（应 True）、"
+                         + $"新条目丢弃前进项 = {navTruncated}（应 True）、容量裁剪 = {navCapacity}（应 True）、"
+                         + $"原地更新 = {navReplaced}（应 True）");
+            if (!navOk)
+                log.AppendLine("自检异常：NavigationHistory 的前进 / 后退 / 裁剪语义不符合预期");
 
             // ---- 瀑布流面板（Controls/MasonryPanel）：WT Live 浏览页的布局，断言最短列落位 ----
             MasonrySelfTest.Run(log);

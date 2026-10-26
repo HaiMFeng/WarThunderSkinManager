@@ -582,6 +582,8 @@
   "skins.wtlive": "从 WT Live 下载",
   "wtlive.page.title": "WT Live",
   "wtlive.refresh": "刷新",
+  "wtlive.nav.back": "后退",
+  "wtlive.nav.forward": "前进",
   "wtlive.search.placeholder": "搜索载具 / #标签 / @用户…",
   "wtlive.search.clear": "显示全部涂装",
   "wtlive.search.byVehicle": "按载具筛选：{0}",

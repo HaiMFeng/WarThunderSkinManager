@@ -36,8 +36,26 @@
                     <RowDefinition Height="Auto"/>   <!-- 搜索提示 -->
                 </Grid.RowDefinitions>
 
-                <TextBlock x:Name="HeaderTitle" Grid.Row="0" HorizontalAlignment="Left"
-                           Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+                <!-- 标题 + 浏览历史（浏览器式）：后退 / 刷新 / 前进。
+                     刷新从右侧工具栏搬到这里 —— 三个都是"这一页怎么变"的动作，
+                     与右侧的排序 / 搜索（"要哪些"）分开；后退 / 前进没有历史时自动置灰。 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="HeaderTitle" VerticalAlignment="Center"
+                               Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+
+                    <Button Content="&#xF060;" Style="{StaticResource IconButton}"
+                            Width="28" Height="28" FontSize="13" Margin="12,2,0,0"
+                            VerticalAlignment="Center" ToolTip="{loc:Loc wtlive.nav.back}"
+                            Command="{Binding WtLive.GoBackCommand}"/>
+                    <Button Content="&#xF021;" Style="{StaticResource IconButton}"
+                            Width="28" Height="28" FontSize="13" Margin="4,2,0,0"
+                            VerticalAlignment="Center" ToolTip="{loc:Loc wtlive.refresh}"
+                            Command="{Binding WtLive.RefreshCommand}"/>
+                    <Button Content="&#xF061;" Style="{StaticResource IconButton}"
+                            Width="28" Height="28" FontSize="13" Margin="4,2,0,0"
+                            VerticalAlignment="Center" ToolTip="{loc:Loc wtlive.nav.forward}"
+                            Command="{Binding WtLive.GoForwardCommand}"/>
+                </StackPanel>
 
                 <!-- 搜索提示——胶囊在界面上是一块块，这行把它写成人话，也点明走的是哪条通道
                      （按载具 / 按标签）；没有筛选时就是默认的「所有涂装」。
@@ -61,7 +79,7 @@
                 </TextBlock>
             </Grid>
 
-            <!-- 右列：排序 + 搜索 + 刷新（刷新是**图标按钮**，悬停有 ToolTip）。
+            <!-- 右列：排序 + 搜索 + 收藏作者 / 下载列表（刷新已移到标题旁，见上）。
                  搜索框**不只用来选载具**：输入即给下拉——载具、标签、清除三条通道；
                  选中的候选不写回输入框，而是变成**胶囊**（载具最多一个、标签可叠多个），
                  退格一次删一个（见 WtLiveViewModel / WtLiveSearchChip）。
@@ -397,17 +415,13 @@
                         </Grid>
                     </Border>
 
-                    <!-- 三个紧凑的图标按钮（刷新 / 收藏的作者 / 下载列表）：**彼此间距 4**，
+                    <!-- 两个紧凑的图标按钮（收藏的作者 / 下载列表）：**彼此间距 4**，
                          比工具区其它元素（8）更紧 —— 它们是同一组"列表动作"，紧排看起来是一组；
                          与左侧搜索框之间保留 8（那里是"查询"与"动作"的分界，不留会糊成一团）。
                          间距由**后一个按钮的 Margin 提供**（WPF 没有负间距，用 Margin 最省） -->
-                    <Button Content="&#xF021;" Style="{StaticResource IconButton}" Width="34" Height="34"
-                            FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.refresh}"
-                            Command="{Binding WtLive.RefreshCommand}"/>
-
                     <!-- 收藏的作者：点开遮罩浮窗，见 WtLiveFavoritesOverlay -->
                     <Button Content="&#xF005;" Style="{StaticResource IconButton}" Width="34" Height="34"
-                            FontSize="14" Margin="4,0,0,0" ToolTip="{loc:Loc wtlive.favorites.open}"
+                            FontSize="14" Margin="8,0,0,0" ToolTip="{loc:Loc wtlive.favorites.open}"
                             Command="{Binding WtLive.Favorites.OpenCommand}"/>
 
                     <!-- 下载列表入口：与涂装管理页页头**共用同一控件**（悬停展开浮窗 / 重试与取消语义都一致）。
