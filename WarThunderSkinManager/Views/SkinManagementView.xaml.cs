@@ -21,8 +21,7 @@ public partial class SkinManagementView : UserControl
     private const double MaxCardWidth = 340;     // 卡片最大宽度（列数封顶后才会长大）
     private const int MaxColumns = 5;            // 列数上限：放宽卡片的最大尺寸
     private const double CardGap = 12;           // 卡片间距（与 ItemContainer Margin 一致）
-    private const double ScrollbarAllowance = 14; // 多列：滚动条 10 + 右侧余量 4（末列仍有 12 边距）
-    private const double ScrollbarWidth = 10;     // 紧凑态单列：扣除滚动条本身即可（容器右边距已归零）
+    private const double ScrollbarAllowance = 14; // 首帧拿不到视口宽时的回退：滚动条 10 + 余量 4
 
     private static readonly TimeSpan SizeDuration = TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan ReorderDuration = TimeSpan.FromMilliseconds(180);
@@ -56,8 +55,7 @@ public partial class SkinManagementView : UserControl
     private void PackageList_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (Math.Abs(e.ViewportWidthChange) < 0.5) return;
-        if (DataContext is MainViewModel { IsCompactMode: true })
-            UpdateCardSize(PackageList.ActualWidth);
+        UpdateCardSize(PackageList.ActualWidth); // 正常态 / 紧凑态都要跟着视口宽重算
     }
 
     /// <summary>
@@ -77,48 +75,52 @@ public partial class SkinManagementView : UserControl
     /// <summary>按列表可用宽度计算卡片尺寸并做过渡动画。</summary>
     private void UpdateCardSize(double listWidth)
     {
-        // 紧凑（窄条）：固定单列，**只扣滚动条**（容器右边距已在 PackageCardItemCompact 归零），
-        // 卡片宽度夹在 Min/MaxCardWidth 内 → 左右留白对称，不会出现"右侧多出两道边距"
-        if (DataContext is MainViewModel { IsCompactMode: true })
-        {
-            // 视口宽（已扣滚动条）是准的；首帧拿不到时退回"列表宽 - 滚动条"
-            var viewport = FindChild<ScrollViewer>(PackageList)?.ViewportWidth ?? 0;
-            var compactAvailable = viewport > 0 ? viewport : Math.Max(0, listWidth - ScrollbarWidth);
-            if (compactAvailable <= 0) return;
+        var compact = DataContext is MainViewModel { IsCompactMode: true };
 
-            ApplyCardSize(Math.Clamp(compactAvailable, MinCardWidth, MaxCardWidth));
+        // 视口宽 = 已扣掉滚动条的实际可用宽（首帧拿不到时按模式回退）。
+        // 用视口宽而不是 ListBox 宽，滚动条出现 / 消失时左右留白才不会一边宽一边窄。
+        var viewport = FindChild<ScrollViewer>(PackageList)?.ViewportWidth ?? 0;
+        var available = viewport > 0
+            ? viewport
+            : Math.Max(0, listWidth - (compact ? 0 : ScrollbarAllowance));
+        if (available <= 0) return;
+
+        if (compact)
+        {
+            // 单列 + 滚动条隐藏 + 容器左右边距 0：卡片直接铺满视口，
+            // 左右各由 Card 的 8 内边距留白 → 两侧完全对称
+            var compactWidth = Math.Clamp(available, MinCardWidth, MaxCardWidth);
+            ApplyCardSize(compactWidth, compactWidth);
             return;
         }
-
-        var available = Math.Max(0, listWidth - ScrollbarAllowance);
-        if (available <= 0) return;
 
         // 先按目标卡片宽决定列数，再封顶（窗口越宽卡片才会越大，而不是无限加列）
         var columns = Math.Max(1, (int)Math.Floor((available + CardGap) / (TargetCardWidth + CardGap)));
         columns = Math.Min(columns, MaxColumns);
 
-        var cardWidth = (available - (columns - 1) * CardGap) / columns;
+        // 槽宽 = 可用宽 / 列数；卡片 = 槽宽 − 12（容器左右各 6）。
+        // 这样"卡片 + 左右外边距"正好铺满视口：首列左 6、末列右 6，左右对称。
+        var slotWidth = available / columns;
+        var cardWidth = slotWidth - CardGap;
 
         // 超宽屏下避免卡片过大，必要时再加列
         while (cardWidth > MaxCardWidth && columns < 12)
         {
             columns++;
-            cardWidth = (available - (columns - 1) * CardGap) / columns;
+            slotWidth = available / columns;
+            cardWidth = slotWidth - CardGap;
         }
 
         cardWidth = Math.Max(MinCardWidth, cardWidth);
+        slotWidth = cardWidth + CardGap; // 被最小宽撑大时仍保持左右各 6
 
-        AnimateCardSize(cardWidth, Math.Round(cardWidth * 0.72));
-
-        if (DataContext is MainViewModel main)
-            main.Skins.SetCardSize(cardWidth);
+        AnimateCardSize(slotWidth, ItemHeightOf(cardWidth));
+        SetCardWidth(cardWidth);
     }
 
     /// <summary>直接落卡片尺寸（紧凑态：不进 150ms 过渡，否则收窄 / 展开时会先被拉扁再回弹）。</summary>
-    private void ApplyCardSize(double width)
+    private void ApplyCardSize(double slotWidth, double cardWidth)
     {
-        var height = Math.Round(width * 0.72);
-
         var panel = FindCardsPanel();
         if (panel != null)
         {
@@ -126,10 +128,18 @@ public partial class SkinManagementView : UserControl
             panel.BeginAnimation(WrapPanel.ItemWidthProperty, null);
             panel.BeginAnimation(WrapPanel.ItemHeightProperty, null);
 
-            panel.ItemWidth = width;
-            panel.ItemHeight = height;
+            panel.ItemWidth = slotWidth;
+            panel.ItemHeight = ItemHeightOf(cardWidth);
         }
 
+        SetCardWidth(cardWidth);
+    }
+
+    /// <summary>槽高 = 卡片可视高（宽 × 0.72）＋ 底部外边距 12。</summary>
+    private static double ItemHeightOf(double cardWidth) => Math.Round(cardWidth * 0.72) + CardGap;
+
+    private void SetCardWidth(double width)
+    {
         if (DataContext is MainViewModel main)
             main.Skins.SetCardSize(width);
     }

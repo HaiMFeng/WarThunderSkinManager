@@ -29,10 +29,9 @@ public partial class MainWindow : Window
     // ---- 紧凑（窄条）模式：窗口几何 ----
     // 宽度链路：Window → RootBorder 边框 2 → Card 边框 2 + 内边距 16（紧凑态）→ 卡片列表滚动条 14。
     // 因此"卡片宽 + 34 = 窗口宽"；下/上限与 SkinManagementView 的 MinCardWidth / MaxCardWidth 对齐。
-    // 宽度链路：窗口边框 2 + Card 边框 2 + 内边距 16 + 滚动条 10。
-    // 紧凑态容器的右侧 12 外边距已归零（PackageCardItemCompact），因此**不再**把它算进固定损耗。
-    private const double CompactChromeWidth = 30;
-    private const double CompactMinWidth = 190;      // 标题栏 4 个按钮所需下限（卡片约 160，仍 ≥ MinCardWidth）
+    // 宽度链路：窗口边框 2 + Card 边框 2 + 内边距 16（紧凑态**隐藏滚动条**、容器左右边距为 0）。
+    private const double CompactChromeWidth = 20;
+    private const double CompactMinWidth = 190;      // 标题栏 4 个按钮所需下限（卡片约 170，仍 ≥ MinCardWidth）
     private const double CompactMaxWidth = CompactChromeWidth + 340;    // 卡片 340（视图 MaxCardWidth）
     private const double CompactDefaultWidth = CompactChromeWidth + 190; // 卡片 190（视图 TargetCardWidth）
 
@@ -314,7 +313,7 @@ public partial class MainWindow : Window
             RootBorder.BorderThickness = WindowState == WindowState.Maximized ? new Thickness(0) : new Thickness(1);
     }
 
-    private static IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int WM_GETMINMAXINFO = 0x0024;
         if (msg != WM_GETMINMAXINFO) return IntPtr.Zero;
@@ -328,6 +327,17 @@ public partial class MainWindow : Window
         mmi.ptMaxPosition.y = Math.Abs(info.rcWork.top - info.rcMonitor.top);
         mmi.ptMaxSize.x = Math.Abs(info.rcWork.right - info.rcWork.left);
         mmi.ptMaxSize.y = Math.Abs(info.rcWork.bottom - info.rcWork.top);
+
+        // 紧凑态：把**拖拽上限**也交给系统（ptMaxTrackSize，物理像素）。
+        // 只靠 Window.MaxWidth 时，拖到边界后继续拖仍会画出橡皮筋 / 黑框，然后才被 WPF 夹回来。
+        if (_compactActive)
+        {
+            var dpi = GetDpiForWindow(hwnd);
+            var scale = dpi > 0 ? dpi / 96.0 : 1.0;
+            mmi.ptMinTrackSize.x = (int)Math.Round(CompactMinWidth * scale);
+            mmi.ptMaxTrackSize.x = (int)Math.Round(CompactMaxWidth * scale);
+        }
+
         Marshal.StructureToPtr(mmi, lParam, true);
 
         handled = true;
@@ -341,6 +351,10 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO info);
+
+    /// <summary>窗口所在显示器的 DPI（Win10 1607+）；用于把 DIP 尺寸换算成 WM_GETMINMAXINFO 的物理像素。</summary>
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     private const uint MONITOR_DEFAULTTONEAREST = 2;
 

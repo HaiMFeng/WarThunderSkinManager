@@ -7,7 +7,8 @@
     <UserControl.Resources>
         <!-- 涂装包卡片容器：选中描边 + 拖放支持 -->
         <Style x:Key="PackageCardItem" TargetType="ListBoxItem">
-            <Setter Property="Margin" Value="0,0,12,12"/>
+            <!-- 左右各 6：列与列之间是 12，首列左侧 / 末列右侧各 6 —— 网格左右留白对称 -->
+            <Setter Property="Margin" Value="6,0,6,12"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="AllowDrop" Value="True"/>
@@ -314,6 +315,19 @@
                                  Loaded="PackageList_Loaded"
                                  SizeChanged="PackageList_SizeChanged"
                                  ScrollViewer.ScrollChanged="PackageList_ScrollChanged">
+                            <ListBox.Style>
+                                <Style TargetType="ListBox">
+                                    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+                                    <Style.Triggers>
+                                        <!-- 紧凑（窄条）：隐藏滚动条（滚轮仍可滚）。视口宽不再被 10px 吃掉，
+                                             卡片左右各留 6（容器边距归零后由 Card 内边距 8 提供），两侧完全对称 -->
+                                        <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListBox.Style>
+
                             <!-- 右键菜单：作用于当前选中的涂装包 -->
                             <ListBox.ContextMenu>
                                 <ContextMenu>
