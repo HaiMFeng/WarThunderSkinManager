@@ -78,6 +78,10 @@ public partial class SkinManagementView : UserControl
     {
         if (_hostWindow == null) return;
 
+        // 解绑之后就再没有 ResizeEnded 来解除冻结（例如缩放中卸载），这里顺手复位，
+        // 否则标志永久为 true，重载后卡片尺寸不再随窗口变化
+        _suspendForResize = false;
+
         _hostWindow.ResizeStarted -= OnHostResizeStarted;
         _hostWindow.ResizeEnded -= OnHostResizeEnded;
         _hostWindow = null;
@@ -93,9 +97,12 @@ public partial class SkinManagementView : UserControl
 
     private void OnHostResizeEnded()
     {
+        // 复位必须写在 IsLoaded 早退**之前**：卸载竞态下若从这里返回，冻结标志就永久为 true，
+        // 之后 SizeChanged / ScrollChanged 全部早退，卡片尺寸再也不随窗口变化
+        _suspendForResize = false;
+
         if (!IsLoaded) return;
 
-        _suspendForResize = false;
         // 松手后**不做 150ms 过渡**：拖动刚结束再让整页重排一遍动画，观感更拖沓
         UpdateCardSize(PackageList.ActualWidth, animate: false);
     }

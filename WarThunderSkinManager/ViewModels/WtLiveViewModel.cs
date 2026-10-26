@@ -590,6 +590,10 @@ public partial class WtLiveViewModel : ObservableObject
         SearchText = "";
         ClearChips();
 
+        // 改完 SearchText **之后**必须再关一次：OnSearchTextChanged 会重算下拉并把它重新展开
+        // （清空那一刻胶囊还在 → 会生成「显示全部涂装」那一条，见 ApplySuggestion 里的同类注释）
+        IsSuggestionsOpen = false;
+
         if (SortOptions.FirstOrDefault(o => string.Equals(o.Id, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal))
             is { } defaultOption && !ReferenceEquals(defaultOption, SelectedSortOption))
         {
@@ -615,6 +619,13 @@ public partial class WtLiveViewModel : ObservableObject
     private void RememberCurrentEntry()
     {
         if (_history.Current == null) return;
+
+        // 正在排队的换条件还没真正开始（<see cref="StartRefresh"/> 尚未执行）：此刻胶囊 / 排序已是**新条件**，
+        // 而 <see cref="Items"/> 与 `_nextPage` 还是**上一轮查询**留下的 —— 这时候快照，会把"新条件 + 旧卡片"
+        // 写进当前条目，后退回来就看到与筛选不符的列表（再滚动还会拿新条件去请求下一页、追加到旧列表上）。
+        // 排队期间保持条目不动：新条目在 StartRefresh 真正开始时才压入（见 RefreshAfterNavigation 的注释）。
+        if (_refreshQueuedRecordsHistory) return;
+
         _history.ReplaceCurrent(Snapshot());
     }
 
