@@ -40,8 +40,30 @@
                      刷新从右侧工具栏搬到这里 —— 三个都是"这一页怎么变"的动作，
                      与右侧的排序 / 搜索（"要哪些"）分开；后退 / 前进没有历史时自动置灰。 -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="HeaderTitle" VerticalAlignment="Center"
-                               Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+                    <!-- 标题 = 回"首页"（所有涂装、默认排序）。用按钮而不是带 Click 的 TextBlock：
+                         键盘可聚焦 / 可回车触发；模板只留内容，悬停与按下用透明度给反馈。
+                         回首页走的是**正常导航**（记一条历史），点完还能后退回刚才的筛选（见 GoHome）。 -->
+                    <Button Command="{Binding WtLive.GoHomeCommand}" Cursor="Hand"
+                            Background="Transparent" BorderThickness="0" Padding="0"
+                            HorizontalContentAlignment="Left" VerticalContentAlignment="Center"
+                            ToolTip="{loc:Loc wtlive.nav.home}">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <ContentPresenter x:Name="TitleContent"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="TitleContent" Property="Opacity" Value="0.72"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="TitleContent" Property="Opacity" Value="0.5"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock x:Name="HeaderTitle"
+                                   Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
+                    </Button>
 
                     <Button Content="&#xF053;" Style="{StaticResource IconButton}"
                             Width="28" Height="28" FontSize="13" Margin="12,2,0,0"

@@ -584,6 +584,7 @@
   "wtlive.refresh": "Refresh",
   "wtlive.nav.back": "Back",
   "wtlive.nav.forward": "Forward",
+  "wtlive.nav.home": "Back to all skins",
   "wtlive.search.placeholder": "Search vehicle / #tag / @user…",
   "wtlive.search.clear": "Show all skins",
   "wtlive.search.byVehicle": "Filtered by vehicle: {0}",

@@ -559,6 +559,49 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 点标题回"首页"：清掉全部筛选与输入、排序回到默认，并从第一页重拉。
+    /// 这是一次**正常导航**（记一条历史），所以点完还能后退回刚才的筛选；
+    /// 已经在首页时只滚回顶部，不重复堆历史条目。
+    /// </summary>
+    [RelayCommand]
+    private void GoHome()
+    {
+        var homeQuery = Chips.Count == 0
+                        && string.Equals(SortId, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal);
+
+        IsSuggestionsOpen = false;
+
+        if (homeQuery)
+        {
+            SearchText = ""; // 未提交的输入也清掉（它本来就不进查询）
+
+            if (Items.Count > 0 && !HasError)
+            {
+                ScrollRestoreRequested?.Invoke(0); // 已在首页：只回顶部
+                return;
+            }
+
+            Refresh(); // 空 / 失败：重拉首页条件（刷新语义，不新增历史条目）
+            return;
+        }
+
+        BeginNavigation(); // 先记下当前页，后退能回来
+
+        SearchText = "";
+        ClearChips();
+
+        if (SortOptions.FirstOrDefault(o => string.Equals(o.Id, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal))
+            is { } defaultOption && !ReferenceEquals(defaultOption, SelectedSortOption))
+        {
+            _rebuildingSortOptions = true;
+            try { SelectedSortOption = defaultOption; }
+            finally { _rebuildingSortOptions = false; }
+        }
+
+        RefreshAfterNavigation();
+    }
+
+    /// <summary>
     /// 每次"用户要换一页"（搜索 / 标签 / 作者 / 载具 / 排序 / 删胶囊）**改状态之前**调用：
     /// 把当前页的最新状态写回当前历史条目。不这么做，后退回来看到的会是刚进入这一页时的样子。
     /// </summary>
