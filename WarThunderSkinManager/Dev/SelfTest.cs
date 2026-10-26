@@ -657,7 +657,8 @@ internal static class SelfTest
                 ("缩略图占位", 0xF03E), ("部件", 0xF12E), ("标签", 0xF02B),
                 ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023),
                 // 浏览历史后退 / 前进：与详情轮播同一对 chevron（简约的 < >，与同排图标密度一致）
-                ("后退", 0xF053), ("前进", 0xF054)
+                ("后退", 0xF053), ("前进", 0xF054),
+                ("收束为窄条", 0xF066), ("退出窄条", 0xF065)
             };
             var missingIcons = iconFontOk && iconGlyphs != null
                 ? iconCodes.Where(c => !iconGlyphs.CharacterToGlyphMap.ContainsKey(c.Code))
@@ -2704,6 +2705,28 @@ internal static class SelfTest
                 if (!paneWidthsOk)
                     log.AppendLine("自检异常：MainWindow.xaml 的导航宽度动画终点与 MainViewModel 的 "
                                  + "NavCompactWidth / NavExpandedWidth 对不上 → 动画结束会被拽回（切换顿一下）");
+
+                // 紧凑（窄条）模式：按钮必须在「置顶 + 三个窗口按钮」整组的最左侧；
+                // 页面侧还要能整列收起载具列表（只折叠 Border 会留下 250 宽空白）。
+                var compactAt = mainWindowXaml.IndexOf("ToggleCompactCommand", StringComparison.Ordinal);
+                var pinAt = mainWindowXaml.IndexOf("Pin_Click", StringComparison.Ordinal);
+                var compactBeforePin = compactAt >= 0 && pinAt >= 0 && compactAt < pinAt;
+                var compactConditioned = mainWindowXaml.Contains("ShowCompactButton")
+                                         && mainWindowXaml.Contains("CompactToggleTip");
+
+                var skinsPath = Path.Combine(sourceRoot, "Views", "SkinManagementView.xaml");
+                var skinsXaml = File.Exists(skinsPath) ? File.ReadAllText(skinsPath, Encoding.UTF8) : "";
+                // 载具列 = Auto + Border 自己撑宽（234 + 16 = 250）：紧凑态折叠 Border 即可整列归零
+                var vehicleColumnCollapsible = skinsXaml.Contains("<ColumnDefinition Width=\"Auto\"")
+                                               && skinsXaml.Contains("Width=\"234\"");
+                var compactCollapsePoints = System.Text.RegularExpressions.Regex
+                    .Matches(skinsXaml, @"\{Binding IsCompactMode\}").Count;
+
+                log.AppendLine($"窄条模式   : 收束按钮在置顶左侧 = {compactBeforePin}（应 True）、条件 / 提示已绑定 = {compactConditioned}"
+                             + $"（应 True）、载具列可收起 = {vehicleColumnCollapsible}（应 True）、页面折叠点 = {compactCollapsePoints}（应 ≥ 5）");
+
+                if (!(compactBeforePin && compactConditioned && vehicleColumnCollapsible && compactCollapsePoints >= 5))
+                    log.AppendLine("自检异常：紧凑（窄条）模式的按钮位置 / 可见性 / 页面折叠绑定不完整");
 
                 // 导航顺序（用户指定）：涂装管理 → WT Live → 多源复用 → 载具管理 → 设置。
                 // 只钉"WT Live 在载具管理之前"这一条相对次序 —— 多源复用默认隐藏，隐藏时可见顺序

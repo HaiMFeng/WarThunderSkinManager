@@ -52,6 +52,16 @@
 
         <!-- 标题 + 状态 + 操作 -->
         <Grid Grid.Row="0">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Style.Triggers>
+                        <!-- 紧凑（窄条）态：只留卡片列，页头整块收起 -->
+                        <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -82,6 +92,15 @@
         <!-- 国家横条 -->
         <ScrollViewer Grid.Row="1" Margin="0,16,0,14"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ScrollViewer.Style>
+                <Style TargetType="ScrollViewer">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ScrollViewer.Style>
             <ItemsControl ItemsSource="{Binding Skins.Countries}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -103,12 +122,25 @@
         <!-- 主体：左侧载具（二级导航） + 右侧涂装包 -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250"/>
+                <!-- Auto：载具列宽由 Border 自己撑（234 + 右边距 16 = 250，与原来的固定列宽一致）。
+                     紧凑态折叠 Border → 整列自动归零，不会留下 250 宽的空白。
+                     不用"绑定 ColumnDefinition.Width"：ColumnDefinition 不是 FrameworkElement，
+                     绑定继承链在极端情形下不可靠，布局一旦失败会整页错位。 -->
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- 载具列表 -->
-            <Border Grid.Column="0" Style="{StaticResource Card}" Padding="8" Margin="0,0,16,0">
+            <Border Grid.Column="0" Width="234" Padding="8" Margin="0,0,16,0">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="{loc:Loc skins.vehicles.title}"
                                Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Margin="8,6,0,8"/>
@@ -164,7 +196,17 @@
             </Border>
 
             <!-- 涂装包 -->
-            <Border Grid.Column="1" Style="{StaticResource Card}">
+            <Border Grid.Column="1">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                        <Style.Triggers>
+                            <!-- 紧凑态把内边距收到 8：窗口宽 = 卡片宽 + 34（含这里的两侧 16 与滚动条 14） -->
+                            <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                <Setter Property="Padding" Value="8"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid>
                     <!-- 未选择载具 -->
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -198,6 +240,15 @@
 
                         <!-- 载具标题 + 包数量 + 同步 -->
                         <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -230,6 +281,10 @@
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding Skins.HasActivePackage}" Value="True">
                                             <Setter Property="Foreground" Value="{StaticResource BrushActive}"/>
+                                        </DataTrigger>
+                                        <!-- 紧凑态只留卡片列 -->
+                                        <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>

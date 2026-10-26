@@ -26,12 +26,35 @@ public partial class MainWindow : Window
     private Point _titleBarMouseDownPos;
     private bool _titleBarDragStarted;
 
+    // ---- 紧凑（窄条）模式：窗口几何 ----
+    // 宽度链路：Window → RootBorder 边框 2 → Card 边框 2 + 内边距 16（紧凑态）→ 卡片列表滚动条 14。
+    // 因此"卡片宽 + 34 = 窗口宽"；下/上限与 SkinManagementView 的 MinCardWidth / MaxCardWidth 对齐。
+    private const double CompactChromeWidth = 46;    // 窗口边框 2 + Card 边框 2 + 内边距 16 + 滚动条 14 + 卡片右间距 12
+    private const double CompactMinWidth = 190;      // 标题栏 4 个按钮所需下限（卡片约 144，仍 ≥ MinCardWidth）
+    private const double CompactMaxWidth = CompactChromeWidth + 340;    // 卡片 340（视图 MaxCardWidth）
+    private const double CompactDefaultWidth = CompactChromeWidth + 190; // 卡片 190（视图 TargetCardWidth）
+
+    private bool _compactActive;
+    private WindowState _compactSavedState;
+    private Rect _compactSavedBounds;
+    private bool _compactSavedTopmost;
+    private double _compactSavedMinWidth = 900;
+    private double _compactSavedMaxWidth = double.PositiveInfinity;
+
     public MainWindow(AppConfig config)
     {
         InitializeComponent();
 
         var viewModel = new MainViewModel(config);
         DataContext = viewModel;
+
+        // 紧凑态只改"壳"（窗口几何）：页面元素的折叠由 XAML 的 DataTrigger 负责，
+        // 这里只订阅状态变化，窗口几何必须有命令式代码（Window.Width/Left/MinWidth…）。
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.IsCompactMode))
+                ApplyCompactMode(viewModel.IsCompactMode);
+        };
 
         // 先按 XAML 里声明的宽度报一次：左侧导航要据此决定展开还是自动紧凑，
         // 而它**首帧就得是对的**（等 SizeChanged 再纠正会看到导航先展开再收起来）。
@@ -160,7 +183,8 @@ public partial class MainWindow : Window
 
         if (e.ClickCount == 2)
         {
-            ToggleMaximize();
+            // 紧凑态不响应双击最大化：窄条被拉成全屏既违背该模式的用途，也难恢复
+            if ((DataContext as MainViewModel)?.IsCompactMode != true) ToggleMaximize();
             e.Handled = true;
         }
     }
@@ -198,6 +222,64 @@ public partial class MainWindow : Window
 
     private void ToggleMaximize()
         => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    // ---------- 紧凑（窄条）模式：进出时的窗口几何 ----------
+
+    private void ApplyCompactMode(bool compact)
+    {
+        if (compact == _compactActive) return;
+        _compactActive = compact;
+
+        if (compact) EnterCompactMode();
+        else ExitCompactMode();
+    }
+
+    /// <summary>
+    /// 进入窄条：记住原几何 / 最大化状态 / 置顶状态 → 解除最大化 → 锁定宽度区间 → 收窄并**以右上角为锚**
+    /// （右侧与顶部不动，向左长出去，避免窗口在游戏旁"跳"到别处）→ 自动置顶。
+    /// 高度保持不变（需求约定），卡片列在内部滚动。
+    /// </summary>
+    private void EnterCompactMode()
+    {
+        _compactSavedState = WindowState;
+        _compactSavedBounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, Width, Height)
+            : RestoreBounds;                    // 最大化时 Width/Height 不可靠，取还原后的几何
+        _compactSavedTopmost = Topmost;
+
+        if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+
+        _compactSavedMinWidth = MinWidth;
+        _compactSavedMaxWidth = MaxWidth;
+
+        // 先改上下限再改宽度：否则 224 会被原来的 MinWidth(900) 夹回去
+        MinWidth = CompactMinWidth;
+        MaxWidth = CompactMaxWidth;
+        Topmost = true;
+
+        var width = Math.Clamp(CompactDefaultWidth, CompactMinWidth, CompactMaxWidth);
+        Width = width;
+        Height = _compactSavedBounds.Height;
+        Left = _compactSavedBounds.Right - width;
+        Top = _compactSavedBounds.Top;
+    }
+
+    /// <summary>退出窄条：恢复原宽度区间、几何、最大化状态与进入前的置顶状态。</summary>
+    private void ExitCompactMode()
+    {
+        // 先恢复上下限：否则 1120 会被紧凑态的 MaxWidth(374) 夹住
+        MinWidth = _compactSavedMinWidth;
+        MaxWidth = _compactSavedMaxWidth;
+
+        Width = _compactSavedBounds.Width;
+        Height = _compactSavedBounds.Height;
+        Left = _compactSavedBounds.Left;
+        Top = _compactSavedBounds.Top;
+
+        Topmost = _compactSavedTopmost;
+
+        if (_compactSavedState == WindowState.Maximized) WindowState = WindowState.Maximized;
+    }
 
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 

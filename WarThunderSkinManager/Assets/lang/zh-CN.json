@@ -1,6 +1,8 @@
 {
   "app.title": "WarThunder Skin Manager",
   "app.window.pin": "点击固定到最前，再次点击取消",
+  "app.window.compact": "收束为窄条（只留当前载具的涂装，自动置顶）",
+  "app.window.expand": "退出窄条，恢复原窗口",
   "app.alreadyRunning": "WarThunderSkinManager 已经在运行，请使用已经打开的窗口。",
   "app.error.unhandled": "程序遇到了一个错误，已记入日志。可以继续使用。\n\n{0}",
   "app.language.name": "简体中文",

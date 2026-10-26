@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -155,6 +157,77 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>当前选中的导航页（启动默认为涂装管理）</summary>
     [ObservableProperty] private TabKey _selectedTab = TabKey.Skins;
+
+    /// <summary>
+    /// 紧凑（窄条）模式：只留当前载具的一列涂装卡片，窗口收窄并自动置顶。
+    /// <para>
+    /// **只由标题栏按钮显式切换**，绝不跟随窗口宽度自动进入（用户手动拉窄窗口不该被"收束"）；
+    /// 因此它是用户意图，而不是派生量。仅本次运行有效，不落盘。
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private bool _isCompactMode;
+
+    /// <summary>
+    /// 收束按钮的显示条件：**涂装管理页 + 已选载具 + 至少一个涂装包**。
+    /// 紧凑态下始终可退出（见 <see cref="ShowCompactButton"/>），避免条件失效后按钮消失、被困在窄条里。
+    /// </summary>
+    public bool CanToggleCompact => SelectedTab == TabKey.Skins
+                                    && Skins.HasSelection
+                                    && Skins.Packages.Count > 0;
+
+    /// <summary>标题栏按钮是否**可见**：正常态看条件，紧凑态恒可见（保证能退出）。</summary>
+    public bool ShowCompactButton => IsCompactMode || CanToggleCompact;
+
+    /// <summary>收束 / 展开按钮的悬停提示（图标按钮必须可读，界面设计规范 §2.6）。</summary>
+    public string CompactToggleTip => IsCompactMode ? Loc["app.window.expand"] : Loc["app.window.compact"];
+
+    /// <summary>收束 / 展开。状态本身由窗口壳订阅 <see cref="IsCompactMode"/> 后调整几何（见 MainWindow）。</summary>
+    [RelayCommand]
+    private void ToggleCompact() => IsCompactMode = !IsCompactMode && CanToggleCompact;
+
+    /// <summary>正在监听的 <see cref="SkinsViewModel.Packages"/>（切载具会换集合实例，要重订）。</summary>
+    private ObservableCollection<SkinPackage>? _watchedPackages;
+
+    partial void OnSelectedTabChanged(TabKey value) => RefreshCompactAvailability();
+
+    partial void OnIsCompactModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowCompactButton));
+        OnPropertyChanged(nameof(CompactToggleTip));
+    }
+
+    private void OnSkinsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SkinsViewModel.Packages)) AttachPackagesWatcher();
+
+        if (e.PropertyName is nameof(SkinsViewModel.HasSelection)
+            or nameof(SkinsViewModel.Packages)
+            or nameof(SkinsViewModel.PackagesTitle))
+        {
+            RefreshCompactAvailability();
+        }
+    }
+
+    private void AttachPackagesWatcher()
+    {
+        if (_watchedPackages != null) _watchedPackages.CollectionChanged -= OnCompactPackagesChanged;
+
+        _watchedPackages = Skins.Packages;
+        _watchedPackages.CollectionChanged += OnCompactPackagesChanged;
+    }
+
+    private void OnCompactPackagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => RefreshCompactAvailability();
+
+    /// <summary>条件不再成立（切页 / 取消选载具 / 包被删光）→ 自动退出紧凑，同时刷新按钮可见性。</summary>
+    private void RefreshCompactAvailability()
+    {
+        var can = SelectedTab == TabKey.Skins && Skins.HasSelection && Skins.Packages.Count > 0;
+        if (IsCompactMode && !can) IsCompactMode = false;
+
+        OnPropertyChanged(nameof(CanToggleCompact));
+        OnPropertyChanged(nameof(ShowCompactButton));
+    }
 
     /// <summary>涂装管理页视图模型（导入入口 + 涂装包卡片）</summary>
     public SkinsViewModel Skins { get; }
@@ -356,6 +429,11 @@ public partial class MainViewModel : ObservableObject
             ?? AvailableLanguages.FirstOrDefault();
 
         Skins = new SkinsViewModel(config);
+
+        // 紧凑态的存在条件是"涂装管理页 + 已选载具 + 有包"：订阅变化，条件失效时自动退出（按钮也随之隐藏）
+        Skins.PropertyChanged += OnSkinsPropertyChanged;
+        AttachPackagesWatcher();
+
         Vehicles = new VehiclesViewModel(config);
         PartReuse = new PartReuseViewModel(config);
         WtLive = new WtLiveViewModel(); // 列表数据全部来自站点，进页面才拉（首屏懒加载）

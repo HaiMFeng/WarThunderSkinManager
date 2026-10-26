@@ -60,9 +60,39 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
                            VerticalAlignment="Center" Margin="14,0"
-                           FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}"/>
+                           FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource BrushTextSecondary}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <!-- 紧凑态只留工具按钮与一列卡片，标题文字让位给宽度 -->
+                                <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,6,0">
+                    <!-- 收束 / 展开（窄条模式）：放在置顶与窗口按钮**整组的最左侧**。
+                         仅「涂装管理页 + 已选载具 + 至少一个包」时出现；紧凑态恒可见，保证能退出。
+                         图标：收束 F066（compress）/ 展开 F065（expand）。 -->
+                    <Button Command="{Binding ToggleCompactCommand}" ToolTip="{Binding CompactToggleTip}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
+                                <Setter Property="Content" Value="&#xF066;"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                        <Setter Property="Content" Value="&#xF065;"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ShowCompactButton}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
                     <!-- 置顶：点一下置顶、再点一下取消（图钉 &#xF08D;；置顶时图标变主色以示状态） -->
                     <Button Content="&#xF08D;" Click="Pin_Click" ToolTip="{loc:Loc app.window.pin}">
                         <Button.Style>
@@ -88,6 +118,10 @@
                                     <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
                                                  Value="Maximized">
                                         <Setter Property="Content" Value="&#xF2D2;"/>
+                                    </DataTrigger>
+                                    <!-- 紧凑态隐藏最大化：窄条不该被拉成全屏，双击标题栏也同样禁用（见 code-behind） -->
+                                    <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -150,6 +184,10 @@
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </DataTrigger.EnterActions>
+                                </DataTrigger>
+                                <!-- 紧凑态整列收起（列宽 Auto → 0）；退出后按原折叠偏好恢复 -->
+                                <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -337,7 +375,18 @@
 
                 <!-- 右侧内容 -->
                 <Border Grid.Column="1" Background="{StaticResource BrushBackground}">
-                    <Grid Margin="28">
+                    <Grid>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Margin" Value="28"/>
+                                <Style.Triggers>
+                                    <!-- 紧凑态去掉 28 的外边距：宽度都要留给那一列卡片 -->
+                                    <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
+                                        <Setter Property="Margin" Value="0"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
                         <views:SkinManagementView>
                             <views:SkinManagementView.Style>
                                 <Style TargetType="UserControl">

@@ -82,7 +82,22 @@ public partial class SkinManagementView : UserControl
         }
 
         cardWidth = Math.Max(MinCardWidth, cardWidth);
-        AnimateCardSize(cardWidth, Math.Round(cardWidth * 0.72));
+
+        // 紧凑（窄条）态由"窗口变窄"触发一次尺寸重算：这里**不进动画**，
+        // 否则收窄的 150ms 里卡片先被拉扁再回弹，看起来像闪一下
+        if (DataContext is MainViewModel { IsCompactMode: true })
+        {
+            var panel = FindCardsPanel();
+            if (panel != null)
+            {
+                panel.ItemWidth = cardWidth;
+                panel.ItemHeight = Math.Round(cardWidth * 0.72);
+            }
+        }
+        else
+        {
+            AnimateCardSize(cardWidth, Math.Round(cardWidth * 0.72));
+        }
 
         if (DataContext is MainViewModel main)
             main.Skins.SetCardSize(cardWidth);

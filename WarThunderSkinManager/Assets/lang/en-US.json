@@ -1,6 +1,8 @@
 {
   "app.title": "WarThunder Skin Manager",
   "app.window.pin": "Pin above other windows; click again to unpin",
+  "app.window.compact": "Collapse to a narrow strip (current vehicle's skins only, always on top)",
+  "app.window.expand": "Exit the narrow strip and restore the window",
   "app.alreadyRunning": "WarThunderSkinManager is already running; use the window that is already open.",
   "app.error.unhandled": "The app hit an error. It has been written to the log, and you can keep using it.\n\n{0}",
   "app.language.name": "English",
