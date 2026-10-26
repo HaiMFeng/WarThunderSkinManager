@@ -43,7 +43,7 @@
                     <TextBlock x:Name="HeaderTitle" VerticalAlignment="Center"
                                Text="{loc:Loc wtlive.page.title}" Style="{StaticResource PageTitle}"/>
 
-                    <Button Content="&#xF060;" Style="{StaticResource IconButton}"
+                    <Button Content="&#xF053;" Style="{StaticResource IconButton}"
                             Width="28" Height="28" FontSize="13" Margin="12,2,0,0"
                             VerticalAlignment="Center" ToolTip="{loc:Loc wtlive.nav.back}"
                             Command="{Binding WtLive.GoBackCommand}"/>
@@ -51,7 +51,7 @@
                             Width="28" Height="28" FontSize="13" Margin="4,2,0,0"
                             VerticalAlignment="Center" ToolTip="{loc:Loc wtlive.refresh}"
                             Command="{Binding WtLive.RefreshCommand}"/>
-                    <Button Content="&#xF061;" Style="{StaticResource IconButton}"
+                    <Button Content="&#xF054;" Style="{StaticResource IconButton}"
                             Width="28" Height="28" FontSize="13" Margin="4,2,0,0"
                             VerticalAlignment="Center" ToolTip="{loc:Loc wtlive.nav.forward}"
                             Command="{Binding WtLive.GoForwardCommand}"/>
