@@ -45,6 +45,9 @@ blk解析重构计划.md
 # 本地安装的 AI 技能（发布流程等，仅本机使用，不入库）
 .codebuddy/skills/
 
+# 本地工具包（Font Awesome 桌面版解压：查图标 / 渲染候选；仅本机使用，不入库）
+.tools/
+
 # 发布产物（单文件 exe 与 zip），不入库
 dist/
 
