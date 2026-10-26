@@ -944,7 +944,7 @@ public partial class SkinsViewModel : ObservableObject
 
             var message = Loc.Format("skins.syncDone", report.BlkEntries, report.WrittenTextures);
             if (report.Warnings.Count > 0)
-                message += " " + Loc.Format("skins.syncWarnings", report.Warnings.Count);
+                message += Loc.Format("skins.syncWarnings", report.Warnings.Count);
             return message;
         }
         catch (Exception ex)

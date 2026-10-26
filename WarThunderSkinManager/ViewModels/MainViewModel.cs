@@ -814,7 +814,7 @@ public partial class MainViewModel : ObservableObject
             GameSyncStatus = report.HasWarnings
                 ? string.Join("；", report.Warnings)
                 : Loc.Format("gsync.done", report.Updated, report.Cleared)
-                  + (report.Skipped > 0 ? " " + Loc.Format("gsync.skippedSuffix", report.Skipped) : "");
+                  + (report.Skipped > 0 ? Loc.Format("gsync.skippedSuffix", report.Skipped) : "");
 
             if (report.HasWarnings) ShowStatus(GameSyncStatus);
             else if (!silent) ShowStatus(Loc.Format("gsync.done", report.Updated, report.Cleared));
