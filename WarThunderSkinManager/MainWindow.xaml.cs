@@ -236,8 +236,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 进入窄条：记住原几何 / 最大化状态 / 置顶状态 → 解除最大化 → 锁定宽度区间 → 收窄并**以右上角为锚**
-    /// （右侧与顶部不动，向左长出去，避免窗口在游戏旁"跳"到别处）→ 自动置顶。
+    /// 进入窄条：记住原几何 / 最大化状态 / 置顶状态 → 解除最大化 → 锁定宽度区间 → 收窄。
+    /// **以左上角为锚**（Left / Top 不变，右边缘向左收），窗口不会在屏幕上"跳"到别处。
     /// 高度保持不变（需求约定），卡片列在内部滚动。
     /// </summary>
     private void EnterCompactMode()
@@ -261,7 +261,9 @@ public partial class MainWindow : Window
         var width = Math.Clamp(CompactDefaultWidth, CompactMinWidth, CompactMaxWidth);
         Width = width;
         Height = _compactSavedBounds.Height;
-        Left = _compactSavedBounds.Right - width;
+
+        // 左上角不动：宽度从右边收进来（与窗口右上角对调会让人找不到窗口）
+        Left = _compactSavedBounds.Left;
         Top = _compactSavedBounds.Top;
     }
 
