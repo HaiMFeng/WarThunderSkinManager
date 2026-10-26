@@ -658,7 +658,7 @@ internal static class SelfTest
                 ("信息", 0xF05A), ("警告", 0xF071), ("错误", 0xF06A), ("询问", 0xF059), ("锁", 0xF023),
                 // 浏览历史后退 / 前进：与详情轮播同一对 chevron（简约的 < >，与同排图标密度一致）
                 ("后退", 0xF053), ("前进", 0xF054),
-                ("收束为窄条", 0xF066), ("退出窄条", 0xF065)
+                ("收束为窄条", 0xF191)
             };
             var missingIcons = iconFontOk && iconGlyphs != null
                 ? iconCodes.Where(c => !iconGlyphs.CharacterToGlyphMap.ContainsKey(c.Code))

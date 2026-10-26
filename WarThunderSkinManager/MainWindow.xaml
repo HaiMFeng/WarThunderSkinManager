@@ -76,14 +76,15 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,6,0">
                     <!-- 收束 / 展开（窄条模式）：放在置顶与窗口按钮**整组的最左侧**。
                          仅「涂装管理页 + 已选载具 + 至少一个包」时出现；紧凑态恒可见，保证能退出。
-                         图标：收束 F066（compress）/ 展开 F065（expand）。 -->
+                         图标 F191（square-caret-left：实心方块 + 左箭头，FA Free）；**用颜色表示是否激活**，
+                         与置顶按钮同一规则：处于窄条时图标变主色，再点一次退出。 -->
                     <Button Command="{Binding ToggleCompactCommand}" ToolTip="{Binding CompactToggleTip}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
-                                <Setter Property="Content" Value="&#xF066;"/>
+                                <Setter Property="Content" Value="&#xF191;"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsCompactMode}" Value="True">
-                                        <Setter Property="Content" Value="&#xF065;"/>
+                                        <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding ShowCompactButton}" Value="False">
                                         <Setter Property="Visibility" Value="Collapsed"/>
