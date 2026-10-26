@@ -143,6 +143,25 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
     /// <summary>可视窗口变化：宿主据此保留 / 释放缩略图位图（<c>Keep</c> = 实体化范围，<c>Preload</c> 更大一圈）。</summary>
     public event EventHandler<(int KeepFirst, int KeepLast, int PreloadFirst, int PreloadLast)>? WindowChanged;
 
+    /// <summary>交互式缩放中：冻结列宽与布局（每个像素都重排全表是拖动卡顿的主因）。</summary>
+    private bool _resizeSuspended;
+
+    /// <summary>
+    /// 系统 resize 循环开始（窗口 <c>WM_ENTERSIZEMOVE</c>）时调用：
+    /// 之后每次测量都沿用**上一次的列宽**，不重排、不重测、不刷新缩略图窗口，
+    /// 画面只是被裁切 / 露出空白；松手后 <see cref="EndResize"/> 一次性重排。
+    /// </summary>
+    public void BeginResize() => _resizeSuspended = true;
+
+    /// <summary>系统 resize 循环结束：解除冻结并请求一次完整重排。</summary>
+    public void EndResize()
+    {
+        if (!_resizeSuspended) return;
+
+        _resizeSuspended = false;
+        InvalidateMeasure();
+    }
+
     // ==================== XAML 可调的尺寸参数（与 MasonryPanel 同名同义）====================
 
     public static readonly DependencyProperty TargetItemWidthProperty = DependencyProperty.Register(
@@ -450,13 +469,25 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
             ? TargetItemWidth
             : availableSize.Width;
 
-        var (columns, itemWidth) =
-            MasonryLayout.ResolveColumns(available, TargetItemWidth, MinItemWidth, MaxItemWidth, MaxColumns, gap);
+        int columns;
+        double itemWidth;
 
-        ColumnWidth = itemWidth; // 发布给卡片（图片高度绑定它）
+        if (_resizeSuspended && _layoutColumns > 0 && ColumnWidth > 0)
+        {
+            // 交互式缩放中：冻结列宽（沿用上一次布局），不跟着每个像素重排
+            columns = _layoutColumns;
+            itemWidth = ColumnWidth;
+        }
+        else
+        {
+            (columns, itemWidth) =
+                MasonryLayout.ResolveColumns(available, TargetItemWidth, MinItemWidth, MaxItemWidth, MaxColumns, gap);
 
-        // 列宽变了 / 项数变了 → 落位重来（换列宽时实测高度会一并作废，见 RebuildLayout）
-        if (_layoutWidthKey != WidthKey(itemWidth) || _layoutCount != count)
+            ColumnWidth = itemWidth; // 发布给卡片（图片高度绑定它）
+        }
+
+        // 项数变了必须重排；列宽变了只在**非缩放中**重排
+        if (_layoutCount != count || (!_resizeSuspended && _layoutWidthKey != WidthKey(itemWidth)))
             RebuildLayout(0, columns, itemWidth, gap);
 
         var viewportHeight = ViewportHeight;
@@ -523,7 +554,7 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
         // 不放 —— 窗口变窄时该换行的卡片不换行，卡片内容比"按新列宽估出来的槽位"矮/高，
         // 于是截断或多出一段空白（实测：列宽 257 → 254.7，卡片实际渲染宽度还是 257）
         var widthKey = WidthKey(itemWidth);
-        var remeasureAll = _childrenMeasuredWidthKey != widthKey;
+        var remeasureAll = !_resizeSuspended && _childrenMeasuredWidthKey != widthKey;
 
         using (generator.StartAt(startPosition, GeneratorDirection.Forward, true))
         {
@@ -599,7 +630,9 @@ public sealed class VirtualizingMasonryPanel : VirtualizingPanel, IMasonryPanel
         // 宿主（VM）据窗口**决定保留 / 释放缩略图位图**，并按 Keep（实体化范围 = 用户正看着的几屏）
         // **优先补取**：Keep 圈在 Preload 圈里面，宿主先取里面那一圈，外面那一圈排在后面 ——
         // 反过来的话远端几百张会插在可见卡片前面，可见卡片等超 5 s 就冒"重新加载"，看着像图丢了
-        WindowChanged?.Invoke(this, (first, last, preloadFirst, preloadLast));
+        // 缩放中不通知宿主：窗口范围没变，反复通知只会让 VM 反复核对 / 取消缩略图
+        if (!_resizeSuspended)
+            WindowChanged?.Invoke(this, (first, last, preloadFirst, preloadLast));
     }
 
     protected override Size ArrangeOverride(Size finalSize)

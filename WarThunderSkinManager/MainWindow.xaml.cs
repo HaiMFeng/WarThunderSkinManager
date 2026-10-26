@@ -26,6 +26,19 @@ public partial class MainWindow : Window
     private Point _titleBarMouseDownPos;
     private bool _titleBarDragStarted;
 
+    /// <summary>
+    /// 是否正处在**交互式拖动缩放**中（系统 resize 循环：按下边框 → 松开鼠标）。
+    /// 页面里所有"随宽度重排"的活儿都要看它：拖动过程中冻结布局，松手后再一次性重算，
+    /// 否则每个像素都会触发整页重排（涂装卡片 WrapPanel / WT Live 瀑布流尤其贵）。
+    /// </summary>
+    public bool IsResizing { get; private set; }
+
+    /// <summary>交互式缩放开始（WM_ENTERSIZEMOVE）。</summary>
+    public event Action? ResizeStarted;
+
+    /// <summary>交互式缩放结束（WM_EXITSIZEMOVE）：各页面在这里做唯一一次重排。</summary>
+    public event Action? ResizeEnded;
+
     // ---- 紧凑（窄条）模式：窗口几何 ----
     // 宽度链路：Window → RootBorder 边框 2 → Card 边框 2 + 内边距 16（紧凑态）→ 卡片列表滚动条 14。
     // 因此"卡片宽 + 34 = 窗口宽"；下/上限与 SkinManagementView 的 MinCardWidth / MaxCardWidth 对齐。
@@ -318,6 +331,24 @@ public partial class MainWindow : Window
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int WM_GETMINMAXINFO = 0x0024;
+        const int WM_ENTERSIZEMOVE = 0x0231;
+        const int WM_EXITSIZEMOVE = 0x0232;
+
+        // 交互式拖拽缩放的起止边界（移动窗口也会走这两个消息，但不改尺寸，重排一次代价很小）
+        if (msg == WM_ENTERSIZEMOVE)
+        {
+            IsResizing = true;
+            ResizeStarted?.Invoke();
+            return IntPtr.Zero;
+        }
+
+        if (msg == WM_EXITSIZEMOVE)
+        {
+            IsResizing = false;
+            ResizeEnded?.Invoke();
+            return IntPtr.Zero;
+        }
+
         if (msg != WM_GETMINMAXINFO) return IntPtr.Zero;
 
         var monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);

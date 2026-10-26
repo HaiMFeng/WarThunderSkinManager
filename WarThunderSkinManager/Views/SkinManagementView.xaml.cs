@@ -32,13 +32,24 @@ public partial class SkinManagementView : UserControl
     private FrameworkElement? _dragContainer;
     private DateTime _lastReorder = DateTime.MinValue;
 
-    public SkinManagementView() => InitializeComponent();
+    /// <summary>宿主窗口（拿它的 resize 起止事件；换窗口 / 卸载时解绑）。</summary>
+    private MainWindow? _hostWindow;
+
+    /// <summary>交互式缩放中：冻结卡片尺寸，松手后再重算一次（拖动期间逐像素重排太贵）。</summary>
+    private bool _suspendForResize;
+
+    public SkinManagementView()
+    {
+        InitializeComponent();
+        Unloaded += (_, _) => UnhookWindowResize();
+    }
 
     // ==================== 卡片尺寸自适应 + 过渡动画 ====================
 
     private void PackageList_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!IsLoaded) return;
+        if (_suspendForResize) return;    // 交互式缩放中：冻结布局，松手后统一重算
         if (_dragPackageId != null) return; // 拖动中不重算尺寸，避免与排序动画互相干扰
 
         UpdateCardSize(e.NewSize.Width);
@@ -46,7 +57,67 @@ public partial class SkinManagementView : UserControl
 
     /// <summary>首次加载时立即按可用宽度定尺寸（首次 SizeChanged 发生在 IsLoaded 之前，会被跳过）。</summary>
     private void PackageList_Loaded(object sender, RoutedEventArgs e)
-        => UpdateCardSize(PackageList.ActualWidth);
+    {
+        HookWindowResize();
+        UpdateCardSize(PackageList.ActualWidth);
+    }
+
+    // ==================== 交互式缩放：冻结 → 松手后一次重算 ====================
+
+    private void HookWindowResize()
+    {
+        if (Window.GetWindow(this) is not MainWindow window || ReferenceEquals(window, _hostWindow)) return;
+
+        UnhookWindowResize();
+        _hostWindow = window;
+        window.ResizeStarted += OnHostResizeStarted;
+        window.ResizeEnded += OnHostResizeEnded;
+    }
+
+    private void UnhookWindowResize()
+    {
+        if (_hostWindow == null) return;
+
+        _hostWindow.ResizeStarted -= OnHostResizeStarted;
+        _hostWindow.ResizeEnded -= OnHostResizeEnded;
+        _hostWindow = null;
+    }
+
+    private void OnHostResizeStarted()
+    {
+        if (!IsLoaded) return;
+
+        _suspendForResize = true;
+        FreezeCardSize();
+    }
+
+    private void OnHostResizeEnded()
+    {
+        if (!IsLoaded) return;
+
+        _suspendForResize = false;
+        // 松手后**不做 150ms 过渡**：拖动刚结束再让整页重排一遍动画，观感更拖沓
+        UpdateCardSize(PackageList.ActualWidth, animate: false);
+    }
+
+    /// <summary>
+    /// 把卡片尺寸停在"当前看到的这一帧"：动画的 FillBehavior=Stop 会把有效值退回目标值，
+    /// 缩放期间继续跑还会持续触发 WrapPanel 重排，所以先取当前有效值再摘掉动画。
+    /// </summary>
+    private void FreezeCardSize()
+    {
+        var panel = FindCardsPanel();
+        if (panel == null) return;
+
+        var width = panel.ItemWidth;
+        var height = panel.ItemHeight;
+
+        panel.BeginAnimation(WrapPanel.ItemWidthProperty, null);
+        panel.BeginAnimation(WrapPanel.ItemHeightProperty, null);
+
+        if (!double.IsNaN(width) && width > 0) panel.ItemWidth = width;
+        if (!double.IsNaN(height) && height > 0) panel.ItemHeight = height;
+    }
 
     /// <summary>
     /// 滚动条出现 / 消失会改变视口宽（= 卡片可用宽）：紧凑态单列时重新落一次尺寸，
@@ -54,6 +125,7 @@ public partial class SkinManagementView : UserControl
     /// </summary>
     private void PackageList_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        if (_suspendForResize) return; // 缩放中滚动条可能反复出现 / 消失，别在这里插一脚
         if (Math.Abs(e.ViewportWidthChange) < 0.5) return;
         UpdateCardSize(PackageList.ActualWidth); // 正常态 / 紧凑态都要跟着视口宽重算
     }
@@ -73,7 +145,7 @@ public partial class SkinManagementView : UserControl
     }
 
     /// <summary>按列表可用宽度计算卡片尺寸并做过渡动画。</summary>
-    private void UpdateCardSize(double listWidth)
+    private void UpdateCardSize(double listWidth, bool animate = true)
     {
         var compact = DataContext is MainViewModel { IsCompactMode: true };
 
@@ -114,8 +186,15 @@ public partial class SkinManagementView : UserControl
         cardWidth = Math.Max(MinCardWidth, cardWidth);
         slotWidth = cardWidth + CardGap; // 被最小宽撑大时仍保持左右各 6
 
-        AnimateCardSize(slotWidth, ItemHeightOf(cardWidth));
-        SetCardWidth(cardWidth);
+        if (animate)
+        {
+            AnimateCardSize(slotWidth, ItemHeightOf(cardWidth));
+            SetCardWidth(cardWidth);
+        }
+        else
+        {
+            ApplyCardSize(slotWidth, cardWidth);
+        }
     }
 
     /// <summary>直接落卡片尺寸（紧凑态：不进 150ms 过渡，否则收窄 / 展开时会先被拉扁再回弹）。</summary>

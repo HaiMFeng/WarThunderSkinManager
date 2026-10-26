@@ -26,6 +26,9 @@ public partial class WtLiveView : UserControl
     /// <summary>瀑布流面板（浏览页用虚拟化的那个；两种面板都实现 <see cref="IMasonryPanel"/>）。</summary>
     private IMasonryPanel? _panel;
 
+    /// <summary>宿主窗口（拿 resize 起止事件；卸载时解绑）。</summary>
+    private MainWindow? _resizeHost;
+
     /// <summary>已经订阅过胶囊集合的那个 VM（换了 VM 要重新订阅，且不能重复订阅）。</summary>
     private WtLiveViewModel? _chipAutoScrollSource;
 
@@ -52,6 +55,9 @@ public partial class WtLiveView : UserControl
         // 挂 Loaded 而不是 DataContextChanged：这条挂的是**控件自己的条目集**（见 HookListReset），
         // 与 DataContext 是否就位无关
         Loaded += (_, _) => HookListReset();
+
+        // 宿主窗口的 resize 事件是实例订阅：页面被换掉时必须解绑，否则窗口握着已卸载页面的委托
+        Unloaded += (_, _) => UnhookHostResize();
 
         // 首屏懒加载：本页不在启动路径上（多数用户不会进），进来才发请求。
         // 切页只是 Visibility 变化，所以用 IsVisibleChanged 而不是 Loaded（后者一辈子只触发一次）
@@ -161,8 +167,36 @@ public partial class WtLiveView : UserControl
             // 窗口被拖到缩放比不同的另一块屏幕上：列宽（DIP）没变，但设备像素变了
             if (Window.GetWindow(this) is { } window) window.DpiChanged += (_, _) => PushThumbnailWidth();
 
+            // 交互式缩放：面板冻结列宽，松手后一次性重排。
+            // 否则拖动时每个像素都会改列宽 → 全表重排 + 实体化卡片全量重测 + 缩略图窗口反复通知。
+            if (Window.GetWindow(this) is MainWindow mainWindow)
+            {
+                _resizeHost = mainWindow;
+                mainWindow.ResizeStarted += OnHostResizeStarted;
+                mainWindow.ResizeEnded += OnHostResizeEnded;
+            }
+
             PushThumbnailWidth();
         }));
+    }
+
+    private void OnHostResizeStarted()
+    {
+        if (_panel is VirtualizingMasonryPanel panel) panel.BeginResize();
+    }
+
+    private void OnHostResizeEnded()
+    {
+        if (_panel is VirtualizingMasonryPanel panel) panel.EndResize();
+    }
+
+    private void UnhookHostResize()
+    {
+        if (_resizeHost == null) return;
+
+        _resizeHost.ResizeStarted -= OnHostResizeStarted;
+        _resizeHost.ResizeEnded -= OnHostResizeEnded;
+        _resizeHost = null;
     }
 
     /// <summary>把「缩略图要占多少设备像素」下发给 VM = 面板列宽（DIP）× 当前屏幕缩放。</summary>
