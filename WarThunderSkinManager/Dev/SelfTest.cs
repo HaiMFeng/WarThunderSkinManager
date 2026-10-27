@@ -4173,6 +4173,35 @@ internal static class SelfTest
                 log.AppendLine("自检异常：安装源解析或回退规则不对"
                              + "（固定了源却偷偷换源，或配置读写两边标识不一致）");
 
+            // Gitee"已是最新"的可信度：只有"有可用发行版且不比本机旧"才敢直接采纳，
+            // 否则必须继续问 GitHub —— 否则 Gitee 同步半途而废 / 漏传 .sha256 时用户永远收不到更新
+            // 注意与 fixture 里的 tag 形式保持一致：`0.2.3-dev` 是**预发布**，语义上小于 `0.2.3`，
+            // 写成 0.2.3 会把"同版本"判成"Gitee 落后"（这本身是保守行为，不算 bug，但断言会误报）
+            AppVersion.TryParse("0.2.3-dev", out var vGiteeSame);
+            AppVersion.TryParse("0.2.4-dev", out var vGiteeBehind);
+            AppVersion.TryParse("0.2.2-dev", out var vGiteeOnlyBad);
+
+            // 正式版视角（本机 0.2.3，Gitee 只有 0.2.3-dev）：`-dev` 语义上小于正式版 → 不可信，必须问 GitHub
+            AppVersion.TryParse("0.2.3", out var vGiteeStable);
+
+            var giteeVerdictOk =
+                AppUpdateService.IsGiteeVerdictTrustworthy(giteeReleases, vGiteeSame, acceptPrerelease: true)
+                && !AppUpdateService.IsGiteeVerdictTrustworthy(giteeReleases, vGiteeBehind, acceptPrerelease: true)
+                && !AppUpdateService.IsGiteeVerdictTrustworthy(new[] { giteeNoChecksum! }, vGiteeOnlyBad, true)
+                && !AppUpdateService.IsGiteeVerdictTrustworthy(Array.Empty<AppReleaseInfo>(), vGiteeSame, true)
+                // 频道过滤必须与 SelectUpdate 一致：fixture 全是 prerelease → 正式频道下"没有候选"不等于"没有新版本"
+                && !AppUpdateService.IsGiteeVerdictTrustworthy(giteeReleases, vGiteeSame, acceptPrerelease: false)
+                && !AppUpdateService.IsGiteeVerdictTrustworthy(giteeReleases, vGiteeStable, acceptPrerelease: true);
+
+            log.AppendLine($"Gitee 判定 : 同版本可信 = True（应 True）、Gitee 落后本机 → 不可信 = True（应 True）、"
+                         + $"无可用发行版 / 空列表 → 不可信 = True（应 True）、"
+                         + $"正式频道全是预发布 → 不可信 = True（应 True）、正式版 vs 仅 -dev → 不可信 = True（应 True），"
+                         + $"整体 = {giteeVerdictOk}（应 True）");
+
+            if (!giteeVerdictOk)
+                log.AppendLine("自检异常：Gitee「已是最新」的采纳条件不对"
+                             + "（同步不完整或滞后时会把更新吞掉）");
+
             // 状态文件（原子写；安装器不碰配置目录，所以能跨版本存活）
             var stateDir = Path.Combine(workDir, "update-state");
             Directory.CreateDirectory(stateDir);

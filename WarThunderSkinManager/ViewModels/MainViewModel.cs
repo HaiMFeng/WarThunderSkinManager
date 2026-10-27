@@ -504,8 +504,8 @@ public partial class MainViewModel : ObservableObject
             new("gitee", AppUpdateService.AppUpdateSource.Gitee),
             new("github", AppUpdateService.AppUpdateSource.GitHub)
         };
-        _selectedAppUpdateSource = AppUpdateSources.FirstOrDefault(
-            s => string.Equals(s.Id, config.AppUpdateSource, StringComparison.OrdinalIgnoreCase))
+        var configuredSource = AppUpdateService.ParseSource(config.AppUpdateSource);
+        _selectedAppUpdateSource = AppUpdateSources.FirstOrDefault(s => s.Source == configuredSource)
             ?? AppUpdateSources[0];
 
         // 从详情浮窗点「下载」：下载流程走完（确认窗关掉、下载真的开始了）就**退出详情** ——
@@ -1967,11 +1967,12 @@ public partial class MainViewModel : ObservableObject
         if (value == null) return;
         if (string.Equals(value.Id, Config.AppUpdateSource, StringComparison.OrdinalIgnoreCase)) return;
 
-        // 不打断正在看的候选：只改下次检查 / 下载用的源（落盘由 OnConfigChanged 统一收尾）
+        // 落盘由 OnConfigChanged 统一收尾
         Config.AppUpdateSource = value.Id;
 
-        // 上次检查是失败的 → 换个源立刻重试一次，否则用户还得再点"检查更新"，容易以为没生效
-        if (AppUpdateState == AppUpdateUiState.Failed) _ = CheckAppUpdateCoreAsync(silent: false);
+        // 换源立刻重查一次：否则"已拿到候选"的那次结果仍来自旧源（下载也会走旧源的 URL），
+        // 用户会以为设置没生效。检查中 / 下载中 / 已就绪时下拉是禁用的，走不到这里。
+        if (AppUpdateSourceEnabled) _ = CheckAppUpdateCoreAsync(silent: false);
     }
 
     /// <summary>下载进度 0..1</summary>
@@ -2089,6 +2090,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(AppUpdateCanUnskip));
         OnPropertyChanged(nameof(AppUpdateReleaseUrl));
         OnPropertyChanged(nameof(AppUpdateShowSource));
+        OnPropertyChanged(nameof(AppUpdateSourceEnabled));
         OnPropertyChanged(nameof(HeavyActionsEnabled));
         OnPropertyChanged(nameof(IsMaintenance));
     }
@@ -2114,6 +2116,14 @@ public partial class MainViewModel : ObservableObject
     /// 「安装源」下拉是否显示：只有能自动更新的形态才有意义（便携运行的卡片只给手动下载入口，藏起来更干净）。
     /// </summary>
     public bool AppUpdateShowSource => AppUpdateState != AppUpdateUiState.NotInstalled;
+
+    /// <summary>
+    /// 「安装源」下拉是否可改：检查中 / 下载中 / 已就绪时禁用 ——
+    /// 那几段里改选择对"正在拿的候选 / 正在下的包"没有作用，只会让人以为设置没生效。
+    /// </summary>
+    public bool AppUpdateSourceEnabled => AppUpdateState
+        is AppUpdateUiState.Idle or AppUpdateUiState.UpToDate or AppUpdateUiState.Failed
+        or AppUpdateUiState.Skipped or AppUpdateUiState.Available;
 
     public bool AppUpdateCanUpdate => AppUpdateState == AppUpdateUiState.Available;
 
@@ -2253,6 +2263,12 @@ public partial class MainViewModel : ObservableObject
     {
         if (IsMaintenance) return;
 
+        // 重入守卫：定时器自动检查与手动点「检查更新」可能撞车（按钮的 CanExecute 刷新有滞后），
+        // 两个检查同时在飞会互相覆盖状态与候选。检查中再进来一律忽略。
+        // Ready 也要挡：安装包已下好、只等重启，这时若被定时器重查，状态会被改回 Available，
+        // 「立即重启并安装」跟着消失（磁盘上的 update-state.json 其实仍是待安装）。
+        if (AppUpdateState is AppUpdateUiState.Checking or AppUpdateUiState.Ready) return;
+
         // 便携运行（不是规范安装版）→ 不能自动更新，直接给结论与入口（§4.3）
         if (!AppUpdateService.IsInstalled())
         {
@@ -2262,11 +2278,13 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        AppUpdateState = AppUpdateUiState.Checking;
-        SetAppUpdateText("settings.appUpdate.checking"); // 自动检查也要有提示——不能留空白
-
         try
         {
+            // 置于 try **之内**：这两行若在 try 外抛异常（例如语言表缺键导致的格式化异常），
+            // 状态会永久停在 Checking，而「检查更新」按钮在 Checking 下是禁用的 → 只能重启。
+            AppUpdateState = AppUpdateUiState.Checking;
+            SetAppUpdateText("settings.appUpdate.checking"); // 自动检查也要有提示——不能留空白
+
             AppVersion.TryParse(AppInfo.Version, out var current);
             var source = SelectedAppUpdateSource?.Source ?? AppUpdateService.AppUpdateSource.Auto;
 
@@ -2280,11 +2298,15 @@ public partial class MainViewModel : ObservableObject
                 // 卡片给出可重试的结论（不弹窗，不算"打扰"）
                 AppUpdateState = AppUpdateUiState.Failed;
 
-                // 选"自动"才是笼统的"网络不可达"；固定了源就如实点名，否则用户不知道是哪个源不通
+                // 选"自动"才是笼统的"网络不可达"；固定了源就如实点名，否则用户不知道是哪个源不通。
+                // 名字用**品牌字面量**而不是下拉的显示名：文案参数会被缓存、切语言时重新格式化，
+                // 存"Gitee（国内）"这种本地化字符串会变成中英混排；而且这里要的是"当时失败的源"，
+                // 不是"现在下拉里选中的源"（检查期间用户还可能改过）
                 if (source == AppUpdateService.AppUpdateSource.Auto)
                     SetAppUpdateText("settings.appUpdate.failNetwork");
                 else
-                    SetAppUpdateText("settings.appUpdate.failSource", SelectedAppUpdateSource!.DisplayName);
+                    SetAppUpdateText("settings.appUpdate.failSource",
+                        source == AppUpdateService.AppUpdateSource.Gitee ? "Gitee" : "GitHub");
 
                 return;
             }

@@ -774,11 +774,20 @@ public static class AppUpdateService
             {
                 var pick = SelectUpdate(gitee, current, acceptPrerelease);
 
-                // 列表拿到了、但没有比当前更新的版本 → 直接给"已是最新"，不再去打 GitHub（省一次等待）
-                if (pick == null) return new AppUpdateCheckResult(true, null);
+                if (pick == null)
+                {
+                    // Gitee 的"没有更新的版本"只有在可信时才直接采纳（省一次等待），否则继续问 GitHub
+                    if (IsGiteeVerdictTrustworthy(gitee, current, acceptPrerelease))
+                        return new AppUpdateCheckResult(true, null);
+                }
+                else
+                {
+                    var sha = pick.Sha256.Length == 64
+                        ? pick.Sha256
+                        : await FetchChecksumAsync(pick.ChecksumUrl, token);
 
-                var sha = pick.Sha256.Length == 64 ? pick.Sha256 : await FetchChecksumAsync(pick.ChecksumUrl, token);
-                if (sha.Length == 64) return new AppUpdateCheckResult(true, pick with { Sha256 = sha });
+                    if (sha.Length == 64) return new AppUpdateCheckResult(true, pick with { Sha256 = sha });
+                }
             }
 
             // 用户点名只用 Gitee → 不通就如实报错，别偷偷换源（否则"我选了 Gitee 却走了 GitHub"很难解释）
@@ -789,6 +798,28 @@ public static class AppUpdateService
         if (github.Count == 0) return new AppUpdateCheckResult(false, null);
 
         return new AppUpdateCheckResult(true, SelectUpdate(github, current, acceptPrerelease));
+    }
+
+    /// <summary>
+    /// Gitee 的"没有更新的版本"是否**可信**（可信就直接给"已是最新"，不再问 GitHub）。
+    /// 不可信 = 继续问 GitHub，否则用户会被**静默**告知已是最新、永远收不到更新：
+    /// ① 一个可用发行版都没有（同步半途而废 / 漏传 <c>.sha256</c> / assets 为空）；
+    /// ② Gitee 的最新版本比本机还旧（同步滞后）。
+    /// </summary>
+    public static bool IsGiteeVerdictTrustworthy(IReadOnlyList<AppReleaseInfo> gitee, AppVersion current,
+        bool acceptPrerelease)
+    {
+        // 过滤口径必须与 SelectUpdate **完全一致**（含 prerelease 过滤）：口径不一致时，
+        // "候选被频道过滤掉了"会被误判成"Gitee 没有新版本"，于是直接给"已是最新"、连 GitHub 都不问
+        // （正式期把 acceptPrerelease 收紧成 false 时，这条会瞬间变成"所有用户都收不到更新"）
+        var usable = gitee.Where(r => r.IsUsable && (acceptPrerelease || !r.Prerelease)).ToList();
+        if (usable.Count == 0) return false;
+
+        var newest = usable
+            .Select(r => AppVersion.TryParse(r.Version, out var parsed) ? parsed : default)
+            .Aggregate((a, b) => a.CompareTo(b) >= 0 ? a : b);
+
+        return newest.CompareTo(current) >= 0;
     }
 
     /// <summary>取回并解析校验文件（失败 / 格式不对 → 空串，由调用方回退另一个源）。</summary>
@@ -916,13 +947,38 @@ public static class AppUpdateService
     public static async Task<bool> DownloadWithFallbackAsync(AppReleaseInfo release, bool allowFallback,
         string destinationPath, IProgress<DownloadProgress>? progress = null, CancellationToken token = default)
     {
-        if (await DownloadAsync(release.DownloadUrl, destinationPath, progress, token)) return true;
-        if (token.IsCancellationRequested) return false;
-        if (!allowFallback || release.FallbackDownloadUrl.Length == 0) return false;
+        var canFallback = allowFallback && release.FallbackDownloadUrl.Length > 0;
 
-        var partPath = destinationPath + ".part";
-        try { File.Delete(partPath); } catch { /* 删不掉就由备用源的 Range 判断兜住（会触发 416 → 重下） */ }
+        if (await DownloadAsync(release.DownloadUrl, destinationPath, progress, token))
+        {
+            // **200 不等于内容对**：劫持页 / 运营商错误页 / CDN 缓存错误都会正常返回 200，
+            // 下完先就地校验一次，不对就换源重来。几十 MB 的完整 SHA-256 放后台算，别卡 UI 线程。
+            // 摘要是空的情况不该走到这里（调用方会先拒）；不能换源时也不必在这儿预校验 ——
+            // 调用方的最终校验本来就会算一遍，这里再算纯属白跑一次几十 MB 的哈希。
+            if (!canFallback || release.Sha256.Length != 64) return true;
+
+            var valid = await Task.Run(
+                () => VerifyFile(destinationPath, release.AssetSize, release.Sha256, out _));
+
+            if (valid) return true;
+            if (token.IsCancellationRequested) return false;
+
+            TryDeleteFile(destinationPath); // 删掉坏包：换源后备用源会原地覆盖，留着只占空间
+        }
+        else if (token.IsCancellationRequested || !canFallback)
+        {
+            return false;
+        }
+
+        // 换源：**不能**拿另一源的 `.part` 续传（偏移对不上会拼出坏文件）→ 先删掉再整包重下
+        TryDeleteFile(destinationPath + ".part");
 
         return await DownloadAsync(release.FallbackDownloadUrl, destinationPath, progress, token);
+    }
+
+    /// <summary>尽力删除（删不掉不抛：由后续的 416 / 校验兜住）。</summary>
+    private static void TryDeleteFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* 忽略 */ }
     }
 }
