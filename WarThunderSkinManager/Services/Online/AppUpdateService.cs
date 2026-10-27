@@ -165,8 +165,21 @@ public sealed record AppReleaseInfo
     /// <summary>附件 sha256（取自 API 的 <c>assets[].digest</c>）；空 = 不可自动更新（fail closed）</summary>
     public string Sha256 { get; init; } = "";
 
+    /// <summary>
+    /// sha256 校验文件的地址（Gitee 侧没有 digest，靠发布时随包上传的 <c>&lt;附件名&gt;.sha256</c>）。
+    /// 空 = 该源不提供校验文件（GitHub 走 digest）。
+    /// </summary>
+    public string ChecksumUrl { get; init; } = "";
+
+    /// <summary>
+    /// 备用源的下载地址：主源下载失败时换它。两个地址指向**同一份字节**，用同一个 sha256 校验。
+    /// Gitee 首选、GitHub 兜底（§6.3）。
+    /// </summary>
+    public string FallbackDownloadUrl { get; init; } = "";
+
+    /// <summary>可用 = 有版本、有安装包名与地址，并且**有摘要**（digest 或校验文件），否则不参与自动更新。</summary>
     public bool IsUsable => Version.Length > 0 && AssetName.Length > 0
-        && DownloadUrl.Length > 0 && Sha256.Length == 64;
+        && DownloadUrl.Length > 0 && (Sha256.Length == 64 || ChecksumUrl.Length > 0);
 }
 
 /// <summary>更新流程的阶段（持久化到 <c>&lt;配置目录&gt;\update-state.json</c>）。</summary>
@@ -232,9 +245,27 @@ public static class AppUpdateService
     /// <summary>Releases 网页（「旧版本下载页」/「查看完整说明」）。</summary>
     public const string ReleasesPageUrl = "https://github.com/" + RepoOwner + "/" + RepoName + "/releases";
 
+    /// <summary>
+    /// 国内首选更新源：Gitee 上的**纯发行版仓库**（只放 Setup 与 <c>.sha256</c>，不放 zip、不镜像源码）。
+    /// 仓库名改了要同步 <c>scripts\sync-gitee.ps1</c> 的默认值。
+    /// </summary>
+    public const string GiteeOwner = "HaiMFeng";
+    public const string GiteeRepo = "WarThunderSkinManager-releases";
+
+    /// <summary>Gitee 发行版列表（匿名可读，实测 200；国内直连比 GitHub 稳）。</summary>
+    public const string GiteeReleasesApiUrl =
+        "https://gitee.com/api/v5/repos/" + GiteeOwner + "/" + GiteeRepo + "/releases?per_page=20";
+
+    /// <summary>Gitee 发行版网页（国内可访问的下载页）。</summary>
+    public const string GiteeReleasesPageUrl =
+        "https://gitee.com/" + GiteeOwner + "/" + GiteeRepo + "/releases";
+
     /// <summary>安装器附件的命名约定（与发布脚本一致）。</summary>
     public const string SetupAssetPrefix = "WarThunderSkinManager-Setup-";
     public const string SetupAssetSuffix = "-win-x64.exe";
+
+    /// <summary>校验文件后缀：发布时随 Setup 一起上传（Gitee 没有 digest，靠它把摘要送到客户端）。</summary>
+    public const string ChecksumAssetSuffix = ".sha256";
 
     /// <summary>Inno Setup 的 AppId（**必须与 <c>installer\WarThunderSkinManager.iss</c> 一致**）。
     /// 卸载项注册表键为 <c>{AppId}_is1</c>，据此判断"我是不是安装版"（§4.3）。</summary>
@@ -294,6 +325,112 @@ public static class AppUpdateService
         return result;
     }
 
+    /// <summary>
+    /// 解析 **Gitee** 的 Releases API。字段与 GitHub 不同：没有 <c>draft</c> / <c>published_at</c> /
+    /// <c>digest</c> / <c>size</c>，时间叫 <c>created_at</c>，附件是 <c>assets[].browser_download_url</c>。
+    /// 摘要不在列表里：Gitee 不提供 digest，要用随包上传的 <c>&lt;附件名&gt;.sha256</c>
+    /// （见 <see cref="TryParseChecksum"/>，由 <see cref="FindUpdateAsync"/> 在选中版本后取回）。
+    /// </summary>
+    public static List<AppReleaseInfo> ParseGiteeReleases(string json)
+    {
+        var result = new List<AppReleaseInfo>();
+
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var release in document.RootElement.EnumerateArray())
+        {
+            var tag = GetString(release, "tag_name");
+            if (tag.Length == 0) continue;
+
+            var info = new AppReleaseInfo
+            {
+                Tag = tag,
+                Version = tag[0] is 'v' or 'V' ? tag[1..] : tag,
+                Prerelease = release.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True,
+                PublishedAt = release.TryGetProperty("created_at", out var created)
+                              && created.ValueKind == JsonValueKind.String
+                              && DateTimeOffset.TryParse(created.GetString(), out var when)
+                    ? when
+                    : null,
+                Notes = GetString(release, "body"),
+                HtmlUrl = $"{GiteeReleasesPageUrl}/tag/{tag}"
+            };
+
+            result.Add(WithGiteeSetupAsset(info, release));
+        }
+
+        return result;
+    }
+
+    /// <summary>Gitee 侧的 Setup 与 <c>.sha256</c> 附件配对（两个附件挂在同一个 release 下）。</summary>
+    private static AppReleaseInfo WithGiteeSetupAsset(AppReleaseInfo info, JsonElement release)
+    {
+        if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+            return info;
+
+        var setupName = "";
+        var setupUrl = "";
+
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var name = GetString(asset, "name");
+            if (!IsSetupAssetName(name, info.Version)) continue;
+
+            var url = GetString(asset, "browser_download_url");
+            if (!IsTrustedDownloadUrl(url)) continue;
+
+            setupName = name;
+            setupUrl = url;
+            break;
+        }
+
+        if (setupName.Length == 0) return info;
+
+        var checksumUrl = "";
+        foreach (var asset in assets.EnumerateArray())
+        {
+            if (!string.Equals(GetString(asset, "name"), setupName + ChecksumAssetSuffix,
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var url = GetString(asset, "browser_download_url");
+            if (IsTrustedDownloadUrl(url)) checksumUrl = url;
+            break;
+        }
+
+        return info with
+        {
+            AssetName = setupName,
+            DownloadUrl = setupUrl,
+            ChecksumUrl = checksumUrl,
+            // Gitee 是首选源：下载失败换 GitHub（地址按命名规则拼，不用再打一次 API）
+            FallbackDownloadUrl = GitHubDownloadUrl(info.Tag, setupName)
+        };
+    }
+
+    /// <summary>
+    /// 从 <c>&lt;附件名&gt;.sha256</c> 里取出 sha256：容忍 <c>"hash  name"</c>、<c>"hash *name"</c>、
+    /// BSD 风格 <c>"SHA256 (name) = hash"</c> 与纯 hash —— 扫描第一个 64 位十六进制串即可。
+    /// </summary>
+    public static bool TryParseChecksum(string text, out string sha256)
+    {
+        sha256 = "";
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        foreach (var token in text.Split(new[] { ' ', '\t', '\r', '\n', '*' },
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.Length != 64) continue;
+            if (!token.All(Uri.IsHexDigit)) continue;
+
+            sha256 = token.ToLowerInvariant();
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>挑出该 release 里符合命名约定的 Setup 附件（含大小与 sha256 digest）。</summary>
     private static AppReleaseInfo WithSetupAsset(AppReleaseInfo info, JsonElement release)
     {
@@ -305,9 +442,7 @@ public static class AppUpdateService
             var name = GetString(asset, "name");
 
             // 名字必须严格匹配：前缀 + 含 -<版本>- + 后缀（**不按 content_type 判断**——实测它不一致）
-            if (!name.StartsWith(SetupAssetPrefix, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!name.EndsWith(SetupAssetSuffix, StringComparison.OrdinalIgnoreCase)) continue;
-            if (info.Version.Length > 0 && !name.Contains("-" + info.Version + "-", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsSetupAssetName(name, info.Version)) continue;
 
             var url = GetString(asset, "browser_download_url");
             if (!IsTrustedDownloadUrl(url)) continue;
@@ -322,12 +457,28 @@ public static class AppUpdateService
                 AssetName = name,
                 DownloadUrl = url,
                 AssetSize = asset.TryGetProperty("size", out var size) && size.TryGetInt64(out var value) ? value : 0,
-                Sha256 = sha256
+                Sha256 = sha256,
+                // GitHub 是兜底源：主源（Gitee）不通时换它；地址按命名规则拼，不需要再打一次 API
+                FallbackDownloadUrl = GiteeDownloadUrl(info.Tag, name)
             };
         }
 
         return info;
     }
+
+    /// <summary>安装器附件的命名判据（GitHub / Gitee 共用）。</summary>
+    private static bool IsSetupAssetName(string name, string version)
+        => name.StartsWith(SetupAssetPrefix, StringComparison.OrdinalIgnoreCase)
+           && name.EndsWith(SetupAssetSuffix, StringComparison.OrdinalIgnoreCase)
+           && (version.Length == 0 || name.Contains("-" + version + "-", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Gitee 侧的发布下载地址（两个平台的路径规则同形，可直接拼）。</summary>
+    private static string GiteeDownloadUrl(string tag, string assetName)
+        => $"https://gitee.com/{GiteeOwner}/{GiteeRepo}/releases/download/{tag}/{assetName}";
+
+    /// <summary>GitHub 侧的发布下载地址（备用源用）。</summary>
+    private static string GitHubDownloadUrl(string tag, string assetName)
+        => $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}/{assetName}";
 
     private static string GetString(JsonElement element, string name)
         => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
@@ -418,7 +569,7 @@ public static class AppUpdateService
         return true;
     }
 
-    /// <summary>下载地址白名单（§11 不变量 3）：只信 GitHub 的发布下载地址。</summary>
+    /// <summary>下载地址白名单（§11 不变量 3）：只信 GitHub / Gitee 的发布下载地址。</summary>
     public static bool IsTrustedDownloadUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return false;
@@ -426,10 +577,20 @@ public static class AppUpdateService
         if (uri.Scheme != Uri.UriSchemeHttps) return false;
 
         var host = uri.Host.ToLowerInvariant();
-        if (host != "github.com" && host != "objects.githubusercontent.com") return false;
 
-        return uri.AbsolutePath.StartsWith($"/{RepoOwner}/{RepoName}/releases/download/",
-            StringComparison.OrdinalIgnoreCase);
+        if (host is "github.com" or "objects.githubusercontent.com")
+        {
+            return uri.AbsolutePath.StartsWith($"/{RepoOwner}/{RepoName}/releases/download/",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (host == "gitee.com")
+        {
+            return uri.AbsolutePath.StartsWith($"/{GiteeOwner}/{GiteeRepo}/releases/download/",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     /// <summary>校验下载物：大小与 sha256 都要对得上（任一不符即**不可安装**）。</summary>
@@ -531,8 +692,8 @@ public static class AppUpdateService
 
     // ---------- 网络与下载（真机验证） ----------
 
-    /// <summary>拉取 Releases 列表（失败返回空表，由调用方静默处理）。</summary>
-    public static async Task<List<AppReleaseInfo>> FetchReleasesAsync(CancellationToken token)
+    /// <summary>拉取 **GitHub** 的 Releases 列表（失败返回空表，由调用方静默处理）。</summary>
+    public static async Task<List<AppReleaseInfo>> FetchGithubReleasesAsync(CancellationToken token)
     {
         try
         {
@@ -542,6 +703,66 @@ public static class AppUpdateService
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             return new List<AppReleaseInfo>();
+        }
+    }
+
+    /// <summary>拉取 **Gitee** 的 Releases 列表（失败返回空表）。</summary>
+    public static async Task<List<AppReleaseInfo>> FetchGiteeReleasesAsync(CancellationToken token)
+    {
+        try
+        {
+            var json = await Http.GetStringAsync(GiteeReleasesApiUrl, token);
+            return ParseGiteeReleases(json);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return new List<AppReleaseInfo>();
+        }
+    }
+
+    /// <summary>检查更新的结果：<c>Reached</c> = 至少有一个源应答；<c>Release</c> = 选中版本（null = 已是最新）。</summary>
+    public readonly record struct AppUpdateCheckResult(bool Reached, AppReleaseInfo? Release);
+
+    /// <summary>
+    /// 检查更新（§6.3）：**Gitee 首选**（国内直连稳），取不到再问 GitHub。
+    /// Gitee 的列表没有 digest → 选中版本后再取它的 <c>.sha256</c> 附件；取不到就换 GitHub 兜底
+    /// （**宁可走慢线路，也不在缺摘要时自动更新**）。
+    /// </summary>
+    public static async Task<AppUpdateCheckResult> FindUpdateAsync(AppVersion current, bool acceptPrerelease,
+        CancellationToken token)
+    {
+        var gitee = await FetchGiteeReleasesAsync(token);
+
+        if (gitee.Count > 0)
+        {
+            var pick = SelectUpdate(gitee, current, acceptPrerelease);
+
+            // 列表拿到了、但没有比当前更新的版本 → 直接给"已是最新"，不再去打 GitHub（省一次等待）
+            if (pick == null) return new AppUpdateCheckResult(true, null);
+
+            var sha = pick.Sha256.Length == 64 ? pick.Sha256 : await FetchChecksumAsync(pick.ChecksumUrl, token);
+            if (sha.Length == 64) return new AppUpdateCheckResult(true, pick with { Sha256 = sha });
+        }
+
+        var github = await FetchGithubReleasesAsync(token);
+        if (github.Count == 0) return new AppUpdateCheckResult(false, null);
+
+        return new AppUpdateCheckResult(true, SelectUpdate(github, current, acceptPrerelease));
+    }
+
+    /// <summary>取回并解析校验文件（失败 / 格式不对 → 空串，由调用方回退另一个源）。</summary>
+    private static async Task<string> FetchChecksumAsync(string url, CancellationToken token)
+    {
+        if (url.Length == 0) return "";
+
+        try
+        {
+            var text = await Http.GetStringAsync(url, token);
+            return TryParseChecksum(text, out var sha) ? sha : "";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return "";
         }
     }
 
@@ -639,5 +860,26 @@ public static class AppUpdateService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 下载安装包：**主源优先**（Gitee），失败再换备用源（GitHub）——两个源是同一份字节，用同一个 sha256 校验。
+    /// </summary>
+    /// <remarks>
+    /// 换源前必须**丢掉 `.part`**：两个源虽然内容相同，但"续传偏移"不能跨源混用
+    /// （Gitee 的附件下载还不支持 Range，实测直接返回 200 全量），否则会拼出一个长度对不上的坏文件。
+    /// 用户在下载中点取消时**不换源**（那不是网络故障）。
+    /// </remarks>
+    public static async Task<bool> DownloadWithFallbackAsync(AppReleaseInfo release, string destinationPath,
+        IProgress<DownloadProgress>? progress = null, CancellationToken token = default)
+    {
+        if (await DownloadAsync(release.DownloadUrl, destinationPath, progress, token)) return true;
+        if (token.IsCancellationRequested) return false;
+        if (release.FallbackDownloadUrl.Length == 0) return false;
+
+        var partPath = destinationPath + ".part";
+        try { File.Delete(partPath); } catch { /* 删不掉就由备用源的 Range 判断兜住（会触发 416 → 重下） */ }
+
+        return await DownloadAsync(release.FallbackDownloadUrl, destinationPath, progress, token);
     }
 }

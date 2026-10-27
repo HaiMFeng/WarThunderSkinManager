@@ -2204,11 +2204,15 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var releases = await AppUpdateService.FetchReleasesAsync(CancellationToken.None);
+            AppVersion.TryParse(AppInfo.Version, out var current);
 
-            if (releases.Count == 0)
+            // 内测期：接受预发布（正式期应收紧为 false，见 docs 应用自更新设计 §6.2）
+            // 源顺序：Gitee 首选、GitHub 兜底（§6.3）
+            var check = await AppUpdateService.FindUpdateAsync(current, acceptPrerelease: true, CancellationToken.None);
+
+            if (!check.Reached)
             {
-                // 网络不可达 / 限流（国内常见）→ 卡片给出可重试的结论（不弹窗，不算"打扰"）
+                // 两个源都拿不到（Gitee 也不通 / 被限流）→ 卡片给出可重试的结论（不弹窗，不算"打扰"）
                 AppUpdateState = AppUpdateUiState.Failed;
                 SetAppUpdateText("settings.appUpdate.failNetwork");
                 return;
@@ -2216,10 +2220,7 @@ public partial class MainViewModel : ObservableObject
 
             Config.LastAppUpdateCheckUtc = DateTime.UtcNow.ToString("o"); // 落盘由 OnConfigChanged 收尾统一做
 
-            AppVersion.TryParse(AppInfo.Version, out var current);
-
-            // 内测期：接受预发布（正式期应收紧为 false，见 docs 应用自更新设计 §6.2）
-            var pick = AppUpdateService.SelectUpdate(releases, current, acceptPrerelease: true);
+            var pick = check.Release;
 
             if (pick == null)
             {
@@ -2230,8 +2231,19 @@ public partial class MainViewModel : ObservableObject
             }
 
             _appUpdateRelease = pick;
-            SetAppUpdateVersionText("settings.appUpdate.versionSummary",
-                "v" + pick.Version, pick.AssetSize / 1024d / 1024d, pick.PublishedAt?.ToLocalTime().ToString("d") ?? "");
+
+            // Gitee 的列表不带附件体积（API 不提供 size）→ 用不显示体积的那条文案，别写"约 0.0 MB"
+            if (pick.AssetSize > 0)
+            {
+                SetAppUpdateVersionText("settings.appUpdate.versionSummary",
+                    "v" + pick.Version, pick.AssetSize / 1024d / 1024d, pick.PublishedAt?.ToLocalTime().ToString("d") ?? "");
+            }
+            else
+            {
+                SetAppUpdateVersionText("settings.appUpdate.versionSummaryNoSize",
+                    "v" + pick.Version, pick.PublishedAt?.ToLocalTime().ToString("d") ?? "");
+            }
+
             AppUpdateNotesText = PlainNotes(pick.Notes);
 
             if (string.Equals(pick.Version, Config.SkippedAppVersion, StringComparison.OrdinalIgnoreCase))
@@ -2314,7 +2326,8 @@ public partial class MainViewModel : ObservableObject
                     report.Received / 1024d / 1024d, report.Total / 1024d / 1024d, report.MegaBytesPerSecond);
             });
 
-            var downloaded = await AppUpdateService.DownloadAsync(release.DownloadUrl, installerPath,
+            // 主源（Gitee）失败自动换备用源（GitHub）；两个源是同一份字节，校验口径不变
+            var downloaded = await AppUpdateService.DownloadWithFallbackAsync(release, installerPath,
                 progress, _appUpdateCts.Token);
 
             if (!downloaded)

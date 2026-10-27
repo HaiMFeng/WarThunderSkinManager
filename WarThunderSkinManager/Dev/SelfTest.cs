@@ -4095,6 +4095,62 @@ internal static class SelfTest
                          + $"改一字节失败 = {verifyTampered}（应 True）、大小不符失败 = {verifyWrongSize}（应 True）、"
                          + $"digest 形状不对失败 = {verifyShortDigest}（应 True）");
 
+            // Gitee 首选源（§6.3）：字段与 GitHub 不同 —— 没有 digest / size，摘要来自同名的 .sha256 附件；
+            // 少了校验文件必须判"不可用"（fail closed：宁可回退 GitHub，也不在缺摘要时自动更新）
+            var giteeJson = """
+            [ { "id": 700, "tag_name": "v0.2.3-dev", "prerelease": true, "name": "WarThunder Skin Manager v0.2.3-dev",
+                "body": "国内源", "created_at": "2026-10-27T10:00:00+08:00",
+                "assets": [
+                  { "name": "WarThunderSkinManager-Setup-0.2.3-dev-win-x64.exe",
+                    "browser_download_url": "https://gitee.com/HaiMFeng/WarThunderSkinManager-releases/releases/download/v0.2.3-dev/WarThunderSkinManager-Setup-0.2.3-dev-win-x64.exe" },
+                  { "name": "WarThunderSkinManager-Setup-0.2.3-dev-win-x64.exe.sha256",
+                    "browser_download_url": "https://gitee.com/HaiMFeng/WarThunderSkinManager-releases/releases/download/v0.2.3-dev/WarThunderSkinManager-Setup-0.2.3-dev-win-x64.exe.sha256" } ] },
+              { "id": 701, "tag_name": "v0.2.2-dev", "prerelease": true, "name": "WarThunder Skin Manager v0.2.2-dev",
+                "body": "缺校验文件", "created_at": "2026-10-26T10:00:00+08:00",
+                "assets": [
+                  { "name": "WarThunderSkinManager-Setup-0.2.2-dev-win-x64.exe",
+                    "browser_download_url": "https://gitee.com/HaiMFeng/WarThunderSkinManager-releases/releases/download/v0.2.2-dev/WarThunderSkinManager-Setup-0.2.2-dev-win-x64.exe" } ] }
+            ]
+            """;
+
+            var giteeReleases = AppUpdateService.ParseGiteeReleases(giteeJson);
+            AppVersion.TryParse("0.2.1", out var vGiteeBase);
+            var giteePick = AppUpdateService.SelectUpdate(giteeReleases, vGiteeBase, acceptPrerelease: true);
+            var giteeGood = giteeReleases.FirstOrDefault(r => r.Version == "0.2.3-dev");
+            var giteeNoChecksum = giteeReleases.FirstOrDefault(r => r.Version == "0.2.2-dev");
+
+            var checksumOk = AppUpdateService.TryParseChecksum(
+                                new string('A', 64) + "  WarThunderSkinManager-Setup-0.2.3-dev-win-x64.exe",
+                                out var checksumSha)
+                             && checksumSha == new string('a', 64)
+                             && !AppUpdateService.TryParseChecksum("", out _)
+                             && !AppUpdateService.TryParseChecksum("not-a-hash", out _)
+                             && !AppUpdateService.TryParseChecksum(new string('a', 63), out _);
+
+            var giteeUrlOk = AppUpdateService.IsTrustedDownloadUrl(
+                                 "https://gitee.com/HaiMFeng/WarThunderSkinManager-releases/releases/download/v0.2.3-dev/a.exe")
+                             && !AppUpdateService.IsTrustedDownloadUrl(
+                                 "https://gitee.com/other/repo/releases/download/v0.2.3-dev/a.exe");
+
+            var giteeSourceOk = giteeReleases.Count == 2
+                                && giteePick?.Version == "0.2.3-dev"
+                                && giteeGood != null && giteeNoChecksum != null
+                                && giteeGood.IsUsable && giteeGood.AssetSize == 0
+                                && giteeGood.ChecksumUrl.Length > 0
+                                && giteeGood.FallbackDownloadUrl.Contains("github.com", StringComparison.Ordinal)
+                                && !giteeNoChecksum.IsUsable;
+
+            log.AppendLine($"Gitee 源   : 解析 {giteeReleases.Count} 条（应 2）、选中 {giteePick?.Version ?? "(无)"}（应 0.2.3-dev）、"
+                         + $"带 .sha256 → 可用 = {giteeGood?.IsUsable}（应 True）、体积缺省 = {giteeGood?.AssetSize == 0}（应 True）、"
+                         + $"缺 .sha256 → 不可用 = {giteeNoChecksum is { IsUsable: false }}（应 True）、"
+                         + $"备用地址指向 GitHub = {giteeGood?.FallbackDownloadUrl.Contains("github.com", StringComparison.Ordinal)}（应 True）");
+            log.AppendLine($"校验文件   : 解析 64 位 sha256 = {checksumOk}（应 True）、"
+                         + $"Gitee 地址白名单（本仓库通过 / 别家仓库被拒）= {giteeUrlOk}（应 True）");
+
+            if (!giteeSourceOk || !checksumOk || !giteeUrlOk)
+                log.AppendLine("自检异常：Gitee 源的解析 / 校验文件 / 地址白名单不符合预期"
+                             + "（会让国内首选源失效，或在缺摘要时仍然自动更新）");
+
             // 状态文件（原子写；安装器不碰配置目录，所以能跨版本存活）
             var stateDir = Path.Combine(workDir, "update-state");
             Directory.CreateDirectory(stateDir);
