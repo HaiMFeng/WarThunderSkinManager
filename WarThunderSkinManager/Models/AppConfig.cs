@@ -76,6 +76,12 @@ public partial class AppConfig : ObservableObject
     [ObservableProperty] private string _lastAppUpdateCheckUtc = "";
 
     /// <summary>
+    /// 应用更新的检查 / 下载源（§6.3）：<c>auto</c>（默认，Gitee 优先、失败回退 GitHub）/ <c>gitee</c> / <c>github</c>。
+    /// 未知值按 <c>auto</c> 处理（与其它配置项的容错口径一致）。
+    /// </summary>
+    [ObservableProperty] private string _appUpdateSource = "auto";
+
+    /// <summary>
     /// 进阶功能（设置页）：允许在涂装包属性页**手动编辑 blk 块原文**（§7.3）——
     /// 面向懂技术的用户；关闭时属性页只提供"选贴图"，不显示「编辑 blk 块」入口。
     /// </summary>

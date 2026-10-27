@@ -723,25 +723,66 @@ public static class AppUpdateService
     /// <summary>检查更新的结果：<c>Reached</c> = 至少有一个源应答；<c>Release</c> = 选中版本（null = 已是最新）。</summary>
     public readonly record struct AppUpdateCheckResult(bool Reached, AppReleaseInfo? Release);
 
+    /// <summary>检查 / 下载时优先用的源（用户在「更新应用」卡片上可选，§6.3）。</summary>
+    public enum AppUpdateSource
+    {
+        /// <summary>自动：Gitee 优先，失败再换 GitHub（默认）。</summary>
+        Auto,
+
+        /// <summary>只用 Gitee（国内直连）；不通就报错，**不回落**。</summary>
+        Gitee,
+
+        /// <summary>只用 GitHub（海外 / 排查问题时用）。</summary>
+        GitHub
+    }
+
+    /// <summary>配置里的源标识 → 枚举（未知值一律按"自动"，与配置容错口径一致）。</summary>
+    public static AppUpdateSource ParseSource(string? id) => id?.Trim().ToLowerInvariant() switch
+    {
+        "gitee" => AppUpdateSource.Gitee,
+        "github" => AppUpdateSource.GitHub,
+        _ => AppUpdateSource.Auto
+    };
+
+    /// <summary>枚举 → 配置里的源标识。</summary>
+    public static string SourceId(AppUpdateSource source) => source switch
+    {
+        AppUpdateSource.Gitee => "gitee",
+        AppUpdateSource.GitHub => "github",
+        _ => "auto"
+    };
+
+    /// <summary>该选择下，Gitee 不可用时是否**允许**再问 GitHub（固定 Gitee 时不允许：用户点名了源）。</summary>
+    public static bool AllowsGithubFallback(AppUpdateSource source) => source != AppUpdateSource.Gitee;
+
+    /// <summary>该选择下，下载失败时是否**允许**换另一个源（只有"自动"才换）。</summary>
+    public static bool AllowsDownloadFallback(AppUpdateSource source) => source == AppUpdateSource.Auto;
+
     /// <summary>
     /// 检查更新（§6.3）：**Gitee 首选**（国内直连稳），取不到再问 GitHub。
     /// Gitee 的列表没有 digest → 选中版本后再取它的 <c>.sha256</c> 附件；取不到就换 GitHub 兜底
     /// （**宁可走慢线路，也不在缺摘要时自动更新**）。
     /// </summary>
     public static async Task<AppUpdateCheckResult> FindUpdateAsync(AppVersion current, bool acceptPrerelease,
-        CancellationToken token)
+        AppUpdateSource source, CancellationToken token)
     {
-        var gitee = await FetchGiteeReleasesAsync(token);
-
-        if (gitee.Count > 0)
+        if (source != AppUpdateSource.GitHub)
         {
-            var pick = SelectUpdate(gitee, current, acceptPrerelease);
+            var gitee = await FetchGiteeReleasesAsync(token);
 
-            // 列表拿到了、但没有比当前更新的版本 → 直接给"已是最新"，不再去打 GitHub（省一次等待）
-            if (pick == null) return new AppUpdateCheckResult(true, null);
+            if (gitee.Count > 0)
+            {
+                var pick = SelectUpdate(gitee, current, acceptPrerelease);
 
-            var sha = pick.Sha256.Length == 64 ? pick.Sha256 : await FetchChecksumAsync(pick.ChecksumUrl, token);
-            if (sha.Length == 64) return new AppUpdateCheckResult(true, pick with { Sha256 = sha });
+                // 列表拿到了、但没有比当前更新的版本 → 直接给"已是最新"，不再去打 GitHub（省一次等待）
+                if (pick == null) return new AppUpdateCheckResult(true, null);
+
+                var sha = pick.Sha256.Length == 64 ? pick.Sha256 : await FetchChecksumAsync(pick.ChecksumUrl, token);
+                if (sha.Length == 64) return new AppUpdateCheckResult(true, pick with { Sha256 = sha });
+            }
+
+            // 用户点名只用 Gitee → 不通就如实报错，别偷偷换源（否则"我选了 Gitee 却走了 GitHub"很难解释）
+            if (!AllowsGithubFallback(source)) return new AppUpdateCheckResult(false, null);
         }
 
         var github = await FetchGithubReleasesAsync(token);
@@ -863,19 +904,21 @@ public static class AppUpdateService
     }
 
     /// <summary>
-    /// 下载安装包：**主源优先**（Gitee），失败再换备用源（GitHub）——两个源是同一份字节，用同一个 sha256 校验。
+    /// 下载安装包：主源优先（Gitee），<paramref name="allowFallback"/> 为真时失败再换另一个源（GitHub）——
+    /// 两个源是同一份字节，用同一个 sha256 校验。用户固定了源时传 <c>false</c>（见
+    /// <see cref="AllowsDownloadFallback"/>）。
     /// </summary>
     /// <remarks>
     /// 换源前必须**丢掉 `.part`**：两个源虽然内容相同，但"续传偏移"不能跨源混用
     /// （Gitee 的附件下载还不支持 Range，实测直接返回 200 全量），否则会拼出一个长度对不上的坏文件。
     /// 用户在下载中点取消时**不换源**（那不是网络故障）。
     /// </remarks>
-    public static async Task<bool> DownloadWithFallbackAsync(AppReleaseInfo release, string destinationPath,
-        IProgress<DownloadProgress>? progress = null, CancellationToken token = default)
+    public static async Task<bool> DownloadWithFallbackAsync(AppReleaseInfo release, bool allowFallback,
+        string destinationPath, IProgress<DownloadProgress>? progress = null, CancellationToken token = default)
     {
         if (await DownloadAsync(release.DownloadUrl, destinationPath, progress, token)) return true;
         if (token.IsCancellationRequested) return false;
-        if (release.FallbackDownloadUrl.Length == 0) return false;
+        if (!allowFallback || release.FallbackDownloadUrl.Length == 0) return false;
 
         var partPath = destinationPath + ".part";
         try { File.Delete(partPath); } catch { /* 删不掉就由备用源的 Range 判断兜住（会触发 416 → 重下） */ }

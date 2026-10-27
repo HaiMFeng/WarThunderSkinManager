@@ -138,6 +138,35 @@
                     <TextBlock Text="{loc:Loc settings.appUpdate.hint}" Style="{StaticResource PageSubtitle}"
                                TextWrapping="Wrap" Margin="0,0,0,10"/>
 
+                    <!-- 安装源（§6.3）：自动 = Gitee 优先、失败回退 GitHub；也可固定为某一个。
+                         只在能自动更新的形态下显示（便携运行没有意义，跟着状态一起藏） -->
+                    <StackPanel Margin="0,0,0,12">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding AppUpdateShowSource}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <TextBlock Text="{loc:Loc settings.appUpdate.source}" Style="{StaticResource FieldLabel}"
+                                   Margin="0,0,0,6"/>
+                        <ComboBox Style="{StaticResource BaseComboBox}" Width="260" HorizontalAlignment="Left"
+                                  ItemsSource="{Binding AppUpdateSources}"
+                                  SelectedItem="{Binding SelectedAppUpdateSource, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="{loc:Loc settings.appUpdate.source.hint}" Style="{StaticResource PageSubtitle}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    </StackPanel>
+
                     <!-- 状态行 -->
                     <TextBlock Text="{Binding AppUpdateText}" TextWrapping="Wrap"/>
 

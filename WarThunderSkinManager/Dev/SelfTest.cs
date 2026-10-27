@@ -4151,6 +4151,28 @@ internal static class SelfTest
                 log.AppendLine("自检异常：Gitee 源的解析 / 校验文件 / 地址白名单不符合预期"
                              + "（会让国内首选源失效，或在缺摘要时仍然自动更新）");
 
+            // 安装源选择（§6.3）：自动 = Gitee 优先且失败回退；固定源 = 只问那一个、下载也不偷偷改道
+            var sourceParseOk = AppUpdateService.ParseSource(null) == AppUpdateService.AppUpdateSource.Auto
+                                && AppUpdateService.ParseSource("") == AppUpdateService.AppUpdateSource.Auto
+                                && AppUpdateService.ParseSource("GITEE") == AppUpdateService.AppUpdateSource.Gitee
+                                && AppUpdateService.ParseSource(" github ") == AppUpdateService.AppUpdateSource.GitHub
+                                && AppUpdateService.ParseSource("nonsense") == AppUpdateService.AppUpdateSource.Auto
+                                && AppUpdateService.SourceId(AppUpdateService.AppUpdateSource.Gitee) == "gitee";
+
+            var sourceFallbackOk =
+                AppUpdateService.AllowsGithubFallback(AppUpdateService.AppUpdateSource.Auto)
+                && !AppUpdateService.AllowsGithubFallback(AppUpdateService.AppUpdateSource.Gitee)
+                && AppUpdateService.AllowsDownloadFallback(AppUpdateService.AppUpdateSource.Auto)
+                && !AppUpdateService.AllowsDownloadFallback(AppUpdateService.AppUpdateSource.Gitee)
+                && !AppUpdateService.AllowsDownloadFallback(AppUpdateService.AppUpdateSource.GitHub);
+
+            log.AppendLine($"安装源     : 配置解析（null/空/大小写/未知值）= {sourceParseOk}（应 True）、"
+                         + $"回退规则（自动换源、固定源不换）= {sourceFallbackOk}（应 True）");
+
+            if (!sourceParseOk || !sourceFallbackOk)
+                log.AppendLine("自检异常：安装源解析或回退规则不对"
+                             + "（固定了源却偷偷换源，或配置读写两边标识不一致）");
+
             // 状态文件（原子写；安装器不碰配置目录，所以能跨版本存活）
             var stateDir = Path.Combine(workDir, "update-state");
             Directory.CreateDirectory(stateDir);

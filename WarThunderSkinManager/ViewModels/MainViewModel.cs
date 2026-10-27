@@ -59,6 +59,30 @@ public sealed partial class ThemeItem : ObservableObject
 }
 
 /// <summary>
+/// 「更新应用」卡片的**安装源**下拉项（自动 / Gitee / GitHub）。
+/// 显示名走 <c>settings.appUpdate.source.&lt;id&gt;</c>，切语言后由 <see cref="RefreshTexts"/> 重取。
+/// </summary>
+public sealed partial class AppUpdateSourceOption : ObservableObject
+{
+    public string Id { get; }
+
+    public AppUpdateService.AppUpdateSource Source { get; }
+
+    [ObservableProperty] private string _displayName;
+
+    public AppUpdateSourceOption(string id, AppUpdateService.AppUpdateSource source)
+    {
+        Id = id;
+        Source = source;
+        _displayName = LocalizationManager.Instance[$"settings.appUpdate.source.{id}"];
+    }
+
+    public void RefreshTexts() => DisplayName = LocalizationManager.Instance[$"settings.appUpdate.source.{Id}"];
+
+    public override string ToString() => DisplayName;
+}
+
+/// <summary>
 /// WT Live 的下拉项（清晰度档位 / 预览图缓存上限 / 浏览页排序方式共用）。
 /// 显示名由各自的目录算好传进来；需要跟随界面语言的档位改用**工厂重载**构造，
 /// 切语言时由 <see cref="RefreshTexts"/> 重取（缓存上限是纯数字 MB/GB，不走工厂）。
@@ -471,6 +495,18 @@ public partial class MainViewModel : ObservableObject
         _selectedWtLiveCacheSize = WtLiveCacheSizes.FirstOrDefault(
             s => string.Equals(s.Id, config.WtLivePreviewCacheMb, StringComparison.Ordinal))
             ?? WtLiveCacheSizes.First(s => s.Id == WtLiveCacheSizeCatalog.DefaultId);
+
+        // 安装源下拉（更新应用卡片）：默认自动 = Gitee 优先、失败回退 GitHub。
+        // 同样直接写字段：绑定首次求值时就是上次的选择，不会闪一下再变
+        AppUpdateSources = new List<AppUpdateSourceOption>
+        {
+            new("auto", AppUpdateService.AppUpdateSource.Auto),
+            new("gitee", AppUpdateService.AppUpdateSource.Gitee),
+            new("github", AppUpdateService.AppUpdateSource.GitHub)
+        };
+        _selectedAppUpdateSource = AppUpdateSources.FirstOrDefault(
+            s => string.Equals(s.Id, config.AppUpdateSource, StringComparison.OrdinalIgnoreCase))
+            ?? AppUpdateSources[0];
 
         // 从详情浮窗点「下载」：下载流程走完（确认窗关掉、下载真的开始了）就**退出详情** ——
         // 用户此刻要看的是下载进度，不是刚才那个详情；卡片上的下载按钮不经详情，这一手对那条路径无影响
@@ -1920,6 +1956,24 @@ public partial class MainViewModel : ObservableObject
     /// <summary>发布说明要点（**纯文本**、已裁剪，见 §11 不变量 4）</summary>
     [ObservableProperty] private string _appUpdateNotesText = "";
 
+    /// <summary>安装源候选（自动 / Gitee / GitHub，§6.3）。</summary>
+    public IReadOnlyList<AppUpdateSourceOption> AppUpdateSources { get; }
+
+    /// <summary>当前选中的安装源；改动只影响之后的检查与下载，并落盘沿用。</summary>
+    [ObservableProperty] private AppUpdateSourceOption? _selectedAppUpdateSource;
+
+    partial void OnSelectedAppUpdateSourceChanged(AppUpdateSourceOption? value)
+    {
+        if (value == null) return;
+        if (string.Equals(value.Id, Config.AppUpdateSource, StringComparison.OrdinalIgnoreCase)) return;
+
+        // 不打断正在看的候选：只改下次检查 / 下载用的源（落盘由 OnConfigChanged 统一收尾）
+        Config.AppUpdateSource = value.Id;
+
+        // 上次检查是失败的 → 换个源立刻重试一次，否则用户还得再点"检查更新"，容易以为没生效
+        if (AppUpdateState == AppUpdateUiState.Failed) _ = CheckAppUpdateCoreAsync(silent: false);
+    }
+
     /// <summary>下载进度 0..1</summary>
     [ObservableProperty] private double _appUpdateProgress;
 
@@ -2007,6 +2061,9 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private void RefreshAppUpdateTexts()
     {
+        // 「安装源」下拉项的显示名（自动 / Gitee / GitHub）
+        foreach (var option in AppUpdateSources) option.RefreshTexts();
+
         if (_appUpdateTextKey != null)
             AppUpdateText = _appUpdateTextArgs.Length == 0
                 ? Loc[_appUpdateTextKey]
@@ -2031,6 +2088,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(AppUpdateHasDetails));
         OnPropertyChanged(nameof(AppUpdateCanUnskip));
         OnPropertyChanged(nameof(AppUpdateReleaseUrl));
+        OnPropertyChanged(nameof(AppUpdateShowSource));
         OnPropertyChanged(nameof(HeavyActionsEnabled));
         OnPropertyChanged(nameof(IsMaintenance));
     }
@@ -2051,6 +2109,11 @@ public partial class MainViewModel : ObservableObject
     public bool AppUpdateCanCheck => AppUpdateState
         is AppUpdateUiState.Idle or AppUpdateUiState.UpToDate or AppUpdateUiState.Failed
         or AppUpdateUiState.Skipped or AppUpdateUiState.NotInstalled;
+
+    /// <summary>
+    /// 「安装源」下拉是否显示：只有能自动更新的形态才有意义（便携运行的卡片只给手动下载入口，藏起来更干净）。
+    /// </summary>
+    public bool AppUpdateShowSource => AppUpdateState != AppUpdateUiState.NotInstalled;
 
     public bool AppUpdateCanUpdate => AppUpdateState == AppUpdateUiState.Available;
 
@@ -2205,16 +2268,24 @@ public partial class MainViewModel : ObservableObject
         try
         {
             AppVersion.TryParse(AppInfo.Version, out var current);
+            var source = SelectedAppUpdateSource?.Source ?? AppUpdateService.AppUpdateSource.Auto;
 
             // 内测期：接受预发布（正式期应收紧为 false，见 docs 应用自更新设计 §6.2）
-            // 源顺序：Gitee 首选、GitHub 兜底（§6.3）
-            var check = await AppUpdateService.FindUpdateAsync(current, acceptPrerelease: true, CancellationToken.None);
+            // 源由卡片上的「安装源」决定：自动 = Gitee 优先、GitHub 兜底；固定源就只问那一个（§6.3）
+            var check = await AppUpdateService.FindUpdateAsync(current, acceptPrerelease: true, source,
+                CancellationToken.None);
 
             if (!check.Reached)
             {
-                // 两个源都拿不到（Gitee 也不通 / 被限流）→ 卡片给出可重试的结论（不弹窗，不算"打扰"）
+                // 卡片给出可重试的结论（不弹窗，不算"打扰"）
                 AppUpdateState = AppUpdateUiState.Failed;
-                SetAppUpdateText("settings.appUpdate.failNetwork");
+
+                // 选"自动"才是笼统的"网络不可达"；固定了源就如实点名，否则用户不知道是哪个源不通
+                if (source == AppUpdateService.AppUpdateSource.Auto)
+                    SetAppUpdateText("settings.appUpdate.failNetwork");
+                else
+                    SetAppUpdateText("settings.appUpdate.failSource", SelectedAppUpdateSource!.DisplayName);
+
                 return;
             }
 
@@ -2326,8 +2397,11 @@ public partial class MainViewModel : ObservableObject
                     report.Received / 1024d / 1024d, report.Total / 1024d / 1024d, report.MegaBytesPerSecond);
             });
 
-            // 主源（Gitee）失败自动换备用源（GitHub）；两个源是同一份字节，校验口径不变
-            var downloaded = await AppUpdateService.DownloadWithFallbackAsync(release, installerPath,
+            // 主源失败时是否换另一个源：只有"自动"才换（用户固定了源就不偷偷改道）；
+            // 两个源是同一份字节，校验口径不变
+            var downloadSource = SelectedAppUpdateSource?.Source ?? AppUpdateService.AppUpdateSource.Auto;
+            var downloaded = await AppUpdateService.DownloadWithFallbackAsync(release,
+                AppUpdateService.AllowsDownloadFallback(downloadSource), installerPath,
                 progress, _appUpdateCts.Token);
 
             if (!downloaded)
