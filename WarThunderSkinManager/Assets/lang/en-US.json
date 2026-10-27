@@ -473,7 +473,6 @@
   "settings.appUpdate.source.auto": "Auto (Gitee first)",
   "settings.appUpdate.source.gitee": "Gitee (China)",
   "settings.appUpdate.source.github": "GitHub",
-  "settings.appUpdate.source.hint": "Auto tries Gitee first, then falls back to GitHub. You can also pin a single source when troubleshooting.",
   "settings.appUpdate.failSource": "Cannot reach {0}. Switch to Auto or try again later.",
   "settings.appUpdate.update": "Update",
   "settings.appUpdate.downloading": "Downloading the update…",

@@ -474,7 +474,6 @@
   "settings.appUpdate.source.auto": "自动（Gitee 优先）",
   "settings.appUpdate.source.gitee": "Gitee（国内）",
   "settings.appUpdate.source.github": "GitHub",
-  "settings.appUpdate.source.hint": "自动会先试 Gitee，连不上再换 GitHub；也可以固定一个源来排查问题。",
   "settings.appUpdate.failSource": "连不上 {0}，可以换成「自动」或稍后重试",
   "settings.appUpdate.update": "更新",
   "settings.appUpdate.downloading": "正在下载更新…",

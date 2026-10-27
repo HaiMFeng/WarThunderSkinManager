@@ -163,8 +163,6 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBlock Text="{loc:Loc settings.appUpdate.source.hint}" Style="{StaticResource PageSubtitle}"
-                                   TextWrapping="Wrap" Margin="0,6,0,0"/>
                     </StackPanel>
 
                     <!-- 状态行 -->
