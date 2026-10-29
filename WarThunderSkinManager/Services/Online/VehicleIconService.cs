@@ -44,8 +44,8 @@ public static class VehicleIconService
     /// <summary>同时下载的图标数上限（首屏会一次排进几十个，串行会明显拖慢）。</summary>
     private const int MaxConcurrency = 6;
 
-    /// <summary>解码宽度：槽位 64 DIP 宽，按 200% 缩放取 128 设备像素（再大只是白吃内存）。</summary>
-    private const int DecodePixelWidth = 128;
+    /// <summary>解码宽度：槽位 72 DIP 宽，按 200% 缩放取 144 设备像素（再大只是白吃内存）。</summary>
+    private const int DecodePixelWidth = 144;
 
     private static readonly HttpClient Http = CreateClient();
     private static readonly SemaphoreSlim Gate = new(MaxConcurrency, MaxConcurrency);

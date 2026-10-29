@@ -958,10 +958,16 @@
         </Setter>
     </Style>
 
+    <!-- 载具列表的行容器：比通用侧栏行**矮一点**（上下 4 而非 8），把高度让给图标 -->
+    <Style x:Key="VehicleListBoxItem" TargetType="ListBoxItem" BasedOn="{StaticResource SidebarListBoxItem}">
+        <Setter Property="Padding" Value="10,4"/>
+    </Style>
+
     <!-- ============ 载具列表行（涂装管理 / 载具管理共用）：左图标 + 右名字 ============
-         图标来自官方百科 CDN（Services/VehicleIconService）；槽位固定 64×28，图片在槽内
+         图标来自官方百科 CDN（Services/VehicleIconService）；槽位固定 72×32，图片在槽内
          Stretch=Uniform 等比缩放（高度顶满、宽度按机体比例，绝不拉伸变形；源图最宽约 2.26:1，
-         64 的宽度刚好容下最长的机体，不会被宽度反向压小）。
+         72 的宽度刚好容下最长的机体，不会被宽度反向压小）。
+         行容器用 VehicleListBoxItem（上下边距 4），把省下来的高度都给图标。
          没有图标时显示"空图片"占位：虚线空框 —— 不是加载动画、也不是类型图标。 -->
     <DataTemplate x:Key="VehicleRowTemplate">
         <Grid controls:VehicleIconLoader.Enable="True">
@@ -970,7 +976,7 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Grid Width="64" Height="28" VerticalAlignment="Center">
+            <Grid Width="72" Height="32" VerticalAlignment="Center">
                 <Rectangle RadiusX="3" RadiusY="3" Fill="Transparent"
                            Stroke="{StaticResource BrushBorder}" StrokeThickness="1"
                            StrokeDashArray="2 2">
@@ -985,7 +991,7 @@
                         </Style>
                     </Rectangle.Style>
                 </Rectangle>
-                <Image Source="{Binding Icon}" Stretch="Uniform" Margin="1"
+                <Image Source="{Binding Icon}" Stretch="Uniform"
                        RenderOptions.BitmapScalingMode="HighQuality"/>
             </Grid>
 

@@ -195,7 +195,7 @@
                     </TextBlock>
 
                     <ListBox Style="{StaticResource SidebarListBox}"
-                             ItemContainerStyle="{StaticResource SidebarListBoxItem}"
+                             ItemContainerStyle="{StaticResource VehicleListBoxItem}"
                              ItemsSource="{Binding Skins.Vehicles}"
                              ItemTemplate="{StaticResource VehicleRowTemplate}"
                              SelectedItem="{Binding Skins.SelectedVehicle, Mode=TwoWay}"/>
