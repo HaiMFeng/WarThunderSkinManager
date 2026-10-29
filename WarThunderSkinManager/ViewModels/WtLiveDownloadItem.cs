@@ -71,7 +71,9 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
     public string? PreviewUrl { get; }
 
     [ObservableProperty] private WtLiveDownloadState _state = WtLiveDownloadState.Downloading;
-    [ObservableProperty] private double _progress; // 0..1（压缩包 80% + 预览图 20%）
+
+    /// <summary>整条流水线的进度 0..1：下载 80%（内含压缩包 64% / 预览图 16%）+ 解压 10% + 安装 10%。</summary>
+    [ObservableProperty] private double _progress;
     [ObservableProperty] private string _stateText = "";
 
     /// <summary>
@@ -115,11 +117,14 @@ public sealed partial class WtLiveDownloadItem : ObservableObject
         => StagedPreviewPath is { Length: > 0 } path && File.Exists(path);
 
     /// <summary>
-    /// 「已下载完成的部分」在总进度里占的份额：压缩包下完 = 80%、预览图下完 = 20%、都没有 = 0。
+    /// 「已下载完成的部分」在**总进度**里占的份额：压缩包下完 = 64%、预览图下完 = 16%
+    /// （即下载段的 80% 里，按 80/20 分）。解压 / 安装部分不算 —— 它们每次都从头做一遍。
     /// 两处用得上：① 重试时进度从这一段起步（不再从 0 重来）；② 失败 / 取消时不清掉已下好的那一段。
     /// </summary>
     internal double CompletedFraction
-        => WTLiveService.CombinedProgress(ZipCompleted ? 1d : 0d, PreviewCompleted ? 1d : 0d, HasPreview);
+        => WTLiveService.TotalProgress(
+            WTLiveService.DownloadFraction(ZipCompleted ? 1d : 0d, PreviewCompleted ? 1d : 0d, HasPreview),
+            0, 0);
 
     /// <summary>丢弃两部分的复用状态（导入完成 / 从列表移除时调用，暂存文件随之可清）。</summary>
     internal void ClearStagedParts()

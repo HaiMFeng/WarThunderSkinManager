@@ -3653,12 +3653,34 @@ internal static class SelfTest
             };
 
             var progressOk = progressCases.All(c =>
-                Math.Abs(WTLiveService.CombinedProgress(c.Zip, c.Preview, c.HasPreview) - c.Expect) < 0.0001);
+                Math.Abs(WTLiveService.DownloadFraction(c.Zip, c.Preview, c.HasPreview) - c.Expect) < 0.0001);
 
             log.AppendLine($"下载进度   : 压缩包 80% + 预览图 20% = {progressOk}（应 True；"
-                         + $"包完成 {WTLiveService.CombinedProgress(1, 0, true):P0} / "
-                         + $"全部完成 {WTLiveService.CombinedProgress(1, 1, true):P0} / "
-                         + $"无预览 {WTLiveService.CombinedProgress(1, 0, false):P0}）");
+                         + $"包完成 {WTLiveService.DownloadFraction(1, 0, true):P0} / "
+                         + $"全部完成 {WTLiveService.DownloadFraction(1, 1, true):P0} / "
+                         + $"无预览 {WTLiveService.DownloadFraction(1, 0, false):P0}）");
+
+            // 三段加权（下载 80% / 解压 10% / 安装 10%）：下载完成时进度条只到 80%，别提前满格
+            var totalCases = new (double Download, double Extract, double Install, double Expect)[]
+            {
+                (0, 0, 0, 0),
+                (1, 0, 0, 0.8),   // 下载完 → 80%
+                (1, 1, 0, 0.9),   // 解压完 → 90%
+                (1, 1, 1, 1),     // 安装完 → 100%
+                (2, 0, 0, 0.8),   // 越界要夹紧
+                (-1, -1, -1, 0)
+            };
+
+            var totalOk = totalCases.All(c =>
+                Math.Abs(WTLiveService.TotalProgress(c.Download, c.Extract, c.Install) - c.Expect) < 1e-9);
+
+            log.AppendLine($"流水线进度 : 下载 80% / 解压 10% / 安装 10% = {totalOk}（应 True；"
+                         + $"下载完 {WTLiveService.TotalProgress(1, 0, 0):P0} / "
+                         + $"解压完 {WTLiveService.TotalProgress(1, 1, 0):P0} / "
+                         + $"全完成 {WTLiveService.TotalProgress(1, 1, 1):P0}）");
+
+            if (!progressOk || !totalOk)
+                log.AppendLine("自检异常：下载/解压/安装的进度配比不对（会让进度条提前满格或倒退）");
             log.AppendLine($"重试节奏   : 次数 = {WTLiveService.DownloadAttempts}（应 5），"
                          + $"间隔 = {WTLiveService.RetryDelay.TotalSeconds} 秒（应 1，固定不退避），"
                          + $"停滞超时 = {WTLiveService.StallTimeout.TotalSeconds} 秒（应 30）");

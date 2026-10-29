@@ -473,7 +473,9 @@ public partial class SkinsViewModel : ObservableObject
             // 若还接收在途回调，会被在途的那半截覆盖回去
             if (item.State != WtLiveDownloadState.Downloading) return;
 
-            item.Progress = WTLiveService.CombinedProgress(zipFraction, previewFraction, hasPreview);
+            // 下载段只占整条流水线的 80%（后面还有解压 10% + 安装 10%）
+            item.Progress = WTLiveService.TotalProgress(
+                WTLiveService.DownloadFraction(zipFraction, previewFraction, hasPreview), 0, 0);
             var percent = $"{item.Progress:P0}";
 
             if (zipFraction >= 1 && hasPreview && previewFraction < 1)
@@ -521,11 +523,26 @@ public partial class SkinsViewModel : ObservableObject
                 await Task.Run(() => WtLivePreviewCache.StoreFromFile(item.PreviewUrl, previewImagePath));
             }
 
-            // 下载完成 → 常规导入流程（扫描 → 预览 → 解构）
+            // 下载完成（80%）→ 解压（80%→90%）→ 安装（90%→100%）
             item.State = WtLiveDownloadState.Importing;
-            item.SetStateText("wtlive.state.importing");
 
-            extracted = await Task.Run(() => ArchiveService.Extract(zipPath, resourceDir), runToken);
+            // 解压：ArchiveService 在条目之间报进度，映射到 80%→90% 这一段
+            item.Progress = WTLiveService.TotalProgress(1, 0, 0);
+            item.SetStateText("wtlive.state.extracting", $"{item.Progress:P0}");
+
+            var extractProgress = new Progress<ArchiveExtractProgress>(p =>
+            {
+                if (item.State != WtLiveDownloadState.Importing) return;
+                item.Progress = WTLiveService.TotalProgress(1, p.Fraction, 0);
+                item.SetStateText("wtlive.state.extracting", $"{item.Progress:P0}");
+            });
+
+            extracted = await Task.Run(
+                () => ArchiveService.Extract(zipPath, resourceDir, progress: extractProgress,
+                    cancellationToken: runToken), runToken);
+
+            item.Progress = WTLiveService.TotalProgress(1, 1, 0);
+            item.SetStateText("wtlive.state.installing", $"{item.Progress:P0}");
 
             // 建议名 = 帖子显示名（没有就退回压缩包名去扩展名）+ **包内嵌套段**（§3.1，与「导入压缩包」同一规则）：
             // 同一个压缩包里的多个涂装包因此可区分（Skin/ver1/type1/car1.blk ⇒ Skin.ver1.type1）
@@ -542,8 +559,19 @@ public partial class SkinsViewModel : ObservableObject
             // 帖子链接随包落盘（item.Url）：属性页可打开，下次下载同一帖可提示「已下载」
             // 「一键导入」（item.AutoImport）→ 静默解构：不弹导入预览窗、也不开加载遮罩（§3.17）。
             // external 传本轮 runToken：静默期间没有遮罩，取消入口改由下载条目的「取消」提供
+            // externalProgress 把解构进度同时喂给进度条（安装段的 90%→100%）
+            var installProgress = new Progress<ImportProgress>(p =>
+            {
+                if (item.State != WtLiveDownloadState.Importing) return;
+
+                var fraction = p.Fraction ?? (p.Total > 0 ? (double)p.Done / p.Total : 0d);
+                item.Progress = WTLiveService.TotalProgress(1, 1, fraction);
+                item.SetStateText("wtlive.state.installing", $"{item.Progress:P0}");
+            });
+
             var result = await RunImportAsync(candidates, ImportSourceType.Archive, zipPath,
-                sourceUrl: item.Url, silent: item.AutoImport, external: runToken);
+                sourceUrl: item.Url, silent: item.AutoImport, external: runToken,
+                externalProgress: installProgress);
 
             // 导入成功 → 预览图（已下载完）应用于**全部**导入的涂装包（互通 → 同一张图）
             if (result is { Packages.Count: > 0 })
@@ -567,6 +595,7 @@ public partial class SkinsViewModel : ObservableObject
                     RefreshPreviews(ids);
                 }
 
+                item.Progress = 1; // 三段都走完
                 item.State = WtLiveDownloadState.Completed;
                 item.SetStateText("wtlive.state.completed", result.Packages.Count);
                 item.ClearStagedParts(); // 这条流程已经走完 → 复用状态作废，暂存文件随 finally 清掉
@@ -578,6 +607,7 @@ public partial class SkinsViewModel : ObservableObject
             }
             else
             {
+                item.Progress = 1; // 三段都走完（只是没导入出包）
                 item.State = WtLiveDownloadState.Completed;
                 item.SetStateText("wtlive.state.nothing");
                 item.ClearStagedParts(); // 同上
@@ -653,7 +683,7 @@ public partial class SkinsViewModel : ObservableObject
     /// 条目**保留在列表**，可用「重试」重启。
     /// <para>
     /// 进度取 <see cref="WtLiveDownloadItem.CompletedFraction"/>：**已下载完成的部分保留它的进度段**
-    /// （预览图已在手就是 20%、压缩包已在手就是 80%），尚无已完成部分才是 0 ——
+    /// （下载段共 80%：压缩包已在手 64%、预览图已在手 16%），尚无已完成部分才是 0 ——
     /// 这些都是重试时会**直接复用、不再下载**的部分，进度条如实反映它们已在手。
     /// </para>
     /// </summary>
@@ -1864,7 +1894,7 @@ public partial class SkinsViewModel : ObservableObject
     private async Task<ImportResult?> RunImportAsync(List<ImportCandidate> candidates, ImportSourceType sourceType,
         string sourcePath, bool canDeleteArchive = false, IReadOnlyList<string>? archives = null,
         string extraStatus = "", string? sourceUrl = null, bool silent = false,
-        CancellationToken external = default)
+        CancellationToken external = default, IProgress<ImportProgress>? externalProgress = null)
     {
         try
         {
@@ -1920,7 +1950,12 @@ public partial class SkinsViewModel : ObservableObject
             using (var scope = BusyIndicator.Instance.Begin(Loc["import.progressCommitting"], cts.Cancel))
             {
                 scope.Report(0, candidates.Count); // 与旧进度窗一致：起始就显示 0 / N
-                var reporter = new Progress<ImportProgress>(p => ApplyImportProgress(scope, p));
+                // 同一份进度喂两个地方：这条路径自己的进度窗，以及调用方（WT Live 下载条）的 90%→100%
+                var reporter = new Progress<ImportProgress>(p =>
+                {
+                    ApplyImportProgress(scope, p);
+                    externalProgress?.Report(p);
+                });
 
                 // Commit 内部消化取消（Canceled 标记）；意外错误 → 外层 catch。
                 // 被抑制时 scope 是空作用域：Report 之类全是空操作，进度自然丢弃。

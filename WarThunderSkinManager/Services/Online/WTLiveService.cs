@@ -122,14 +122,32 @@ public static class WTLiveService
     /// <summary>预览图在下载总进度里的权重（**预览图是下载的一部分，独占 20%**，§3.15）。</summary>
     public const double PreviewWeight = 0.2;
 
+    /// <summary>「下载」在整条流水线进度条里占的权重（下载 → 解压 → 安装）。</summary>
+    public const double DownloadWeight = 0.8;
+
+    /// <summary>「解压」在整条流水线进度条里占的权重（解压包里几千个文件时这一步也有几秒）。</summary>
+    public const double ExtractWeight = 0.1;
+
+    /// <summary>「安装」（扫描 → 解构 → 落库 → 预览图）在整条流水线进度条里占的权重。</summary>
+    public const double InstallWeight = 0.1;
+
     /// <summary>
-    /// 下载阶段总进度（0..1）= 压缩包 80% + 预览图 20%（无预览图时压缩包即全部）。
-    /// 两者**必须都下载完成**才进入安装流程，所以这个比例就是"下载完成度"。
+    /// **下载阶段内部**的完成度（0..1）= 压缩包 80% + 预览图 20%（无预览图时压缩包即全部）。
+    /// 两者**必须都下载完成**才进入解压 / 安装，所以这个比例就是"下载完成度"。
     /// </summary>
-    public static double CombinedProgress(double archiveFraction, double previewFraction, bool hasPreview)
+    public static double DownloadFraction(double archiveFraction, double previewFraction, bool hasPreview)
         => hasPreview
             ? Math.Clamp(archiveFraction * ArchiveWeight + previewFraction * PreviewWeight, 0, 1)
             : Math.Clamp(archiveFraction, 0, 1);
+
+    /// <summary>
+    /// 整条流水线的总进度（0..1）= 下载 80% + 解压 10% + 安装 10%（各段自分量 <c>0..1</c>）。
+    /// 进度条因此不会在"下载完成"时直接满格，而是留出解压 / 安装两段 —— 否则那几秒的进度是假的。
+    /// </summary>
+    public static double TotalProgress(double downloadFraction, double extractFraction, double installFraction)
+        => Math.Clamp(downloadFraction, 0, 1) * DownloadWeight
+           + Math.Clamp(extractFraction, 0, 1) * ExtractWeight
+           + Math.Clamp(installFraction, 0, 1) * InstallWeight;
 
     /// <summary>帖子 URL（<c>/post/&lt;id&gt;/…</c>），返回帖子 id；非帖子链接返回 null。</summary>
     public static long? IsPostUrl(string? text)
