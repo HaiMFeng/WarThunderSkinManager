@@ -959,8 +959,9 @@
     </Style>
 
     <!-- ============ 载具列表行（涂装管理 / 载具管理共用）：左图标 + 右名字 ============
-         图标来自官方百科 CDN（Services/VehicleIconService）；槽位固定 44×22，图片在槽内
-         Stretch=Uniform 等比缩放（高度顶满、宽度按机体比例，绝不拉伸变形）。
+         图标来自官方百科 CDN（Services/VehicleIconService）；槽位固定 64×28，图片在槽内
+         Stretch=Uniform 等比缩放（高度顶满、宽度按机体比例，绝不拉伸变形；源图最宽约 2.26:1，
+         64 的宽度刚好容下最长的机体，不会被宽度反向压小）。
          没有图标时显示"空图片"占位：虚线空框 —— 不是加载动画、也不是类型图标。 -->
     <DataTemplate x:Key="VehicleRowTemplate">
         <Grid controls:VehicleIconLoader.Enable="True">
@@ -969,7 +970,7 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Grid Width="44" Height="22" VerticalAlignment="Center">
+            <Grid Width="64" Height="28" VerticalAlignment="Center">
                 <Rectangle RadiusX="3" RadiusY="3" Fill="Transparent"
                            Stroke="{StaticResource BrushBorder}" StrokeThickness="1"
                            StrokeDashArray="2 2">
