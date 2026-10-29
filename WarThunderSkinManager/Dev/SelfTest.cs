@@ -4389,6 +4389,27 @@ internal static class SelfTest
             log.AppendLine($"安装身份   : 规范目录判定（一致 True / 拷到别处 False / 空值 False）= {identityOk}（应 True），"
                          + $"当前是否安装版 = {AppUpdateService.IsInstalled()}（本机未装安装器 → 应为 False）");
 
+            // 载具图标（纯逻辑）：CDN 上文件名是"id 原样小写、连字符保留"——把 - 换成 _ 会 404，这条钉住它
+            var iconUrlOk =
+                VehicleIconService.UrlFor("f_15e") == VehicleIconService.BaseUrl + "f_15e.png"
+                && VehicleIconService.UrlFor("a-26c") == VehicleIconService.BaseUrl + "a-26c.png"
+                && VehicleIconService.UrlFor("  F_15E ") == VehicleIconService.BaseUrl + "f_15e.png"
+                && VehicleIconService.Normalize("Hs-123A-1_China") == "hs-123a-1_china";
+
+            // 404 返回的是 XML 错误页（Content-Type 也是 application/xml）→ 光看状态码/类型不够，按 PNG 魔数判
+            var iconMagicOk =
+                VehicleIconService.LooksLikePng(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A })
+                && !VehicleIconService.LooksLikePng(System.Text.Encoding.UTF8.GetBytes("<?xml version=\"1.0\"?>"))
+                && !VehicleIconService.LooksLikePng(Array.Empty<byte>())
+                && !VehicleIconService.LooksLikePng(null);
+
+            log.AppendLine($"载具图标   : URL 规则（连字符保留 / 大小写与空白归一）= {iconUrlOk}（应 True）、"
+                         + $"PNG 魔数判定（XML 错误页被拒）= {iconMagicOk}（应 True）");
+
+            if (!iconUrlOk || !iconMagicOk)
+                log.AppendLine("自检异常：载具图标的 URL 规则或 PNG 判定不对"
+                             + "（会把 id 改写错导致整列 404，或把错误页当图片缓存下来）");
+
             // 桌面快捷方式（§7.4）：名字必须与安装器 MyAppName 一致；路径用 DesktopDirectory 拼（不碰真实桌面）
             var shortcutOk = ShortcutService.ShortcutName == "WarThunder Skin Manager"
                 && ShortcutService.PathFor(@"C:\Users\u\Desktop") == @"C:\Users\u\Desktop\WarThunder Skin Manager.lnk"

@@ -469,6 +469,9 @@ public partial class MainViewModel : ObservableObject
         WtLivePreviewCache.Configure(config.ConfigDirectory);
         ApplyPreviewCacheLimit();
 
+        // 载具列表图标：缓存目录同样跟随配置目录（只是加速手段，取不到就显示空槽）
+        VehicleIconService.Configure(config.ConfigDirectory);
+
         // 收藏的作者（§3.17）：唯一的本地数据，存配置目录 → 先注入目录再载入。
         // 放在缓存配置**之后**：载入时就开始取头像（走那份图片缓存），顺序反了会白白少缓存一轮
         WtLiveFavoriteAuthors.Configure(config.ConfigDirectory);
@@ -1119,6 +1122,7 @@ public partial class MainViewModel : ObservableObject
                 VehicleExtraPartsService.Configure(Config.ConfigDirectory); // 手动补齐的部件也跟目录走（§3.10）
                 DataTables.Configure(Config.ConfigDirectory); // 译名 / 武器表跟随配置目录（§3.6 / §3.7）
                 WtLivePreviewCache.Configure(Config.ConfigDirectory); // 预览图缓存也跟着走（§5.7.1）
+                VehicleIconService.Configure(Config.ConfigDirectory); // 载具图标缓存同理
                 // 收藏的作者也在配置目录里 → 换目录要换成新目录那份（旧目录的文件原样留着）
                 WtLiveFavoriteAuthors.Configure(Config.ConfigDirectory);
                 WtLive.Favorites.Reload();

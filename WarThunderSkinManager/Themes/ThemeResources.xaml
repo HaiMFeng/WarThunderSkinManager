@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib"
+                    xmlns:controls="clr-namespace:WarThunderSkinManager.Controls">
 
     <!-- ============ 设计令牌（颜色）============
          颜色令牌不在本文件中定义：本文件只承载画刷与组件样式，画刷按 key 引用颜色令牌。
@@ -956,6 +957,41 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ============ 载具列表行（涂装管理 / 载具管理共用）：左图标 + 右名字 ============
+         图标来自官方百科 CDN（Services/VehicleIconService）；槽位固定 44×22，图片在槽内
+         Stretch=Uniform 等比缩放（高度顶满、宽度按机体比例，绝不拉伸变形）。
+         没有图标时显示"空图片"占位：虚线空框 —— 不是加载动画、也不是类型图标。 -->
+    <DataTemplate x:Key="VehicleRowTemplate">
+        <Grid controls:VehicleIconLoader.Enable="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid Width="44" Height="22" VerticalAlignment="Center">
+                <Rectangle RadiusX="3" RadiusY="3" Fill="Transparent"
+                           Stroke="{StaticResource BrushBorder}" StrokeThickness="1"
+                           StrokeDashArray="2 2">
+                    <Rectangle.Style>
+                        <Style TargetType="Rectangle">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Icon}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Rectangle.Style>
+                </Rectangle>
+                <Image Source="{Binding Icon}" Stretch="Uniform" Margin="1"
+                       RenderOptions.BitmapScalingMode="HighQuality"/>
+            </Grid>
+
+            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" Margin="8,0,0,0"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        </Grid>
+    </DataTemplate>
 
     <!-- ============ 下拉框 ============ -->
     <Style x:Key="BaseComboBoxItem" TargetType="ComboBoxItem">

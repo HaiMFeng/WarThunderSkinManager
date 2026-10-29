@@ -84,13 +84,8 @@
                     <ListBox Style="{StaticResource SidebarListBox}"
                              ItemContainerStyle="{StaticResource SidebarListBoxItem}"
                              ItemsSource="{Binding Vehicles.Vehicles}"
-                             SelectedItem="{Binding Vehicles.SelectedVehicle, Mode=TwoWay}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                             ItemTemplate="{StaticResource VehicleRowTemplate}"
+                             SelectedItem="{Binding Vehicles.SelectedVehicle, Mode=TwoWay}"/>
                 </DockPanel>
             </Border>
 
