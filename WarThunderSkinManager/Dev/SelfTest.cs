@@ -3789,10 +3789,12 @@ internal static class SelfTest
             var stagedBoth = StagedItem(stagedZipFile, stagedPreviewFile);
             var noPreviewPost = MakeDownloadItem(); // 无预览图的帖子：只有压缩包那一路
 
+            // 三段进度改造后：CompletedFraction 是**总进度口径**（下载段占 80%），
+            // 因此"仅预览 = 16%、仅压缩包 = 64%、两者 = 80%" —— 解压 / 安装那两段不算已完成
             var fractionOk = stagedNone.CompletedFraction == 0
-                             && Math.Abs(stagedPreviewOnly.CompletedFraction - 0.2) < 0.0001
-                             && Math.Abs(stagedZipOnly.CompletedFraction - 0.8) < 0.0001
-                             && stagedBoth.CompletedFraction == 1
+                             && Math.Abs(stagedPreviewOnly.CompletedFraction - 0.16) < 0.0001
+                             && Math.Abs(stagedZipOnly.CompletedFraction - 0.64) < 0.0001
+                             && Math.Abs(stagedBoth.CompletedFraction - 0.8) < 0.0001
                              && Math.Abs(noPreviewPost.CompletedFraction) < 0.0001;
 
             var fractionOfNone = stagedNone.CompletedFraction;
@@ -3808,10 +3810,15 @@ internal static class SelfTest
                                    && stagedBoth.CompletedFraction == 0;
 
             log.AppendLine($"分部分重试 : 已完成部分的进度段 = 无 {fractionOfNone:P0} / 仅预览 {fractionOfPreview:P0}"
-                         + $" / 仅压缩包 {fractionOfZip:P0} / 两者 {1:P0}（应 0% / 20% / 80% / 100%，全部 = {fractionOk}）"
+                         + $" / 仅压缩包 {fractionOfZip:P0} / 两者 {stagedBoth.CompletedFraction:P0}"
+                         + $"（应 0% / 16% / 64% / 80%，全部 = {fractionOk}）"
                          + $"，无预览图的帖子 = {noPreviewPost.CompletedFraction:P0}（应 0%：没有预览图那 20%）"
                          + $"，暂存文件被删后不再复用 = {staleZipNotReused}（应 True）"
                          + $"，导入完成清掉复用状态 = {clearedAfterDone}（应 True）");
+
+            if (!fractionOk)
+                log.AppendLine("自检异常：已下载部分的进度段不对（下载段应占 80%：压缩包 64% / 预览图 16%）"
+                             + "—— 取消 / 失败后进度条会落到错误的位置");
 
             // ---- 下载列表右侧两个按钮的语义（§3.17）----
             // 重试：下载中 / 失败 / 已取消 可见；取消/移除：进行中 = 取消（条目留列表）、其余 = 从列表移除
@@ -4431,6 +4438,21 @@ internal static class SelfTest
             if (!iconUrlOk || !iconMagicOk)
                 log.AppendLine("自检异常：载具图标的 URL 规则或 PNG 判定不对"
                              + "（会把 id 改写错导致整列 404，或把错误页当图片缓存下来）");
+
+            // 负缓存只认"文件确实不存在"：5xx / 429 / 403 若也写 30 天标记，一次抖动就把那一行锁死
+            var iconMissingRuleOk =
+                VehicleIconService.IsDefinitelyMissing(System.Net.HttpStatusCode.NotFound)
+                && VehicleIconService.IsDefinitelyMissing(System.Net.HttpStatusCode.Gone)
+                && !VehicleIconService.IsDefinitelyMissing(System.Net.HttpStatusCode.InternalServerError)
+                && !VehicleIconService.IsDefinitelyMissing(System.Net.HttpStatusCode.TooManyRequests)
+                && !VehicleIconService.IsDefinitelyMissing(System.Net.HttpStatusCode.Forbidden)
+                && !VehicleIconService.IsDefinitelyMissing(System.Net.HttpStatusCode.Unauthorized);
+
+            log.AppendLine($"图标负缓存 : 只认 404/410（5xx / 429 / 403 不写）= {iconMissingRuleOk}（应 True）");
+
+            if (!iconMissingRuleOk)
+                log.AppendLine("自检异常：图标负缓存的状态码判定过宽"
+                             + "（限流或服务端故障会被当成「该载具没有图标」，那一行 30 天不再重试）");
 
             // 涂装浏览记忆（§3.2）：记住的国家 / 载具还在就还原，不在就退回第一个 —— 绝不能选空
             var rememberedCountries = new[]

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,7 +52,7 @@ public static class VehicleIconService
     private static readonly SemaphoreSlim Gate = new(MaxConcurrency, MaxConcurrency);
 
     /// <summary>正在下载的：同一 id 多行（换页 / 重建列表）只发一次请求。</summary>
-    private static readonly ConcurrentDictionary<string, Task<ImageSource?>> Inflight =
+    private static readonly ConcurrentDictionary<string, Task<IconLoad>> Inflight =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>已解码的内存缓存（null = 确认没有图标）。</summary>
@@ -91,6 +92,13 @@ public static class VehicleIconService
     /// <summary>id 归一化：去空白 + 小写（**不做**连字符替换）。</summary>
     public static string Normalize(string? id) => (id ?? "").Trim().ToLowerInvariant();
 
+    /// <summary>
+    /// 这个状态码是否代表"**文件确实不存在**"——只有它才写 30 天负缓存。
+    /// 5xx / 429 / 403 是线路或限流问题，当成"没有图标"会把这一行锁死（§3.18）。
+    /// </summary>
+    public static bool IsDefinitelyMissing(HttpStatusCode status)
+        => status is HttpStatusCode.NotFound or HttpStatusCode.Gone;
+
     /// <summary>取字节开头的 PNG 魔数（<c>89 50 4E 47</c>）；CDN 的 404 是 XML 错误页，光看 Content-Type 不够稳。</summary>
     public static bool LooksLikePng(byte[]? bytes)
         => bytes is { Length: >= 8 }
@@ -126,66 +134,82 @@ public static class VehicleIconService
             return;
         }
 
-        var task = Inflight.GetOrAdd(id, key => LoadAsync(key));
-        _ = task.ContinueWith(t =>
+        // **Task.Run**：磁盘命中时的"读文件 + 解码"不能压在这次调用（UI 线程）上
+        var task = Inflight.GetOrAdd(id, key => Task.Run<IconLoad>(() => LoadAsync(key)));
+        _ = task.ContinueWith((Task<IconLoad> t) =>
         {
-            // 完成后才摘牌：**失败也要摘**（网络抖动时用户再滚回来还能重试），
-            // 摘晚了没关系，摘早了会让同一 id 反复下载
-            Inflight.TryRemove(id, out _);
+            // 只有"还是自己这一轮"才摘牌：失败后下一轮会重新登记，按 key 盲删会把**新**任务摘掉。
+            // ConcurrentDictionary 没有公开的 TryRemove(KeyValuePair) 重载，原子"按值删除"走 ICollection.Remove
+            _ = ((ICollection<KeyValuePair<string, Task<IconLoad>>>)Inflight)
+                .Remove(new KeyValuePair<string, Task<IconLoad>>(id, t));
+
+            // 任务若 Faulted，异常没人读会被 UnobservedTaskException 记进崩溃日志（噪音）→ 这里读掉
+            if (t.IsFaulted) _ = t.Exception;
 
             var ok = t.Status == TaskStatus.RanToCompletion;
-            Apply(vehicle, ok ? t.Result : null, ok && t.Result == null);
+            Apply(vehicle, ok ? t.Result.Image : null, ok && t.Result.Missing);
         }, TaskScheduler.Default);
     }
 
-    private static async Task<ImageSource?> LoadAsync(string id)
+    /// <summary>
+    /// 一次加载的结论。<see cref="Missing"/> 只在"确认没有这张图"时置位（404 / 非 PNG）；
+    /// **网络失败是 <c>(null, false)</c>** —— 不能把抖动当成"该载具没有图标"，否则这一行会锁死到下次启动。
+    /// </summary>
+    private readonly record struct IconLoad(ImageSource? Image, bool Missing);
+
+    private static async Task<IconLoad> LoadAsync(string id)
     {
         var cached = TryLoadFromDisk(id);
         if (cached != null)
         {
             Memory[id] = cached;
-            return cached;
+            return new IconLoad(cached, false);
         }
 
         if (IsMissingMarkerFresh(id))
         {
             NoIcon[id] = 0;
             Memory[id] = null;
-            return null;
+            return new IconLoad(null, true);
         }
 
         await Gate.WaitAsync().ConfigureAwait(false);
         try
         {
             using var response = await Http.GetAsync(UrlFor(id)).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+
+            // 只有"这个文件确实存在不了"才写负缓存：5xx / 429 / 403 是线路或限流问题，
+            // 记成"没有图标"会把这一行锁死 30 天，也违背"网络失败下次再试"的口径
+            if (IsDefinitelyMissing(response.StatusCode))
             {
                 SaveMissingMarker(id);
                 NoIcon[id] = 0;
                 Memory[id] = null;
-                return null;
+                return new IconLoad(null, true);
             }
 
+            if (!response.IsSuccessStatusCode) return new IconLoad(null, false);
+
             var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-            if (!LooksLikePng(bytes))
+
+            // **先解码、成功才落盘**：坏字节进了缓存，下次从磁盘读还会坏一遍（且删都删不掉）
+            var image = LooksLikePng(bytes) ? Decode(bytes) : null;
+            if (image == null)
             {
-                // 200 但不是 PNG（错误页 / 劫持页）：按"没有图标"处理，别把垃圾写进缓存
-                SaveMissingMarker(id);
-                NoIcon[id] = 0;
-                Memory[id] = null;
-                return null;
+                // 200 但不是有效 PNG：强制门户页 / WAF 拦截页 / CDN 错误页都长这样。
+                // **按线路问题处理**（不写任何标记）：真没有图 CDN 会给 404，走上面的分支；
+                // 这里若记成"没有图标"，一次穿越就能把整列锁 30 天、重启也不恢复
+                return new IconLoad(null, false);
             }
 
             TrySaveToDisk(id, bytes);
-
-            var image = Decode(bytes);
             Memory[id] = image;
-            return image;
+            return new IconLoad(image, false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        catch (Exception)
         {
-            // 网络抖动：不写负缓存，下次滚到重试
-            return null;
+            // 网络抖动 / 超时 / 解析异常：不写负缓存，下次滚到再试（Missing=false 才不会把行锁死）
+            return new IconLoad(null, false);
         }
         finally
         {
@@ -198,23 +222,30 @@ public static class VehicleIconService
         var dir = Directory();
         if (dir.Length == 0) return null;
 
+        var path = FilePathFor(id);
+
+        byte[] bytes;
         try
         {
-            var path = FilePathFor(id);
             if (!File.Exists(path)) return null;
 
-            var bytes = File.ReadAllBytes(path);
-            var image = Decode(bytes);
-            if (image != null) return image;
-
-            // 缓存文件坏了（半截写入 / 手工改过）→ 删掉重下
-            File.Delete(path);
-            return null;
+            bytes = File.ReadAllBytes(path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
+            // **读不动不等于文件坏了**（别的线程正在 File.Move 覆盖它 / 权限瞬时问题）：
+            // 直接返回，绝不能在这里删文件 —— 否则会把刚写好的好缓存删掉
             return null;
         }
+
+        var image = Decode(bytes);
+        if (image != null) return image;
+
+        // 读到字节但解不出来 = 缓存确实坏了（半截写入 / 手工改过）→ 删掉重下，
+        // 不删的话每次滚到都会从同一个坏文件失败一遍
+        try { File.Delete(path); } catch { /* 删不掉也无所谓，下次写入会覆盖 */ }
+
+        return null;
     }
 
     private static void TrySaveToDisk(string id, byte[] bytes)
@@ -287,8 +318,10 @@ public static class VehicleIconService
 
             return bitmap;
         }
-        catch (Exception ex) when (ex is NotSupportedException or IOException or ArgumentException)
+        catch (Exception)
         {
+            // 任何解码失败（FileFormatException / NotSupportedException / OOM 之外的解析问题）
+            // 都只影响这一张图：返回 null，调用方会把它当成"没有图标"并（磁盘路径）删掉坏文件
             return null;
         }
     }

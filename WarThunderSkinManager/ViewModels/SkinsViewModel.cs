@@ -530,7 +530,9 @@ public partial class SkinsViewModel : ObservableObject
             var extractProgress = new Progress<ArchiveExtractProgress>(p =>
             {
                 if (item.State != WtLiveDownloadState.Importing) return;
-                item.Progress = WTLiveService.TotalProgress(1, p.Fraction, 0);
+
+                // Math.Max：迟到的解压回调不许把已经进到安装段的进度条往回拽（回调投递顺序一变就会踩到）
+                item.Progress = Math.Max(item.Progress, WTLiveService.TotalProgress(1, p.Fraction, 0));
                 item.SetStateText("wtlive.state.extracting", $"{item.Progress:P0}");
             });
 
@@ -562,7 +564,7 @@ public partial class SkinsViewModel : ObservableObject
                 if (item.State != WtLiveDownloadState.Importing) return;
 
                 var fraction = p.Fraction ?? (p.Total > 0 ? (double)p.Done / p.Total : 0d);
-                item.Progress = WTLiveService.TotalProgress(1, 1, fraction);
+                item.Progress = Math.Max(item.Progress, WTLiveService.TotalProgress(1, 1, fraction));
                 item.SetStateText("wtlive.state.installing", $"{item.Progress:P0}");
             });
 
