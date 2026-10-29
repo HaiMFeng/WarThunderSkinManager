@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using WarThunderSkinManager.Controls;
 using WarThunderSkinManager.Models;
 using WarThunderSkinManager.ViewModels;
 
@@ -15,15 +16,6 @@ public partial class SkinManagementView : UserControl
 {
     private const string DragFormat = "WTSM_PackageId";
 
-    // ---- 卡片尺寸策略 ----
-    private const double TargetCardWidth = 190;  // 目标卡片宽（决定列数：越大→列越少、卡片越大）
-    private const double MinCardWidth = 140;     // 卡片最小宽度
-    private const double MaxCardWidth = 340;     // 卡片最大宽度（列数封顶后才会长大）
-    private const int MaxColumns = 5;            // 列数上限：放宽卡片的最大尺寸
-    private const double CardGap = 12;           // 卡片间距（与 ItemContainer Margin 一致）
-    private const double ScrollbarAllowance = 14; // 首帧拿不到视口宽时的回退：滚动条 10 + 余量 4
-
-    private static readonly TimeSpan SizeDuration = TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan ReorderDuration = TimeSpan.FromMilliseconds(180);
     private const double DragLiftOpacity = 0.55;
 
@@ -32,114 +24,28 @@ public partial class SkinManagementView : UserControl
     private FrameworkElement? _dragContainer;
     private DateTime _lastReorder = DateTime.MinValue;
 
-    /// <summary>宿主窗口（拿它的 resize 起止事件；换窗口 / 卸载时解绑）。</summary>
-    private MainWindow? _hostWindow;
+    public SkinManagementView() => InitializeComponent();
 
-    /// <summary>交互式缩放中：冻结卡片尺寸，松手后再重算一次（拖动期间逐像素重排太贵）。</summary>
-    private bool _suspendForResize;
+    // ==================== 卡片布局 ====================
+    //
+    // 卡片由 MasonryPanel 排版：列宽随可用宽度自动算，**卡片高度由预览图比例撑开**（不裁剪）。
+    // 这里不再算任何卡片尺寸 —— 面板在可用宽变化时自己重新测量。
 
-    public SkinManagementView()
-    {
-        InitializeComponent();
-        Unloaded += (_, _) => UnhookWindowResize();
-    }
-
-    // ==================== 卡片尺寸自适应 + 过渡动画 ====================
-
-    private void PackageList_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (!IsLoaded) return;
-        if (_suspendForResize) return;    // 交互式缩放中：冻结布局，松手后统一重算
-        if (_dragPackageId != null) return; // 拖动中不重算尺寸，避免与排序动画互相干扰
-
-        UpdateCardSize(e.NewSize.Width);
-    }
-
-    /// <summary>首次加载时立即按可用宽度定尺寸（首次 SizeChanged 发生在 IsLoaded 之前，会被跳过）。</summary>
+    /// <summary>首次加载：把"窗口外收起"关掉（涂装数量不多，按普通列表处理）。</summary>
     private void PackageList_Loaded(object sender, RoutedEventArgs e)
     {
-        HookWindowResize();
-        UpdateCardSize(PackageList.ActualWidth);
-    }
-
-    // ==================== 交互式缩放：冻结 → 松手后一次重算 ====================
-
-    private void HookWindowResize()
-    {
-        if (Window.GetWindow(this) is not MainWindow window || ReferenceEquals(window, _hostWindow)) return;
-
-        UnhookWindowResize();
-        _hostWindow = window;
-        window.ResizeStarted += OnHostResizeStarted;
-        window.ResizeEnded += OnHostResizeEnded;
-    }
-
-    private void UnhookWindowResize()
-    {
-        if (_hostWindow == null) return;
-
-        // 解绑之后就再没有 ResizeEnded 来解除冻结（例如缩放中卸载），这里顺手复位，
-        // 否则标志永久为 true，重载后卡片尺寸不再随窗口变化
-        _suspendForResize = false;
-
-        _hostWindow.ResizeStarted -= OnHostResizeStarted;
-        _hostWindow.ResizeEnded -= OnHostResizeEnded;
-        _hostWindow = null;
-    }
-
-    private void OnHostResizeStarted()
-    {
-        if (!IsLoaded) return;
-
-        _suspendForResize = true;
-        FreezeCardSize();
-    }
-
-    private void OnHostResizeEnded()
-    {
-        // 复位必须写在 IsLoaded 早退**之前**：卸载竞态下若从这里返回，冻结标志就永久为 true，
-        // 之后 SizeChanged / ScrollChanged 全部早退，卡片尺寸再也不随窗口变化
-        _suspendForResize = false;
-
-        if (!IsLoaded) return;
-
-        // 松手后**不做 150ms 过渡**：拖动刚结束再让整页重排一遍动画，观感更拖沓
-        UpdateCardSize(PackageList.ActualWidth, animate: false);
-    }
-
-    /// <summary>
-    /// 把卡片尺寸停在"当前看到的这一帧"：动画的 FillBehavior=Stop 会把有效值退回目标值，
-    /// 缩放期间继续跑还会持续触发 WrapPanel 重排，所以先取当前有效值再摘掉动画。
-    /// </summary>
-    private void FreezeCardSize()
-    {
-        var panel = FindCardsPanel();
-        if (panel == null) return;
-
-        var width = panel.ItemWidth;
-        var height = panel.ItemHeight;
-
-        panel.BeginAnimation(WrapPanel.ItemWidthProperty, null);
-        panel.BeginAnimation(WrapPanel.ItemHeightProperty, null);
-
-        if (!double.IsNaN(width) && width > 0) panel.ItemWidth = width;
-        if (!double.IsNaN(height) && height > 0) panel.ItemHeight = height;
-    }
-
-    /// <summary>
-    /// 滚动条出现 / 消失会改变视口宽（= 卡片可用宽）：紧凑态单列时重新落一次尺寸，
-    /// 否则"有没有滚动条"这件事会变成右侧一条 10px 的空白。
-    /// </summary>
-    private void PackageList_ScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        if (_suspendForResize) return; // 缩放中滚动条可能反复出现 / 消失，别在这里插一脚
-        if (Math.Abs(e.ViewportWidthChange) < 0.5) return;
-        UpdateCardSize(PackageList.ActualWidth); // 正常态 / 紧凑态都要跟着视口宽重算
+        // 涂装数量不多 → 不做"窗口外收起"（MasonryPanel 的裁剪是为上千张卡片准备的）。
+        // 半径给极大值：可视窗口覆盖全部子项，等价于普通 ItemsControl，选中 / 拖拽 / 动画都不受裁剪影响。
+        if (FindCardsPanel() is { } panel)
+        {
+            panel.RealizeMarginScreens = 1000;
+            panel.PreloadMarginScreens = 1000;
+        }
     }
 
     /// <summary>
     /// 把缩略图容器裁剪成圆角：WPF 的 <c>ClipToBounds</c> 只按矩形裁剪、不理会 CornerRadius，
-    /// UniformToFill 的图片四个直角会盖在卡片圆角外。卡片尺寸随窗口自适应，因此在
+    /// 图片的四个直角会盖在卡片圆角外。卡片高度随预览图比例变化，因此在
     /// SizeChanged 里按当前尺寸设置带圆角的 <see cref="RectangleGeometry"/> 裁剪。
     /// </summary>
     private void ThumbBorder_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -149,106 +55,6 @@ public partial class SkinManagementView : UserControl
         var radius = border.CornerRadius.TopLeft;
         border.Clip = new RectangleGeometry(
             new Rect(0, 0, border.ActualWidth, border.ActualHeight), radius, radius);
-    }
-
-    /// <summary>按列表可用宽度计算卡片尺寸并做过渡动画。</summary>
-    private void UpdateCardSize(double listWidth, bool animate = true)
-    {
-        var compact = DataContext is MainViewModel { IsCompactMode: true };
-
-        // 视口宽 = 已扣掉滚动条的实际可用宽（首帧拿不到时按模式回退）。
-        // 用视口宽而不是 ListBox 宽，滚动条出现 / 消失时左右留白才不会一边宽一边窄。
-        var viewport = FindChild<ScrollViewer>(PackageList)?.ViewportWidth ?? 0;
-        var available = viewport > 0
-            ? viewport
-            : Math.Max(0, listWidth - (compact ? 0 : ScrollbarAllowance));
-        if (available <= 0) return;
-
-        if (compact)
-        {
-            // 单列 + 滚动条隐藏 + 容器左右边距 0：卡片直接铺满视口，
-            // 左右各由 Card 的 8 内边距留白 → 两侧完全对称
-            var compactWidth = Math.Clamp(available, MinCardWidth, MaxCardWidth);
-            ApplyCardSize(compactWidth, compactWidth);
-            return;
-        }
-
-        // 先按目标卡片宽决定列数，再封顶（窗口越宽卡片才会越大，而不是无限加列）
-        var columns = Math.Max(1, (int)Math.Floor((available + CardGap) / (TargetCardWidth + CardGap)));
-        columns = Math.Min(columns, MaxColumns);
-
-        // 槽宽 = 可用宽 / 列数；卡片 = 槽宽 − 12（容器左右各 6）。
-        // 这样"卡片 + 左右外边距"正好铺满视口：首列左 6、末列右 6，左右对称。
-        var slotWidth = available / columns;
-        var cardWidth = slotWidth - CardGap;
-
-        // 超宽屏下避免卡片过大，必要时再加列
-        while (cardWidth > MaxCardWidth && columns < 12)
-        {
-            columns++;
-            slotWidth = available / columns;
-            cardWidth = slotWidth - CardGap;
-        }
-
-        cardWidth = Math.Max(MinCardWidth, cardWidth);
-        slotWidth = cardWidth + CardGap; // 被最小宽撑大时仍保持左右各 6
-
-        if (animate)
-        {
-            AnimateCardSize(slotWidth, ItemHeightOf(cardWidth));
-            SetCardWidth(cardWidth);
-        }
-        else
-        {
-            ApplyCardSize(slotWidth, cardWidth);
-        }
-    }
-
-    /// <summary>直接落卡片尺寸（紧凑态：不进 150ms 过渡，否则收窄 / 展开时会先被拉扁再回弹）。</summary>
-    private void ApplyCardSize(double slotWidth, double cardWidth)
-    {
-        var panel = FindCardsPanel();
-        if (panel != null)
-        {
-            // 先清掉可能还在跑的尺寸动画：动画优先级高于本地值，否则刚切到窄条时会被上一次动画拽住
-            panel.BeginAnimation(WrapPanel.ItemWidthProperty, null);
-            panel.BeginAnimation(WrapPanel.ItemHeightProperty, null);
-
-            panel.ItemWidth = slotWidth;
-            panel.ItemHeight = ItemHeightOf(cardWidth);
-        }
-
-        SetCardWidth(cardWidth);
-    }
-
-    /// <summary>槽高 = 卡片可视高（宽 × 0.72）＋ 底部外边距 12。</summary>
-    private static double ItemHeightOf(double cardWidth) => Math.Round(cardWidth * 0.72) + CardGap;
-
-    private void SetCardWidth(double width)
-    {
-        if (DataContext is MainViewModel main)
-            main.Skins.SetCardSize(width);
-    }
-
-    /// <summary>把 WrapPanel 的卡片尺寸平滑过渡到目标值（窗口缩放时卡片大小带动画）。</summary>
-    private void AnimateCardSize(double width, double height)
-    {
-        var panel = FindCardsPanel();
-        if (panel == null) return;
-
-        var fromWidth = double.IsNaN(panel.ItemWidth) || panel.ItemWidth <= 0 ? width : panel.ItemWidth;
-        var fromHeight = double.IsNaN(panel.ItemHeight) || panel.ItemHeight <= 0 ? height : panel.ItemHeight;
-
-        panel.ItemWidth = width;
-        panel.ItemHeight = height;
-
-        if (Math.Abs(fromWidth - width) < 0.5 && Math.Abs(fromHeight - height) < 0.5) return;
-
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        panel.BeginAnimation(WrapPanel.ItemWidthProperty,
-            new DoubleAnimation(fromWidth, width, SizeDuration) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
-        panel.BeginAnimation(WrapPanel.ItemHeightProperty,
-            new DoubleAnimation(fromHeight, height, SizeDuration) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
     }
 
     // ==================== 拖动排序 ====================
@@ -290,9 +96,6 @@ public partial class SkinManagementView : UserControl
         _dragContainer = null;
         _dragPackageId = null;
         _lastReorder = DateTime.MinValue;
-
-        // 拖动期间跳过了尺寸重算，这里补一次（窗口若在拖动中被缩放也能跟上）
-        UpdateCardSize(PackageList.ActualWidth);
     }
 
     private void PackageCard_DragOver(object sender, DragEventArgs e)
@@ -395,7 +198,7 @@ public partial class SkinManagementView : UserControl
             main.Skins.EditPackageCommand.Execute(null);
     }
 
-    private WrapPanel? FindCardsPanel() => PackageList == null ? null : FindChild<WrapPanel>(PackageList);
+    private MasonryPanel? FindCardsPanel() => PackageList == null ? null : FindChild<MasonryPanel>(PackageList);
 
     private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
     {

@@ -41,12 +41,12 @@ public partial class MainWindow : Window
 
     // ---- 紧凑（窄条）模式：窗口几何 ----
     // 宽度链路：Window → RootBorder 边框 2 → Card 边框 2 + 内边距 16（紧凑态）→ 卡片列表滚动条 14。
-    // 因此"卡片宽 + 34 = 窗口宽"；下/上限与 SkinManagementView 的 MinCardWidth / MaxCardWidth 对齐。
+    // 因此"卡片宽 + 34 = 窗口宽"；下/上限与涂装卡片瀑布流的 Min/MaxColumnWidth（190 / 340）对齐。
     // 宽度链路：窗口边框 2 + Card 边框 2 + 内边距 16（紧凑态**隐藏滚动条**、容器左右边距为 0）。
     private const double CompactChromeWidth = 20;
-    private const double CompactMinWidth = 190;      // 标题栏 4 个按钮所需下限（卡片约 170，仍 ≥ MinCardWidth）
-    private const double CompactMaxWidth = CompactChromeWidth + 340;    // 卡片 340（视图 MaxCardWidth）
-    private const double CompactDefaultWidth = CompactChromeWidth + 190; // 卡片 190（视图 TargetCardWidth）
+    private const double CompactMinWidth = 190;      // 标题栏 4 个按钮所需下限（卡片约 170，仍 ≥ 190 的单列下限）
+    private const double CompactMaxWidth = CompactChromeWidth + 340;    // 卡片 340（MasonryPanel.MaxColumnWidth）
+    private const double CompactDefaultWidth = CompactChromeWidth + 190; // 卡片 190（MasonryPanel.MinColumnWidth）
 
     private bool _compactActive;
     private WindowState _compactSavedState;

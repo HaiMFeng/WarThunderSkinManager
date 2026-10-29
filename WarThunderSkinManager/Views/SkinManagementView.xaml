@@ -2,13 +2,14 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
-             xmlns:views="clr-namespace:WarThunderSkinManager.Views">
+             xmlns:views="clr-namespace:WarThunderSkinManager.Views"
+             xmlns:controls="clr-namespace:WarThunderSkinManager.Controls">
 
     <UserControl.Resources>
         <!-- 涂装包卡片容器：选中描边 + 拖放支持 -->
         <Style x:Key="PackageCardItem" TargetType="ListBoxItem">
-            <!-- 左右各 6：列与列之间是 12，首列左侧 / 末列右侧各 6 —— 网格左右留白对称 -->
-            <Setter Property="Margin" Value="6,0,6,12"/>
+            <!-- 卡片自身不留外边距：列间距 / 行间距统一由 MasonryPanel 的 Gap 负责（否则会叠加成双倍） -->
+            <Setter Property="Margin" Value="0"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="AllowDrop" Value="True"/>
@@ -307,9 +308,7 @@
                                  SelectedItem="{Binding Skins.SelectedPackage, Mode=TwoWay}"
                                  PreviewMouseLeftButtonDown="PackageList_PreviewMouseLeftButtonDown"
                                  MouseDoubleClick="PackageList_MouseDoubleClick"
-                                 Loaded="PackageList_Loaded"
-                                 SizeChanged="PackageList_SizeChanged"
-                                 ScrollViewer.ScrollChanged="PackageList_ScrollChanged">
+                                 Loaded="PackageList_Loaded">
                             <ListBox.Style>
                                 <Style TargetType="ListBox">
                                     <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
@@ -354,8 +353,12 @@
                             </ListBox.ContextMenu>
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <!-- 初值仅兜底；实际尺寸在 Loaded / SizeChanged 时按可用宽度计算（见 .xaml.cs） -->
-                                    <WrapPanel Orientation="Horizontal" ItemWidth="190" ItemHeight="137"/>
+                                    <!-- 瀑布流（§3.2，与 WT Live 共用 Controls/MasonryPanel）：
+                                         列数按目标宽 190 自动算、单列限制在 170~340 之间，列宽再取可用宽平均；
+                                         卡片高度由预览图自身比例撑开 —— 不裁剪图片。
+                                         涂装数量不多，窗口外不收起（.xaml.cs 里把实体半径调大 = 不做虚拟化）。 -->
+                                    <controls:MasonryPanel TargetItemWidth="190" MinItemWidth="170"
+                                                           MaxItemWidth="340" MaxColumns="5" ItemGap="12"/>
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                             <ListBox.ItemTemplate>
@@ -366,12 +369,27 @@
                                                 ClipToBounds="True" SnapsToDevicePixels="True"
                                                 SizeChanged="ThumbBorder_SizeChanged">
                                             <Grid>
-                                                <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
-                                                           FontSize="22" Foreground="{StaticResource BrushTextMuted}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                <!-- UniformToFill 填满裁剪；对齐居中 → 裁掉的两侧均匀分布 -->
-                                                <Image Stretch="UniformToFill" HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center" Source="{Binding PreviewImage}"/>
+                                                <!-- 没有预览图时的占位：给一个最小高度，卡片不会塌成一条细线 -->
+                                                <Border Background="{StaticResource BrushSurface2}" MinHeight="132">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}"
+                                                               FontSize="22" Foreground="{StaticResource BrushTextMuted}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+
+                                                <!-- 等比铺满卡片宽度、高度按图片自身比例撑开（**不裁剪**）：
+                                                     Grid 以 (列宽, ∞) 测量，Image 的自然高度决定卡片高度 -->
+                                                <Image Stretch="Uniform" HorizontalAlignment="Stretch"
+                                                       VerticalAlignment="Top" Source="{Binding PreviewImage}"/>
                                             </Grid>
                                         </Border>
                                         <!-- 底部半透明名字条（激活的包用绿色条，与选中态的蓝色描边区分） -->

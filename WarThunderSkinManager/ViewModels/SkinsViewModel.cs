@@ -62,9 +62,6 @@ public partial class SkinsViewModel : ObservableObject
     [ObservableProperty] private SkinPackage? _selectedPackage;
     [ObservableProperty] private VehicleActivation _activation = new();
 
-    /// <summary>包卡片宽度（随窗口自适应，由视图在 SizeChanged 时计算下发）</summary>
-    [ObservableProperty] private double _cardWidth = 150;
-
     /// <summary>载具搜索关键字：匹配**内部标识或显示名**，与国家筛选叠加（§3.10，同载具管理页）。</summary>
     [ObservableProperty] private string _vehicleSearchText = "";
 
@@ -769,18 +766,6 @@ public partial class SkinsViewModel : ObservableObject
     /// 已激活 = 绿色（与卡片激活态一致）；**未激活 = 主色蓝**（只是提示，不是激活状态）。
     /// </summary>
     public bool HasActivePackage => Packages.Any(p => p.IsActive);
-
-    /// <summary>卡片高度 = 宽度 × 0.72（约 16:11 的缩略图比例）</summary>
-    public double CardHeight => Math.Round(CardWidth * 0.72);
-
-    partial void OnCardWidthChanged(double value) => OnPropertyChanged(nameof(CardHeight));
-
-    /// <summary>视图按可用宽度计算卡片宽度后下发（列数随窗口变化，卡片尺寸随之自适应）。</summary>
-    public void SetCardSize(double width)
-    {
-        var clamped = Math.Max(90, Math.Round(width));
-        if (Math.Abs(clamped - CardWidth) > 0.5) CardWidth = clamped;
-    }
 
     // ---------- 状态联动 ----------
 
