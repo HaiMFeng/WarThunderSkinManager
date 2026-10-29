@@ -968,8 +968,9 @@
          图标来自官方百科 CDN（Services/VehicleIconService）；槽位固定 72×32，图片在槽内
          Stretch=Uniform 等比缩放（高度顶满、宽度按机体比例，绝不拉伸变形；源图最宽约 2.26:1，
          72 的宽度刚好容下最长的机体，不会被宽度反向压小）。
-         行容器用 VehicleListBoxItem（上下边距 4），把省下来的高度都给图标。
-         没有图标时显示"空图片"占位：虚线空框 —— 不是加载动画、也不是类型图标。 -->
+         行容器用 VehicleListBoxItem（内边距 6,4），把省下来的高度/宽度都给图标。
+         没有图标时显示 Font Awesome 的 image 图标（&#xF03E;）作为"空图片"占位，
+         **不用**类型图标（坦克/飞机/舰船），也不做加载动画。 -->
     <DataTemplate x:Key="VehicleRowTemplate">
         <Grid controls:VehicleIconLoader.Enable="True">
             <Grid.ColumnDefinitions>
@@ -978,11 +979,14 @@
             </Grid.ColumnDefinitions>
 
             <Grid Width="72" Height="32" VerticalAlignment="Center">
-                <Rectangle RadiusX="3" RadiusY="3" Fill="Transparent"
-                           Stroke="{StaticResource BrushBorder}" StrokeThickness="1"
-                           StrokeDashArray="2 2">
-                    <Rectangle.Style>
-                        <Style TargetType="Rectangle">
+                <!-- 占位：Font Awesome 的 image 图标（&#xF03E;，与 WT Live 的缺图占位同一枚），
+                     表示"这里本该有一张图"；有图时自动隐藏 -->
+                <TextBlock Text="&#xF03E;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                           Foreground="{StaticResource BrushTextMuted}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsHitTestVisible="False">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Icon}" Value="{x:Null}">
@@ -990,8 +994,9 @@
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </Rectangle.Style>
-                </Rectangle>
+                    </TextBlock.Style>
+                </TextBlock>
+
                 <Image Source="{Binding Icon}" Stretch="Uniform"
                        RenderOptions.BitmapScalingMode="HighQuality"/>
             </Grid>
