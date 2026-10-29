@@ -958,9 +958,10 @@
         </Setter>
     </Style>
 
-    <!-- 载具列表的行容器：比通用侧栏行**矮一点**（上下 4 而非 8），把高度让给图标 -->
+    <!-- 载具列表的行容器：比通用侧栏行**更紧**（上下 8→4、左右 10→6），
+         高度让给图标、左右让图标更贴近边缘（选中的底色块也相应变宽） -->
     <Style x:Key="VehicleListBoxItem" TargetType="ListBoxItem" BasedOn="{StaticResource SidebarListBoxItem}">
-        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Padding" Value="6,4"/>
     </Style>
 
     <!-- ============ 载具列表行（涂装管理 / 载具管理共用）：左图标 + 右名字 ============
@@ -995,7 +996,7 @@
                        RenderOptions.BitmapScalingMode="HighQuality"/>
             </Grid>
 
-            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" Margin="8,0,0,0"
+            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" Margin="6,0,0,0"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </Grid>
     </DataTemplate>
