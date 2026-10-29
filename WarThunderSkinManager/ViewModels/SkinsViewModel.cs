@@ -724,9 +724,20 @@ public partial class SkinsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 启动待还原的浏览位置（§3.2 浏览记忆）：只在**第一次**重建国家 / 筛载具时用一次，用掉即清空；
+    /// 之后的刷新一律"保持当前选择"，不会被旧记忆拽回去。
+    /// </summary>
+    private string? _pendingRestoreCountry;
+
+    private string? _pendingRestoreVehicle;
+
     public SkinsViewModel(AppConfig config)
     {
         _config = config;
+
+        _pendingRestoreCountry = config.LastSkinCountry;
+        _pendingRestoreVehicle = config.LastSkinVehicle;
 
         // 启动时清扫导入暂存区：上次会话（含被强杀的下载）可能留下残留（§3.17）
         try { ArchiveService.CleanupStagingRoot(config.ResourceDirectory); } catch { /* 目录不可写时忽略 */ }
@@ -788,12 +799,18 @@ public partial class SkinsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectedVehicleTitle));
         OnPropertyChanged(nameof(SelectedVehicleSubtitle));
+
+        // 浏览记忆（§3.2）：只在真的选中时记；重建 / 筛选过程中的瞬时 null 不能把记忆抹掉
+        if (value != null) _config.LastSkinVehicle = value.Id;
     }
 
     partial void OnSelectedCountryChanged(CountryItem? value)
     {
         foreach (var country in Countries)
             country.IsSelected = ReferenceEquals(country, value);
+
+        // 同上：国家横条重建时会短暂没有选中项，此时不清记忆
+        if (value != null) _config.LastSkinCountry = value.Id;
 
         ApplyCountryFilter();
     }
@@ -1786,7 +1803,10 @@ public partial class SkinsViewModel : ObservableObject
 
     private void RebuildCountries()
     {
-        var previousId = SelectedCountry?.Id ?? CountryCatalog.AllId;
+        // 优先级：当前选择 > 启动时的记忆 > "全部"
+        var previousId = SelectedCountry?.Id;
+        if (string.IsNullOrEmpty(previousId)) previousId = _pendingRestoreCountry;
+        if (string.IsNullOrEmpty(previousId)) previousId = CountryCatalog.AllId;
 
         var items = CountryCatalog.DefaultOrder
             .Select(id => new CountryItem(id, Loc[CountryCatalog.DisplayNameKey(id)])
@@ -1799,7 +1819,45 @@ public partial class SkinsViewModel : ObservableObject
             .ToList();
 
         Countries = new ObservableCollection<CountryItem>(items);
-        SelectedCountry = Countries.FirstOrDefault(c => c.Id == previousId) ?? Countries.FirstOrDefault();
+        SelectedCountry = PickCountry(Countries, previousId);
+
+        // 记忆只用于启动后的第一次；但**库还是空的时候不算用掉** —— 否则首次"空库 → 再加载"会把记忆白白消耗
+        if (Countries.Count > 0) _pendingRestoreCountry = null;
+    }
+
+    /// <summary>
+    /// 按"记住的标识"选国家：找不到（库变过、那个国家已经没有载具）就退回第一个。
+    /// 抽成静态纯函数是为了自检能脱离真实库直接覆盖（§3.2 浏览记忆）。
+    /// </summary>
+    internal static CountryItem? PickCountry(IReadOnlyList<CountryItem> countries, string? preferredId)
+    {
+        if (countries.Count == 0) return null;
+
+        if (!string.IsNullOrEmpty(preferredId))
+        {
+            var match = countries.FirstOrDefault(
+                c => string.Equals(c.Id, preferredId, StringComparison.OrdinalIgnoreCase));
+
+            if (match != null) return match;
+        }
+
+        return countries[0];
+    }
+
+    /// <summary>按"记住的标识"选载具：找不到就退回第一个；列表为空时返回 <c>null</c>。</summary>
+    internal static Vehicle? PickVehicle(IReadOnlyList<Vehicle> vehicles, string? preferredId)
+    {
+        if (vehicles.Count == 0) return null;
+
+        if (!string.IsNullOrEmpty(preferredId))
+        {
+            var match = vehicles.FirstOrDefault(
+                v => string.Equals(v.Id, preferredId, StringComparison.OrdinalIgnoreCase));
+
+            if (match != null) return match;
+        }
+
+        return vehicles[0];
     }
 
     private void ApplyCountryFilter()
@@ -1817,9 +1875,15 @@ public partial class SkinsViewModel : ObservableObject
                 v.Id.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
                 || v.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
 
+        // 优先级：当前选择 > 启动时的记忆 > 该国第一个载具
         var previousVehicleId = SelectedVehicle?.Id;
+        if (string.IsNullOrEmpty(previousVehicleId)) previousVehicleId = _pendingRestoreVehicle;
+
         Vehicles = new ObservableCollection<Vehicle>(filtered.ToList());
-        SelectedVehicle = Vehicles.FirstOrDefault(v => v.Id == previousVehicleId) ?? Vehicles.FirstOrDefault();
+        SelectedVehicle = PickVehicle(Vehicles, previousVehicleId);
+
+        // 同国家：空库 / 该国暂时没有载具时不算用掉，等真实数据到位再用
+        if (Vehicles.Count > 0) _pendingRestoreVehicle = null;
     }
 
     // ---------- 导入 ----------

@@ -4432,6 +4432,36 @@ internal static class SelfTest
                 log.AppendLine("自检异常：载具图标的 URL 规则或 PNG 判定不对"
                              + "（会把 id 改写错导致整列 404，或把错误页当图片缓存下来）");
 
+            // 涂装浏览记忆（§3.2）：记住的国家 / 载具还在就还原，不在就退回第一个 —— 绝不能选空
+            var rememberedCountries = new[]
+            {
+                new CountryItem("all", "全部"),
+                new CountryItem("usa", "美国")
+            };
+
+            var rememberedVehicles = new[]
+            {
+                new Vehicle { Id = "f_15e", DisplayName = "F-15E" },
+                new Vehicle { Id = "su_30mkk", DisplayName = "苏-30MKK" }
+            };
+
+            var restoreOk =
+                SkinsViewModel.PickCountry(rememberedCountries, "usa")?.Id == "usa"      // 命中
+                && SkinsViewModel.PickCountry(rememberedCountries, "USA")?.Id == "usa"  // 大小写不敏感
+                && SkinsViewModel.PickCountry(rememberedCountries, "gone")?.Id == "all" // 记忆失效 → 第一个
+                && SkinsViewModel.PickCountry(rememberedCountries, null)?.Id == "all"   // 没有记忆 → 第一个
+                && SkinsViewModel.PickCountry(Array.Empty<CountryItem>(), "usa") == null
+                && SkinsViewModel.PickVehicle(rememberedVehicles, "su_30mkk")?.Id == "su_30mkk"
+                && SkinsViewModel.PickVehicle(rememberedVehicles, "gone")?.Id == "f_15e"
+                && SkinsViewModel.PickVehicle(rememberedVehicles, "")?.Id == "f_15e"
+                && SkinsViewModel.PickVehicle(Array.Empty<Vehicle>(), "f_15e") == null;
+
+            log.AppendLine($"浏览记忆   : 还原（命中 / 大小写 / 失效回退第一个 / 空库不给选）= {restoreOk}（应 True）");
+
+            if (!restoreOk)
+                log.AppendLine("自检异常：涂装浏览记忆的还原规则不对"
+                             + "（启动后可能卡在空列表，或回不到上次看的国家 / 载具）");
+
             // 桌面快捷方式（§7.4）：名字必须与安装器 MyAppName 一致；路径用 DesktopDirectory 拼（不碰真实桌面）
             var shortcutOk = ShortcutService.ShortcutName == "WarThunder Skin Manager"
                 && ShortcutService.PathFor(@"C:\Users\u\Desktop") == @"C:\Users\u\Desktop\WarThunder Skin Manager.lnk"

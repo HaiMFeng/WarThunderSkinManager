@@ -101,6 +101,15 @@ public partial class AppConfig : ObservableObject
 
     // ---- 导入选项记忆（功能设计 §3.1）：按导入方式记住上次的勾选，下次导入默认沿用 ----
 
+    /// <summary>
+    /// 涂装管理页**上次浏览的位置**（§3.2 浏览记忆）：国家 id（含 <c>all</c>）。
+    /// 空串 = 没有记忆；记住的国家已不存在时启动回退到第一个，不会卡在空列表。
+    /// </summary>
+    [ObservableProperty] private string _lastSkinCountry = "";
+
+    /// <summary>涂装管理页上次选中的载具标识（见 <see cref="LastSkinCountry"/>）；找不到就退回该国第一个载具。</summary>
+    [ObservableProperty] private string _lastSkinVehicle = "";
+
     /// <summary>「一键导入 UserSkins」→ 导入后删除源文件夹（默认勾选）</summary>
     [ObservableProperty] private bool _importDeleteSourceUserSkins = true;
 
