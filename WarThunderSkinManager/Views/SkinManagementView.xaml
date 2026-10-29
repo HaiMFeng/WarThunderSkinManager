@@ -369,8 +369,11 @@
                                                 ClipToBounds="True" SnapsToDevicePixels="True"
                                                 SizeChanged="ThumbBorder_SizeChanged">
                                             <Grid>
-                                                <!-- 没有预览图时的占位：给一个最小高度，卡片不会塌成一条细线 -->
-                                                <Border Background="{StaticResource BrushSurface2}" MinHeight="132">
+                                                <!-- 没有预览图时的占位：**1:1 正方形**（高度跟随卡片实际宽度）。
+                                                     ActualWidth 在首次测量时还是 0，MinHeight 兜住首帧不塌成一条细线，
+                                                     排完一遍后绑定生效即为正方形。 -->
+                                                <Border Background="{StaticResource BrushSurface2}" MinHeight="132"
+                                                        Height="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Border}}">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
