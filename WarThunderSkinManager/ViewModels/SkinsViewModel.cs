@@ -581,13 +581,13 @@ public partial class SkinsViewModel : ObservableObject
                     // 更要紧的是它就落在"完成气泡"后面 —— UI 线程被占住时气泡根本渲染不出来，
                     // 等它空出来时 3 秒的墙钟早已走完，气泡直接被判过期回收（看着就像"被吞掉"）。
                     var previewSource = previewImagePath;
-                    var configDir = _config.ConfigDirectory;
+                    var previewLibrary = _config.ResourceDirectory;
                     var ids = result.Packages.Select(p => p.Id).ToList();
 
                     await Task.Run(() =>
                     {
                         foreach (var id in ids)
-                            PreviewStore.SaveFromFile(configDir, id, previewSource);
+                            PreviewStore.SaveFromFile(previewLibrary, id, previewSource);
                     });
 
                     // 预览文件已落盘 → 立即刷新缩略图（当前载具页面上无需切页即可看到）
@@ -1311,7 +1311,7 @@ public partial class SkinsViewModel : ObservableObject
             var wasActive = SelectedPackage.IsActive;
             var vehicleId = SelectedPackage.VehicleId;
 
-            PreviewStore.Delete(_config.ConfigDirectory, id);
+            // 预览图在包目录里，随 PackageStore.Delete 一起删掉（无需单独清理）
             PackageStore.Delete(_config.ResourceDirectory, id);
 
             // §6.5：被删包独占的贴图成为无引用 blob → 后台静默回收（不阻塞界面）；
@@ -1399,7 +1399,7 @@ public partial class SkinsViewModel : ObservableObject
                     LoadoutService.LoadActivation(configDir, item.VehicleId).ActivePackageId,
                     item.Id, StringComparison.Ordinal);
 
-                PreviewStore.Delete(configDir, item.Id);
+                // 预览图随包目录一起删
                 PackageStore.Delete(resourceDir, item.Id);
                 removed++;
 
@@ -1772,6 +1772,7 @@ public partial class SkinsViewModel : ObservableObject
         if (vehicle == null || string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return;
 
         var configDir = _config.ConfigDirectory;
+        var resourceDir = _config.ResourceDirectory;
         var decodeToken = new object();
         _previewDecodeToken = decodeToken;
 
@@ -1783,20 +1784,25 @@ public partial class SkinsViewModel : ObservableObject
             {
                 if (!ReferenceEquals(_previewDecodeToken, decodeToken)) return; // 已切走 → 放弃剩余解码
 
-                var full = PreviewStore.FullPath(configDir, package.Id);
+                // 包目录里的 preview.png 优先；迁移未完成 / 只读库时回落到旧的配置目录位置
+                var full = PreviewStore.ResolveExisting(resourceDir, configDir, package.Id);
 
-                var image = GetCachedThumb(package.Id, full);
-                if (image == null)
+                ImageSource? image = null;
+                if (full != null)
                 {
-                    image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth); // Freeze 过 → 跨线程安全
-                    if (image != null) PutCachedThumb(package.Id, full, image);
+                    image = GetCachedThumb(package.Id, full);
+                    if (image == null)
+                    {
+                        image = PreviewStore.LoadImage(full, ThumbnailDecodeWidth); // Freeze 过 → 跨线程安全
+                        if (image != null) PutCachedThumb(package.Id, full, image);
+                    }
                 }
 
                 Application.Current?.Dispatcher.BeginInvoke(() =>
                 {
                     if (!ReferenceEquals(_previewDecodeToken, decodeToken)) return;
 
-                    package.PreviewPath = image == null ? "" : full;
+                    package.PreviewPath = full ?? "";
                     package.PreviewImage = image;
                 });
             }

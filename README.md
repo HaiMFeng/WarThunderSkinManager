@@ -97,7 +97,13 @@ WarThunderSkinManager/
 ├── ref/units_weaponry.csv         # 武器名表（同上）
 ├── ref/_units.defaults.csv        # 基线（内部文件：判断表有没有被改过，决定能否随程序更新）
 ├── ref/_units_weaponry.defaults.csv
-└── previews/                      # 预览图缓存（png，键=涂装包 id）
+└── vehicle-icons/                 # 载具列表图标缓存（可重建）
+```
+
+> **预览图不在配置目录**：每个包的预览图是 `<资源库>/packages/<包Id>/preview.png`（属于涂装数据，
+> 拷走资源库即可完整恢复）。老版本放在 `<配置目录>/previews/`，升级后首次启动会强制迁移一次，
+> 迁移完把旧目录清掉；配置目录被删除也不会丢预览。
+```
 ```
 
 > 部件贴图配置属于**涂装包**（`packages/<Id>/meta.json` 的 `parts`），不属于载具。

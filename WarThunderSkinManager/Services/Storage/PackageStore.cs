@@ -61,7 +61,7 @@ public static class PackageStore
     /// 副本插在源包之后（同载具内 order 更大的包整体后移）。
     /// </summary>
     /// <param name="configDir">
-    /// 配置目录（预览图缓存 `previews/&lt;包Id&gt;.png` 在那里）——传入则**一并复制预览图**（§3.4）；
+    /// 配置目录 —— **已不使用**（预览图随包目录 `preview.png`，复制包时自动带上，§3.4 / §3.6）；
     /// 源包没有预览图时副本保持为空。
     /// </param>
     /// <param name="siblingIds">
@@ -70,6 +70,7 @@ public static class PackageStore
     /// 背景见 `docs/软件功能设计.md` 的"快照只影响读"一节）。
     /// 传 <c>null</c> 时退回"按同载具过滤全库扫描"（仅兼容旧调用 / 测试）。
     /// </param>
+    /// <param name="configDir">**已不再使用**（预览图随包目录，§3.6）；保留参数只为不动既有调用点。</param>
     public static PackageMeta? Duplicate(string resourceDir, string id, string newName,
         string? configDir = null, IEnumerable<string>? siblingIds = null)
     {
@@ -140,8 +141,9 @@ public static class PackageStore
 
         // 预览图**一并复制**并指向副本自己（§3.4）：预览图是包的一部分（属性页设的、WT Live 带来的），
         // 复制包却不带预览图会让副本显示成"没有预览"。复制失败（权限 / 占用）不影响复制包本身
-        if (PreviewStore.Copy(configDir ?? "", id, copy.Id))
-            copy.Preview = PreviewStore.FileName(copy.Id);
+        // 预览图在源包的目录里（§3.6）→ 直接复制到副本目录
+        if (PreviewStore.Copy(resourceDir, id, copy.Id))
+            copy.Preview = PreviewStore.PackageFileName;
 
         SaveMeta(resourceDir, copy);
         return copy;

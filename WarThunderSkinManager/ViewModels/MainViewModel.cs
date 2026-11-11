@@ -548,7 +548,7 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// 检测目录变更并**迁移数据**（以调用方传入的**变更前**目录值为基准，无快照时序问题）：
-    /// 配置目录带走 config.json / lang / mappings / index / ref（previews 缓存不迁，按需重建）；
+    /// 配置目录带走 config.json / lang / mappings / index / ref（预览图已迁入资源库，目录搬运不再涉及）；
     /// 资源目录带走**全部**顶层内容（packages / blobs / imports，大库按字节报进度）；UserSkins 带走 WTSM 输出。
     /// 同卷 = 瞬时改名；跨卷 = 复制完成后才删源，取消时源完好。
     /// 迁移在后台执行 + 进度窗可取消；取消 / 失败返回 <c>false</c>（**不保存**目录配置）。

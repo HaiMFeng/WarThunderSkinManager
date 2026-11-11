@@ -12,7 +12,10 @@ public sealed class ResetOptions
     /// <summary>资源库数据：<c>packages/</c> <c>blobs/</c> <c>imports/</c></summary>
     public bool ClearLibrary { get; init; }
 
-    /// <summary>配置数据：<c>mappings/</c> <c>loadouts/</c> <c>previews/</c></summary>
+    /// <summary>
+    /// 配置数据：<c>mappings/</c> <c>loadouts/</c> <c>wtlive-cache/</c>。
+    /// 预览图**不在这里**（它在涂装库的包目录里，随「清除资源库」一起走，§3.6）。
+    /// </summary>
     public bool ClearConfigData { get; init; }
 
     /// <summary>语言文件与程序配置：<c>lang/</c> <c>config.json</c>（会丢失目录设置与自定义文案）</summary>
@@ -95,7 +98,8 @@ public static class DataResetService
             MappingCount = mappings,
             CountryOverrideCount = countries,
             LoadoutCount = CountFiles(Path.Combine(configDir, "loadouts"), "*.json"),
-            PreviewCount = CountFiles(Path.Combine(configDir, "previews"), "*.png"),
+            // 预览图属于**涂装库**（§3.6）：按 <资源库>/packages/*/preview.png 统计
+            PreviewCount = CountPackagePreviews(resourceDir),
             PreviewCacheBytes = DirectoryBytes(Path.Combine(configDir, "wtlive-cache")),
             HasWtsmOutput = wtsm.Length > 0 && Directory.Exists(wtsm)
         };
@@ -120,7 +124,8 @@ public static class DataResetService
             {
                 DeleteDirectory(Path.Combine(configDir, "mappings"), errors);
                 DeleteDirectory(Path.Combine(configDir, "loadouts"), errors);
-                DeleteDirectory(Path.Combine(configDir, "previews"), errors);
+                // 不删 previews/：预览图属于涂装库（§3.6）。这里若还残留旧位置的图，
+                // 说明迁移没跑完 —— 留给迁移器下次启动继续搬，不能当"配置数据"清掉
                 DeleteDirectory(Path.Combine(configDir, "wtlive-cache"), errors); // 预览图缓存（§5.7.1）
             }
 
@@ -135,6 +140,25 @@ public static class DataResetService
             DeleteDirectory(Path.Combine(config.UserSkinsDirectory, "WTSM"), errors);
 
         return errors;
+    }
+
+    /// <summary>统计资源库里带预览图的包数（<c>packages/&lt;包Id&gt;/preview.png</c>）。</summary>
+    private static int CountPackagePreviews(string resourceDir)
+    {
+        if (string.IsNullOrWhiteSpace(resourceDir)) return 0;
+
+        try
+        {
+            var packages = Path.Combine(resourceDir, "packages");
+            if (!Directory.Exists(packages)) return 0;
+
+            return Directory.EnumerateDirectories(packages)
+                .Count(dir => File.Exists(Path.Combine(dir, PreviewStore.PackageFileName)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     /// <summary>

@@ -119,7 +119,7 @@ public partial class PackageEditorViewModel : ObservableObject
 
         try
         {
-            PreviewStore.SaveFromFile(_configDir, _meta.Id, dialog.FileName);
+            PreviewStore.SaveFromFile(_resourceDir, _meta.Id, dialog.FileName);
             RefreshPreview();
         }
         catch (Exception ex)
@@ -141,7 +141,7 @@ public partial class PackageEditorViewModel : ObservableObject
                 return;
             }
 
-            PreviewStore.SaveFromBitmap(_configDir, _meta.Id, image);
+            PreviewStore.SaveFromBitmap(_resourceDir, _meta.Id, image);
             RefreshPreview();
         }
         catch (Exception ex)
@@ -153,7 +153,7 @@ public partial class PackageEditorViewModel : ObservableObject
     [RelayCommand]
     private void ClearPreview()
     {
-        PreviewStore.Delete(_configDir, _meta.Id);
+        PreviewStore.Delete(_resourceDir, _meta.Id);
         RefreshPreview();
     }
 
@@ -165,7 +165,8 @@ public partial class PackageEditorViewModel : ObservableObject
 
         _meta.SourceUrl = SourceUrl.Trim(); // 来源链接（清空 = 移除）
 
-        _meta.Preview = PreviewStore.Exists(_configDir, _meta.Id) ? PreviewStore.FileName(_meta.Id) : "";
+        // 字段只是"有这个文件"的冗余记录（旧版本读它）；真相是包目录里有没有 preview.png
+        _meta.Preview = PreviewStore.Exists(_resourceDir, _meta.Id) ? PreviewStore.PackageFileName : "";
 
         ApplyBlocks();
     }
@@ -766,7 +767,7 @@ public partial class PackageEditorViewModel : ObservableObject
 
     private void RefreshPreview()
         => PreviewImage = PreviewStore.LoadImage(
-            PreviewStore.FullPath(_configDir, _meta.Id), PreviewDecodeWidth);
+            PreviewStore.ResolveExisting(_resourceDir, _configDir, _meta.Id), PreviewDecodeWidth);
 
     private void ShowStatus(string message) => StatusMessage = message;
 }

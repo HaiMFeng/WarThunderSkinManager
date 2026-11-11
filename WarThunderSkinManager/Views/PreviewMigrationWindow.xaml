@@ -1,0 +1,29 @@
+<Window x:Class="WarThunderSkinManager.Views.PreviewMigrationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:WarThunderSkinManager.Localization"
+        Title="{loc:Loc migrate.preview.title}"
+        Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" Topmost="True"
+        Background="{StaticResource BrushBackground}"
+        BorderBrush="{StaticResource BrushBorder}" BorderThickness="1">
+
+    <!-- 一次性、强制、**没有取消入口**：迁移被打断（强杀/断电）只会让下次启动接着做 -->
+    <StackPanel Margin="24,22,24,22">
+        <TextBlock Text="{loc:Loc migrate.preview.title}"
+                   FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource BrushText}"/>
+
+        <TextBlock x:Name="DetailText" Text="{loc:Loc migrate.preview.preparing}"
+                   Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+
+        <ProgressBar x:Name="Bar" Height="6" Margin="0,14,0,0" Minimum="0" Maximum="1"
+                     Value="0" IsIndeterminate="True"
+                     Background="{StaticResource BrushSurface2}"
+                     Foreground="{StaticResource BrushPrimary}"/>
+
+        <TextBlock Text="{loc:Loc migrate.preview.hint}"
+                   Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+    </StackPanel>
+</Window>

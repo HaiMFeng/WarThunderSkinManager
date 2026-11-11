@@ -74,6 +74,9 @@ public partial class App : Application
                 // 忽略：数据表在每次访问时仍有内置回退
             }
 
+            // 3.5) 预览图迁入资源库（一次性、强制、可强杀续跑，见 PreviewMigrationService）
+            RunPreviewMigration(config);
+
             // 4) 建主窗口（XAML 中的 {loc:Loc} 此时已能取到文案）
             new MainWindow(config).Show();
         }
@@ -82,6 +85,59 @@ public partial class App : Application
             // 启动路径（配置 / 主题 / 语言初始化）失败 → 记日志 + 提示后退出，不留半初始化窗口
             ReportCrash(ex);
             Shutdown(1);
+        }
+    }
+
+    /// <summary>
+    /// 把旧版本放在配置目录里的预览图迁进资源库（<c>packages/&lt;包Id&gt;/preview.png</c>）。
+    /// 只在 <see cref="AppConfig.PreviewStorageVersion"/> 低于目标版本时运行；完成后盖章，之后完全无感。
+    /// </summary>
+    /// <remarks>
+    /// 必须跑在**任何库加载与预览读取之前**（所以放在建主窗口之前），这样就没有并发读者；
+    /// 单实例互斥已在上一步拿到，也不会有第二个进程同时迁移。
+    /// 没有历史预览图（新用户 / 配置目录已被删）时**不弹窗**，静默盖章。
+    /// </remarks>
+    private static void RunPreviewMigration(AppConfig config)
+    {
+        if (!PreviewMigrationService.NeedsMigration(config)) return;
+
+        try
+        {
+            if (!PreviewMigrationService.HasLegacyPreviews(config))
+            {
+                // 没东西可迁（全新用户 / 配置目录已丢）：不打扰，直接按新布局收尾
+                _ = PreviewMigrationService.Run(config);
+                return;
+            }
+
+            // 默认 ShutdownMode = OnLastWindowClose：迁移窗是**唯一**窗口，关掉它会直接退出程序、
+            // 主窗口根本不会出现。迁移期间临时改成显式关闭，结束后还原。
+            var app = Application.Current;
+            var previousShutdownMode = app?.ShutdownMode ?? ShutdownMode.OnLastWindowClose;
+            if (app != null) app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+            try
+            {
+                var window = new Views.PreviewMigrationWindow(config);
+                window.ShowDialog();
+
+                if (window.Result is { Completed: false } failed)
+                {
+                    MessageBox.Show(
+                        LocalizationManager.Instance.Format("migrate.preview.failed", failed.Error ?? "?"),
+                        LocalizationManager.Instance["migrate.preview.title"],
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            finally
+            {
+                if (app != null) app.ShutdownMode = previousShutdownMode;
+            }
+        }
+        catch (Exception ex)
+        {
+            // 迁移失败不该挡住启动：旧位置的图仍能显示（PreviewStore.ResolveExisting 兜底），下次启动重试
+            ReportCrash(ex);
         }
     }
 

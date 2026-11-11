@@ -236,6 +236,9 @@ public static class ImportService
                     var decon = DeconstructionService.Deconstruct(
                         candidate.BlkPath, resourceDir, recordId, candidate.SuggestedName, sourceUrl);
 
+                    // 包自带预览图（我们的导出包 / 手工整理的包）：与 blk 同目录的 preview.png 作为该包预览
+                    TryAttachPreview(resourceDir, candidate.BlkPath, decon.Package.Id);
+
                     lock (gate)
                     {
                         result.Packages.Add(decon.Package);
@@ -270,6 +273,26 @@ public static class ImportService
             SaveManifest(resourceDir, group.Record, packagesByRecord[group.Record.Id]);
 
         return result;
+    }
+
+    /// <summary>
+    /// 导入时带上"与 blk 同目录的 <c>preview.png</c>"（我们的导出包会写这一份，§3.6）。
+    /// 只是锦上添花：拷不到不影响导入本身，卡片显示空图占位而已。
+    /// </summary>
+    private static void TryAttachPreview(string resourceDir, string blkPath, string packageId)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(blkPath);
+            if (string.IsNullOrEmpty(dir)) return;
+
+            var preview = Path.Combine(dir, PreviewStore.PackageFileName);
+            if (File.Exists(preview)) PreviewStore.CopyFromFile(resourceDir, packageId, preview);
+        }
+        catch
+        {
+            // 忽略：预览图缺失只是少一张图
+        }
     }
 
     /// <summary>

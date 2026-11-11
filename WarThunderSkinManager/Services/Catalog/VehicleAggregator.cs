@@ -216,7 +216,8 @@ public static class VehicleAggregator
             VehicleId = meta.VehicleId,
             Name = meta.Name,
             SourceImportId = meta.SourceImportId,
-            PreviewPath = meta.Preview,
+            // 预览图路径由界面层按需解析（包目录 preview.png，旧位置兜底）——投影里不碰文件系统
+            PreviewPath = "",
             IsResource = meta.IsResource
         };
 

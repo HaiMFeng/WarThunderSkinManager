@@ -1956,11 +1956,11 @@ internal static class SelfTest
             var dupSource = PackageStore.CreateBlank(dupLib, "v1", "Src");
 
             var pixels = new byte[] { 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255 };
-            PreviewStore.SaveFromBitmap(workDir, dupSource.Id,
+            PreviewStore.SaveFromBitmap(dupLib, dupSource.Id,
                 System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96,
                     System.Windows.Media.PixelFormats.Bgra32, null, pixels, 8));
 
-            dupSource.Preview = PreviewStore.FileName(dupSource.Id);
+            dupSource.Preview = PreviewStore.PackageFileName;
             PackageStore.SaveMeta(dupLib, dupSource);
 
             var dupCopy = PackageStore.Duplicate(dupLib, dupSource.Id, "Src - 副本", workDir);
@@ -1969,14 +1969,77 @@ internal static class SelfTest
             var plainCopy = PackageStore.Duplicate(dupLib, plainSource.Id, "NoPreview - 副本", workDir);
 
             var dupPreviewOk = dupCopy != null
-                && string.Equals(dupCopy.Preview, PreviewStore.FileName(dupCopy.Id), StringComparison.Ordinal)
-                && PreviewStore.Exists(workDir, dupCopy.Id)
-                && File.ReadAllBytes(PreviewStore.FullPath(workDir, dupCopy.Id))
-                    .SequenceEqual(File.ReadAllBytes(PreviewStore.FullPath(workDir, dupSource.Id)));
+                && string.Equals(dupCopy.Preview, PreviewStore.PackageFileName, StringComparison.Ordinal)
+                && PreviewStore.Exists(dupLib, dupCopy.Id)
+                && File.ReadAllBytes(PreviewStore.PathFor(dupLib, dupCopy.Id))
+                    .SequenceEqual(File.ReadAllBytes(PreviewStore.PathFor(dupLib, dupSource.Id)));
 
             var plainPreviewOk = plainCopy != null
                 && plainCopy.Preview.Length == 0
-                && !PreviewStore.Exists(workDir, plainCopy.Id);
+                && !PreviewStore.Exists(dupLib, plainCopy.Id);
+
+            // ---- 预览图迁入资源库（§3.6）：旧位置 → 包目录；幂等；配置目录被删后仍能从库解析 ----
+            var migLib = Path.Combine(workDir, "mig-lib");
+            var migConfigDir = Path.Combine(workDir, "mig-config");
+            Directory.CreateDirectory(migConfigDir);
+
+            var migPkgOld = PackageStore.CreateBlank(migLib, "v1", "OldLocation");
+            var migPkgNew = PackageStore.CreateBlank(migLib, "v1", "AlreadyMigrated");
+
+            var migEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            migEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(
+                System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96,
+                    System.Windows.Media.PixelFormats.Bgra32, null, pixels, 8)));
+
+            var migPng = Path.Combine(workDir, "mig.png");
+            using (var migStream = File.Create(migPng)) migEncoder.Save(migStream);
+
+            Directory.CreateDirectory(PreviewStore.LegacyDirectory(migConfigDir));
+            File.Copy(migPng, PreviewStore.LegacyPathFor(migConfigDir, migPkgOld.Id));
+            File.Copy(migPng, PreviewStore.PathFor(migLib, migPkgNew.Id)); // 模拟"上次迁到一半"
+
+            var migConfig = new AppConfig { ConfigDirectory = migConfigDir, ResourceDirectory = migLib };
+            var migFirst = PreviewMigrationService.Run(migConfig);
+
+            // 清目录的判定要**在第二次迁移 / 重建旧目录之前**抓：后面为了测"旧位置兜底"会把它建回来
+            var migLegacyCleared = !Directory.Exists(PreviewStore.LegacyDirectory(migConfigDir));
+
+            var migSecond = PreviewMigrationService.Run(migConfig);
+
+            var migOk = migFirst.Completed
+                        && migFirst.Migrated == 1 && migFirst.AlreadyOk == 1 && migFirst.Failed == 0
+                        && File.Exists(PreviewStore.PathFor(migLib, migPkgOld.Id))
+                        && !File.Exists(PreviewStore.LegacyPathFor(migConfigDir, migPkgOld.Id))
+                        && migLegacyCleared
+                        && File.Exists(PreviewMigrationService.MarkerPath(migLib))
+                        && File.ReadAllText(PreviewMigrationService.MarkerPath(migLib)).Trim()
+                           == PreviewMigrationService.TargetVersion.ToString()
+                        && !PreviewMigrationService.NeedsMigration(migConfig);
+
+            var migIdempotent = migSecond.Completed && migSecond.Migrated == 0 && migSecond.Failed == 0;
+
+            // 配置目录被摧毁（这里用空 configDir 模拟）时，预览仍必须能从库里解析出来
+            var wipedPath = PreviewStore.ResolveExisting(migLib, "", migPkgOld.Id);
+            var wipeOk = wipedPath != null
+                         && wipedPath.StartsWith(Path.Combine(migLib, "packages"), StringComparison.OrdinalIgnoreCase);
+
+            // 旧位置兜底：库内没有时回落到配置目录（迁移失败 / 只读库的场景）
+            var fallbackPkg = PackageStore.CreateBlank(migLib, "v1", "Fallback");
+            Directory.CreateDirectory(PreviewStore.LegacyDirectory(migConfigDir));
+            File.Copy(migPng, PreviewStore.LegacyPathFor(migConfigDir, fallbackPkg.Id));
+
+            var fallbackPath = PreviewStore.ResolveExisting(migLib, migConfigDir, fallbackPkg.Id);
+            var fallbackOk = fallbackPath != null
+                             && fallbackPath.StartsWith(PreviewStore.LegacyDirectory(migConfigDir),
+                                 StringComparison.OrdinalIgnoreCase);
+
+            log.AppendLine($"预览迁移   : 旧位置 → 包目录（迁移 {migFirst.Migrated} / 已在位 {migFirst.AlreadyOk} / 清旧目录 = {migLegacyCleared}）= {migOk}（应 True）、"
+                         + $"重复执行幂等 = {migIdempotent}（应 True）、配置目录丢失后仍从库解析 = {wipeOk}（应 True）、"
+                         + $"旧位置兜底 = {fallbackOk}（应 True）");
+
+            if (!migOk || !migIdempotent || !wipeOk || !fallbackOk)
+                log.AppendLine("自检异常：预览图迁移 / 解析规则不对"
+                             + "（会出现「配置目录一删预览全丢」或迁移重复搬运、清空旧位置后才失败）");
 
             // ---- KI-1：复制 / 新建的排序重编号只碰"内存投影给出的兄弟包"（不再 LoadAll 扫全库）----
             // 语义必须与旧实现一致：同载具里 Order 大于源包的兄弟整体后移一位；别的载具一律不动
@@ -1996,7 +2059,7 @@ internal static class SelfTest
                          + "（应 P0=0、P1=2、X0=0、P0 - 副本=1：只重编号同载具兄弟，别的载具不动）");
 
             log.AppendLine($"复制预览图 : 源有预览 → 副本有且内容相同 = {dupPreviewOk}（应 True），"
-                         + $"meta.preview = {dupCopy?.Preview}（应 {dupCopy?.Id}.png）；"
+                         + $"meta.preview = {dupCopy?.Preview}（应 {PreviewStore.PackageFileName}，包内固定名）；"
                          + $"源无预览 → 副本为空 = {plainPreviewOk}（应 True）"
                          + $"（另：副本 Id 与源不同 = {dupCopy != null && dupCopy.Id != dupSource.Id}）");
 

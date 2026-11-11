@@ -194,6 +194,20 @@ public static class PackageExporter
 
         File.WriteAllText(Path.Combine(targetDir, meta.VehicleId + ".blk"), text, new UTF8Encoding(false));
 
+        // 预览图跟着导出（包自包含）：解压 / 拖回导入时能作为该包的预览（导入侧按"与 blk 同目录的 preview.png"识别）
+        var preview = PreviewStore.PathFor(resourceDir, meta.Id);
+        if (File.Exists(preview))
+        {
+            try
+            {
+                File.Copy(preview, Path.Combine(targetDir, PreviewStore.PackageFileName), overwrite: true);
+            }
+            catch
+            {
+                // 预览图拷不过去不影响导出本体
+            }
+        }
+
         // 贴图：只导出被引用的 to（未引用的原始贴图不混入）
         foreach (var (to, relative) in rename)
         {
