@@ -141,9 +141,14 @@ public static class PackageStore
 
         // 预览图**一并复制**并指向副本自己（§3.4）：预览图是包的一部分（属性页设的、WT Live 带来的），
         // 复制包却不带预览图会让副本显示成"没有预览"。复制失败（权限 / 占用）不影响复制包本身
-        // 预览图在源包的目录里（§3.6）→ 直接复制到副本目录
-        if (PreviewStore.Copy(resourceDir, id, copy.Id))
-            copy.Preview = PreviewStore.PackageFileName;
+        // 预览图在源包的目录里（§3.6）→ 直接复制到副本目录；
+        // 迁移尚未完成时源图还在旧的配置目录 → 也一并兜底，避免"副本没图"
+        var previewCopied = PreviewStore.Copy(resourceDir, id, copy.Id)
+                            || (!string.IsNullOrWhiteSpace(configDir)
+                                && PreviewStore.CopyFromFile(resourceDir, copy.Id,
+                                    PreviewStore.LegacyPathFor(configDir!, id)));
+
+        if (previewCopied) copy.Preview = PreviewStore.PackageFileName;
 
         SaveMeta(resourceDir, copy);
         return copy;

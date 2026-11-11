@@ -90,7 +90,7 @@ public partial class App : Application
 
     /// <summary>
     /// 把旧版本放在配置目录里的预览图迁进资源库（<c>packages/&lt;包Id&gt;/preview.png</c>）。
-    /// 只在 <see cref="AppConfig.PreviewStorageVersion"/> 低于目标版本时运行；完成后盖章，之后完全无感。
+    /// 只在库内标记 <c>packages/.preview-layout</c> 缺失或版本过低时运行；完成后盖章，之后完全无感。
     /// </summary>
     /// <remarks>
     /// 必须跑在**任何库加载与预览读取之前**（所以放在建主窗口之前），这样就没有并发读者；

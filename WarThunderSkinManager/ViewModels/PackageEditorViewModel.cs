@@ -153,7 +153,12 @@ public partial class PackageEditorViewModel : ObservableObject
     [RelayCommand]
     private void ClearPreview()
     {
-        PreviewStore.Delete(_resourceDir, _meta.Id);
+        // 迁移未完成时图可能还在旧的配置目录：删**实际存在**的那一份，
+        // 否则 ResolveExisting 的兜底会让刚清掉的图"又回来"
+        var existingPreview = PreviewStore.ResolveExisting(_resourceDir, _configDir, _meta.Id);
+        if (existingPreview != null) PreviewStore.DeleteFile(existingPreview);
+        else PreviewStore.Delete(_resourceDir, _meta.Id);
+
         RefreshPreview();
     }
 

@@ -587,7 +587,11 @@ public partial class SkinsViewModel : ObservableObject
                     await Task.Run(() =>
                     {
                         foreach (var id in ids)
-                            PreviewStore.SaveFromFile(previewLibrary, id, previewSource);
+                        {
+                            // 单张写失败不能连坐：整次下载/导入已经成功，不该因为一张预览图被判失败
+                            try { PreviewStore.SaveFromFile(previewLibrary, id, previewSource); }
+                            catch { /* 卡片显示空图占位即可 */ }
+                        }
                     });
 
                     // 预览文件已落盘 → 立即刷新缩略图（当前载具页面上无需切页即可看到）
@@ -1769,7 +1773,10 @@ public partial class SkinsViewModel : ObservableObject
 
         _previewVehicle = vehicle;
 
-        if (vehicle == null || string.IsNullOrWhiteSpace(_config.ConfigDirectory)) return;
+        // 配置目录没了（用户删了 / 迁移中被挪走）也要能显示**库里**的预览 → 两个目录都空才放弃
+        if (vehicle == null) return;
+        if (string.IsNullOrWhiteSpace(_config.ConfigDirectory)
+            && string.IsNullOrWhiteSpace(_config.ResourceDirectory)) return;
 
         var configDir = _config.ConfigDirectory;
         var resourceDir = _config.ResourceDirectory;

@@ -2018,6 +2018,29 @@ internal static class SelfTest
 
             var migIdempotent = migSecond.Completed && migSecond.Migrated == 0 && migSecond.Failed == 0;
 
+            // 旧位置是**全局共享**的（配置目录可以先后指向不同资源库）：别的库的孤儿图不许删
+            Directory.CreateDirectory(PreviewStore.LegacyDirectory(migConfigDir));
+            var foreignPreview = Path.Combine(PreviewStore.LegacyDirectory(migConfigDir), "otherlibpkg.png");
+            File.Copy(migPng, foreignPreview);
+
+            _ = PreviewMigrationService.Run(migConfig);
+            var foreignKept = File.Exists(foreignPreview);
+
+            // 库暂时不可用（挪走 / 网络离线）但旧位置还有图：**不能盖章、不能删图、也不能顺手建空库**，
+            // 否则真库回来时会被"已迁移"永久跳过
+            var offlineLib = Path.Combine(workDir, "offline-lib");
+            var offlineConfigDir = Path.Combine(workDir, "offline-config");
+            Directory.CreateDirectory(PreviewStore.LegacyDirectory(offlineConfigDir));
+
+            var offlinePreview = PreviewStore.LegacyPathFor(offlineConfigDir, "pkg-offline");
+            File.Copy(migPng, offlinePreview);
+
+            var offlineModel = new AppConfig { ConfigDirectory = offlineConfigDir, ResourceDirectory = offlineLib };
+            _ = PreviewMigrationService.Run(offlineModel);
+
+            var offlineSafe = File.Exists(offlinePreview)
+                              && !Directory.Exists(PackageStore.PackagesDirectory(offlineLib));
+
             // 配置目录被摧毁（这里用空 configDir 模拟）时，预览仍必须能从库里解析出来
             var wipedPath = PreviewStore.ResolveExisting(migLib, "", migPkgOld.Id);
             var wipeOk = wipedPath != null
@@ -2035,11 +2058,12 @@ internal static class SelfTest
 
             log.AppendLine($"预览迁移   : 旧位置 → 包目录（迁移 {migFirst.Migrated} / 已在位 {migFirst.AlreadyOk} / 清旧目录 = {migLegacyCleared}）= {migOk}（应 True）、"
                          + $"重复执行幂等 = {migIdempotent}（应 True）、配置目录丢失后仍从库解析 = {wipeOk}（应 True）、"
-                         + $"旧位置兜底 = {fallbackOk}（应 True）");
+                         + $"旧位置兜底 = {fallbackOk}（应 True）、他库孤儿图保留 = {foreignKept}（应 True）、"
+                         + $"库不可用时不盖章不删图 = {offlineSafe}（应 True）");
 
-            if (!migOk || !migIdempotent || !wipeOk || !fallbackOk)
+            if (!migOk || !migIdempotent || !wipeOk || !fallbackOk || !foreignKept || !offlineSafe)
                 log.AppendLine("自检异常：预览图迁移 / 解析规则不对"
-                             + "（会出现「配置目录一删预览全丢」或迁移重复搬运、清空旧位置后才失败）");
+                             + "（会出现「配置目录一删预览全丢」、迁移重复搬运、误删他库孤儿图，或库离线时被误盖章）");
 
             // ---- KI-1：复制 / 新建的排序重编号只碰"内存投影给出的兄弟包"（不再 LoadAll 扫全库）----
             // 语义必须与旧实现一致：同载具里 Order 大于源包的兄弟整体后移一位；别的载具一律不动

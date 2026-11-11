@@ -80,14 +80,22 @@ public static class PreviewMigrationService
         var configDir = config.ConfigDirectory ?? "";
         var resourceDir = config.ResourceDirectory ?? "";
 
-        // 新用户 / 还没配库：没有可迁的东西 → 直接盖章（下次启动完全无感）
+        // 库不可用（未配置 / 离线 / 被临时挪走）：
+        // · 没有历史预览 = 新用户，没什么可迁 → 盖章（但不建目录，见 MarkDone）
+        // · **有历史预览** → 绝不能盖章：否则真库回来时会被"已迁移"永久跳过，旧图永远进不了库
         if (resourceDir.Length == 0 || !Directory.Exists(PackageStore.PackagesDirectory(resourceDir)))
         {
-            MarkDone(config);
+            if (!HasLegacyPreviews(config)) MarkDone(config);
+
             return new PreviewMigrationResult(0, 0, 0, 0, true, null);
         }
 
+        // **枚举失败必须当失败**：以前这里会退化成"0 个包 → 没有失败 → 清空旧目录 → 盖章"，
+        // 网络盘抖动一次就能把旧位置的图全删掉且再也迁不回来（审查发现，P0）
         var ids = EnumeratePackageIds(resourceDir);
+        if (ids == null)
+            return new PreviewMigrationResult(0, 0, 0, 0, false, "读取资源库的包目录失败");
+
         var legacyDir = PreviewStore.LegacyDirectory(configDir);
 
         var migrated = 0;
@@ -134,8 +142,8 @@ public static class PreviewMigrationService
         if (failed > 0)
             return new PreviewMigrationResult(ids.Count, migrated, already, failed, false, firstError);
 
-        // 全部就位（或本来就没有）→ 清理旧目录 → 索引失效 → 盖章
-        CleanupLegacy(legacyDir);
+        // 全部就位（或本来就没有）→ 清理旧目录（只删本库的）→ 索引失效 → 盖章
+        CleanupLegacy(legacyDir, ids);
         InvalidateLibraryIndex(configDir);
         MarkDone(config);
 
@@ -156,8 +164,11 @@ public static class PreviewMigrationService
         }
     }
 
-    /// <summary>列出资源库里的包目录名（= 包 Id）。</summary>
-    private static List<string> EnumeratePackageIds(string resourceDir)
+    /// <summary>
+    /// 列出资源库里的包目录名（= 包 Id）。**失败返回 <c>null</c>**（不是空表）：
+    /// 空表会让调用方误以为"库里没有包 → 没有失败"，进而清空旧位置的预览图。
+    /// </summary>
+    private static List<string>? EnumeratePackageIds(string resourceDir)
     {
         try
         {
@@ -169,7 +180,7 @@ public static class PreviewMigrationService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return new List<string>();
+            return null;
         }
     }
 
@@ -183,7 +194,15 @@ public static class PreviewMigrationService
             var dir = Path.GetDirectoryName(target);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            File.Copy(source, temp, overwrite: true);
+            // 逐字节复制并**刷盘后再改名**：断电时不会出现"名字已是 preview.png、内容却是 0 字节"
+            // 而源文件随后被删掉 —— 那才是真的丢图
+            using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                input.CopyTo(output);
+                output.Flush(true);
+            }
+
             File.Move(temp, target, overwrite: true);
         }
         finally
@@ -199,20 +218,38 @@ public static class PreviewMigrationService
         }
     }
 
-    /// <summary>清掉旧位置的全部预览图（含无主的孤儿图）与其残留临时文件；目录空了就删掉。</summary>
-    private static void CleanupLegacy(string legacyDir)
+    /// <summary>
+    /// 清掉旧位置里**属于本库**的预览图与残留临时文件；目录空了就删掉。
+    /// </summary>
+    /// <remarks>
+    /// **只删 <paramref name="packageIds"/> 里列出的 id**：旧位置是全局的（一个配置目录可先后指向不同资源库），
+    /// 别的库的预览在这里是"孤儿"，但删掉就再也回不来了 —— 宁可留一点垃圾，也不能删别人的数据。
+    /// </remarks>
+    private static void CleanupLegacy(string legacyDir, IReadOnlyCollection<string> packageIds)
     {
         try
         {
             if (!Directory.Exists(legacyDir)) return;
 
+            var owned = new HashSet<string>(packageIds, StringComparer.OrdinalIgnoreCase);
+
             foreach (var file in Directory.EnumerateFiles(legacyDir))
             {
                 var name = Path.GetFileName(file);
+                string? id = null;
 
-                // 只动"我们自己写的东西"：*.png 与 *.part；别的一概不碰
-                if (!name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-                    && !name.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
+                if (name.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                {
+                    id = Path.GetFileNameWithoutExtension(name);
+                }
+                else if (name.EndsWith(".part", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 形如 <包Id>.png.<8hex>.part
+                    var mark = name.IndexOf(".png.", StringComparison.OrdinalIgnoreCase);
+                    if (mark > 0) id = name[..mark];
+                }
+
+                if (id == null || !owned.Contains(id)) continue; // 不是本库的东西，一概不动
 
                 try { File.Delete(file); } catch { /* 单个失败不影响其余 */ }
             }
@@ -251,13 +288,15 @@ public static class PreviewMigrationService
         if (resourceDir.Length == 0) return;
 
         var marker = MarkerPath(resourceDir);
+
+        // **不要顺手建目录**：库被临时挪走 / 盘符换了时，建出来的空 packages/ 会让人误以为库还在
+        var packages = PackageStore.PackagesDirectory(resourceDir);
+        if (!Directory.Exists(packages)) return;
+
         var temp = marker + "." + Guid.NewGuid().ToString("N")[..8] + ".part";
 
         try
         {
-            var dir = Path.GetDirectoryName(marker);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
             File.WriteAllText(temp, TargetVersion.ToString(), new System.Text.UTF8Encoding(false));
             File.Move(temp, marker, overwrite: true);
         }

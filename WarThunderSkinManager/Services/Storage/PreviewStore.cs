@@ -102,7 +102,13 @@ public static class PreviewStore
             var temp = target + "." + Guid.NewGuid().ToString("N")[..8] + ".part";
             try
             {
-                File.Copy(sourceFile, temp, overwrite: true);
+                using (var input = new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    input.CopyTo(output);
+                    output.Flush(true); // 刷盘后再改名，断电不会留下 0 字节的 preview.png
+                }
+
                 File.Move(temp, target, overwrite: true);
             }
             finally
@@ -126,6 +132,9 @@ public static class PreviewStore
         var path = PathFor(resourceDir, packageId);
         TryDelete(path);
     }
+
+    /// <summary>删除指定路径的预览图（界面上"清除预览图"用：要删**实际命中**的那一份）。</summary>
+    public static void DeleteFile(string? path) => TryDelete(path ?? "");
 
     /// <summary>
     /// 读取预览图供界面绑定。**整幅载入内存并释放文件句柄**，
@@ -168,7 +177,11 @@ public static class PreviewStore
         var temp = destPath + "." + Guid.NewGuid().ToString("N")[..8] + ".part";
         try
         {
-            using (var stream = File.Create(temp)) encoder.Save(stream);
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                encoder.Save(stream);
+                stream.Flush(true); // 刷盘后再改名：断电不会留下 0 字节的 preview.png
+            }
 
             File.Move(temp, destPath, overwrite: true);
         }
