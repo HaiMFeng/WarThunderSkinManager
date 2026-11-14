@@ -46,8 +46,14 @@ public static class WtLiveFeedCache
     private static string _configDir = "";
     private static bool _loaded;
 
-    /// <summary>最近一次"追赶新帖"的时间（UTC）；界面据此判断要不要再补一轮。</summary>
+    /// <summary>最近一次"追赶新帖"的时间（UTC）；界面据此判断要不要再补一替。</summary>
     public static DateTime LastCatchUp { get; private set; } = DateTime.MinValue;
+
+    /// <summary>
+    /// 从第 0 页起**连续覆盖**了多少页（默认排序）。扫描游标从这里接着往下，
+    /// 就不会在"重新进入页面"时又从第 0 页重扫一遍。
+    /// </summary>
+    public static int PagesCovered { get; private set; }
 
     /// <summary>缓存条数（自检 / 设置页显示用）。</summary>
     public static int Count
@@ -72,6 +78,7 @@ public static class WtLiveFeedCache
             Entries.Clear();
             _loaded = false;
             LastCatchUp = DateTime.MinValue;
+            PagesCovered = 0;
         }
     }
 
@@ -252,6 +259,25 @@ public static class WtLiveFeedCache
         lock (Gate) LastCatchUp = utcNow;
     }
 
+    /// <summary>
+    /// 标记"第 <paramref name="pageIndex"/> 页已经顺序取过"。
+    /// 只有**从 0 起连续**才算：跳页（例如从别处开始扫）不算覆盖，避免把中间的洞当已覆盖。
+    /// </summary>
+    public static void MarkPageCovered(int pageIndex)
+    {
+        lock (Gate)
+        {
+            if (pageIndex == PagesCovered) PagesCovered = pageIndex + 1;
+            else if (pageIndex > PagesCovered) return; // 有洞，不动
+        }
+    }
+
+    /// <summary>重置覆盖页数（换条件 / 缓存重建时）。</summary>
+    public static void ResetPagesCovered()
+    {
+        lock (Gate) PagesCovered = 0;
+    }
+
     /// <summary>把缓存写盘（原子：临时名 + 改名）。失败静默 —— 缓存可丢，下次会重新攒。</summary>
     public static void Save()
     {
@@ -262,6 +288,7 @@ public static class WtLiveFeedCache
 
         List<Entry> snapshot;
         long catchUp;
+        int pages;
 
         lock (Gate)
         {
@@ -269,6 +296,7 @@ public static class WtLiveFeedCache
             catchUp = LastCatchUp == DateTime.MinValue
                 ? 0
                 : new DateTimeOffset(LastCatchUp.ToUniversalTime()).ToUnixTimeSeconds();
+            pages = PagesCovered;
         }
 
         var temp = path + "." + Guid.NewGuid().ToString("N")[..8] + ".part";
@@ -283,7 +311,7 @@ public static class WtLiveFeedCache
             using (var writer = new StreamWriter(gzip, new UTF8Encoding(false)))
             {
                 writer.WriteLine(JsonSerializer.Serialize(
-                    new Header { H = FormatVersion, CatchUp = catchUp }));
+                    new Header { H = FormatVersion, CatchUp = catchUp, Pages = pages }));
 
                 foreach (var entry in snapshot)
                     writer.WriteLine(JsonSerializer.Serialize(entry));
@@ -316,6 +344,7 @@ public static class WtLiveFeedCache
             Entries.Clear();
             _loaded = false;
             LastCatchUp = DateTime.MinValue;
+            PagesCovered = 0;
         }
     }
 
@@ -364,6 +393,7 @@ public static class WtLiveFeedCache
                         var header = JsonSerializer.Deserialize<Header>(line);
                         if (header is { CatchUp: > 0 })
                             LastCatchUp = DateTimeOffset.FromUnixTimeSeconds(header.CatchUp).UtcDateTime;
+                        if (header is { Pages: > 0 }) PagesCovered = header.Pages;
 
                         if (header == null || header.H != FormatVersion) return; // 版本不符：当空缓存重建
                         continue;
@@ -428,6 +458,9 @@ public static class WtLiveFeedCache
         [JsonPropertyName("h")] public int H { get; set; }
 
         [JsonPropertyName("catch")] public long CatchUp { get; set; }
+
+        /// <summary>从第 0 页起连续覆盖的页数（翻页游标用）。</summary>
+        [JsonPropertyName("p")] public int Pages { get; set; }
     }
 
     /// <summary>磁盘格式（短键名压体积；1 万条约 1.5–3 MB）。</summary>

@@ -132,6 +132,20 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>一批（缓存 6 条 / 扫描若干页）是否正在跑 —— 挡住滚动的重入。</summary>
     private bool _favoriteBatchRunning;
+
+    /// <summary>
+    /// 这一批属于哪个会话。批次里每个 await 之后都要复核：
+    /// 用户退出模式 / 换条件 / 后退会 ++session，迟到的卡片不能往新列表里塞（否则数量对不上）。
+    /// </summary>
+    private int _favoriteBatchSession = -1;
+
+    /// <summary>
+    /// 一批没刷出任何涂装时自动再试的次数（用户"下拉一次没反应"的补偿）。
+    /// 上限定得很小：找不到就是本站最近确实没有收藏作者的新作品，别一直打。
+    /// </summary>
+    private int _favoriteAutoRetries;
+
+    private const int FavoriteAutoRetryLimit = 2;
     private bool _catchUpDone;
 
     /// <summary>是否处于「收藏作者的涂装」模式（界面顶部因此显示提示条、排序下拉禁用）。</summary>
@@ -139,6 +153,14 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>提示条文案：扫描进度 / 到底仍无结果时的空态说明。</summary>
     [ObservableProperty] private string _favoriteModeText = "";
+
+    /// <summary>
+    /// 模式内**只能按时间排序**：缓存只对"最新"这一种顺序有效
+    /// （rating / comments / downloads 是服务端全局序，缓存的子集替代不了）。
+    /// </summary>
+    public bool IsSortEnabled => !IsFavoriteAuthorsMode;
+
+    partial void OnIsFavoriteAuthorsModeChanged(bool value) => OnPropertyChanged(nameof(IsSortEnabled));
 
     /// <summary>
     /// 这一条是不是收藏作者的作品：**id 优先**（feed 一般给 author id），
@@ -600,9 +622,14 @@ public partial class WtLiveViewModel : ObservableObject
         _cacheServed.Clear();
         _cacheDrained = false;
         _catchUpDone = false;
+        _favoriteAutoRetries = 0;
         UpdateFavoriteModeText();
 
         StartRefresh(); // 清空列表 → RequestMore() 会走补页逻辑
+
+        // 网络扫描从"缓存已连续覆盖到的那一页"接着往下：
+        // 否则重新进入页面时又从第 0 页重扫一遍（用户看到的就是"从头开始搜索"）
+        _nextPage = Math.Max(_nextPage, WtLiveFeedCache.PagesCovered);
 
         return true;
     }
@@ -656,7 +683,11 @@ public partial class WtLiveViewModel : ObservableObject
         if (_favoriteBatchRunning || IsLoading) return;
 
         _favoriteBatchRunning = true;
+        _favoriteBatchSession = _session;
         IsLoading = true;
+
+        var itemsBefore = Items.Count;
+
         try
         {
             if (CanUseFeedCache)
@@ -679,6 +710,22 @@ public partial class WtLiveViewModel : ObservableObject
             IsLoading = false;
             UpdateFavoriteModeText();
         }
+
+        // 这一批一条都没刷出来 → 自动再试一小轮（**有上限**）：
+        // 否则用户"下拉一次什么都没发生"，会以为坏了
+        if (IsFavoriteAuthorsMode
+            && _favoriteBatchSession == _session
+            && Items.Count == itemsBefore
+            && !IsExhausted
+            && ErrorMessage.Length == 0
+            && _favoriteAutoRetries < FavoriteAutoRetryLimit)
+        {
+            _favoriteAutoRetries++;
+            _ = LoadFavoriteBatchAsync();
+            return;
+        }
+
+        if (Items.Count > itemsBefore) _favoriteAutoRetries = 0; // 有产出 → 计数归零
     }
 
     /// <summary>从本地缓存吐一批命中（**先刷新再上屏**）。返回这一批吐了几条。</summary>
@@ -693,6 +740,8 @@ public partial class WtLiveViewModel : ObservableObject
             .Where(item => !served.Contains(item.LangGroup))
             .Take(take)
             .ToList());
+
+        if (_favoriteBatchSession != _session) return 0;
 
         if (hits.Count == 0)
         {
@@ -719,6 +768,9 @@ public partial class WtLiveViewModel : ObservableObject
 
         foreach (var hit in hits)
         {
+            // 每个 await 之后复核：会话变了（退出模式 / 换条件 / 后退）就不再往列表里塞
+            if (_favoriteBatchSession != _session || !IsFavoriteAuthorsMode) return;
+
             done++;
 
             var item = hit;
@@ -1693,6 +1745,9 @@ public partial class WtLiveViewModel : ObservableObject
 
                 if (TryAddCard(item)) added++;
             }
+
+            // 记下"从 0 起连续覆盖到哪"：下次进入从这儿接着扫，不重扫已缓存页
+            WtLiveFeedCache.MarkPageCovered(_nextPage);
 
             _nextPage++;
             IsExhausted = !page.HasMore;

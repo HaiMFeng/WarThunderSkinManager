@@ -122,6 +122,7 @@
                               Style="{StaticResource BaseComboBox}"
                               ToolTip="{loc:Loc wtlive.sort.label}"
                               ItemsSource="{Binding WtLive.SortOptions}"
+                              IsEnabled="{Binding WtLive.IsSortEnabled}"
                               SelectedItem="{Binding WtLive.SelectedSortOption, Mode=TwoWay}">
                         <!-- 用 ItemTemplate 而非 DisplayMemberPath：自定义模板下前者能正确传到选择区 -->
                         <ComboBox.ItemTemplate>
