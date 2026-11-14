@@ -849,7 +849,7 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (IsFavoriteAuthorsMode)
         {
-            _ = RefreshFavoriteSkinsAsync(); // 模式内刷新 = 同步并合并，不清列表
+            RefreshFavoritesPage(); // 模式内"刷新页面"：重画列表，**不碰缓存、不发请求**
             return;
         }
 
@@ -865,8 +865,8 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 手动刷新（提示条上的刷新按钮 / 工具栏刷新）：把**所有**收藏作者同步一遍并合并新内容。
-    /// **不清空列表** —— 边同步边把新条目按 id 插到正确位置，用户不用干等十几秒看空屏。
+    /// 提示条上的 `⟳`：**刷新缓存** —— 把所有收藏作者同步一遍，新条目按 id 合并进列表。
+    /// 不清空列表（边同步边插入），也不改缓存里已有的内容。
     /// </summary>
     [RelayCommand]
     private async Task RefreshFavoriteSkinsAsync()
@@ -875,6 +875,17 @@ public partial class WtLiveViewModel : ObservableObject
 
         _favoriteSyncPending = false;
         await LoadMoreFavoritesAsync(forceSync: true);
+    }
+
+    /// <summary>
+    /// 工具栏的"刷新"：**只是刷新页面**（重新按缓存画一遍列表），不发请求、不动缓存。
+    /// 用户随便按都没事 —— 想真正同步作者更新，点提示条上的 `⟳`。
+    /// </summary>
+    private void RefreshFavoritesPage()
+    {
+        // 清掉"已上屏"标记，让缓存里的内容重新吐一遍（否则会被当成"全都显示过"过滤掉）
+        _favoriteServed.Clear();
+        StartRefresh();
     }
 
     /// <summary>

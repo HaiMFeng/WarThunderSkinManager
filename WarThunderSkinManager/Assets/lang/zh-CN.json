@@ -644,7 +644,7 @@
   "wtlive.favorites.viewSkinsHint": "按作者分别拉取（站点原生支持按作者查询），只显示收藏作者的作品",
   "wtlive.favoriteMode.status": "收藏作者 {0} 位 · 共 {1} 个涂装",
   "wtlive.favoriteMode.statusStale": "收藏作者 {0} 位 · 共 {1} 个涂装 · 已有 {2} 天未更新，建议刷新",
-  "wtlive.favoriteMode.refresh": "刷新（同步收藏作者的更新）",
+  "wtlive.favoriteMode.refresh": "刷新缓存（同步收藏作者的更新；左上角的刷新只是重画页面）",
   "wtlive.favoriteMode.syncing": "正在检查作者更新 {0} / {1}…",
   "wtlive.favoriteMode.fetching": "正在加载更多（第 {0} 页）…",
   "wtlive.favorites.empty": "还没有收藏的作者。在涂装详情里点一下作者名旁的星标就能收藏。",

@@ -644,7 +644,7 @@
   "wtlive.favorites.viewSkinsHint": "Fetched per author (the site supports author queries); only favorite authors are shown",
   "wtlive.favoriteMode.status": "Favorite authors: {0} · {1} skins",
   "wtlive.favoriteMode.statusStale": "Favorite authors: {0} · {1} skins · not updated for {2} days, refresh suggested",
-  "wtlive.favoriteMode.refresh": "Refresh (sync updates from favorite authors)",
+  "wtlive.favoriteMode.refresh": "Refresh cache (sync updates; the toolbar refresh only redraws the page)",
   "wtlive.favoriteMode.syncing": "Checking author updates {0} / {1}…",
   "wtlive.favoriteMode.fetching": "Loading more (page {0})…",
   "wtlive.favorites.empty": "No favorite authors yet. Open a skin's details and click the star next to the author name.",
