@@ -283,6 +283,7 @@ public partial class WtLiveViewModel : ObservableObject
 
         Detail.ApplyLanguageChange();                  // 详情浮窗的统计行（打开期间切语言）
         OnPropertyChanged(nameof(ActiveFilterText));   // 空态的「所有涂装」也要跟着换语言
+        UpdateFavoriteModeText();                      // 「收藏作者」提示条文案
     }
 
     /// <summary>
@@ -467,9 +468,318 @@ public partial class WtLiveViewModel : ObservableObject
     /// </summary>
     public void RequestMore()
     {
+        if (IsFavoriteAuthorsMode)
+        {
+            _ = LoadMoreFavoritesAsync();   // 收藏作者模式走"按作者同步 + 本地归并"
+            return;
+        }
+
         if (!CanLoadMore) return;
 
         _ = LoadNextPageAsync();
+    }
+
+    // ==================== 「收藏作者的涂装」（§3.15）====================
+    //
+    // 站点原生支持 user=<id> + content=camouflage（get_user 作者页），所以**按作者各拉各的**：
+    // 命中率 100%，不需要在全局 feed 里大海捞针，也不需要页码位移 / 对齐那一套。
+    // 每个作者只维护三个游标（最新帖 id / 下一页 / 上次同步时间，见 WtLiveAuthorFeedCache）。
+
+    /// <summary>同一作者多久之内不重复同步（第 0 页）。</summary>
+    public static readonly TimeSpan FavoriteAuthorSyncTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>作者之间的请求间隔：串行 + 限速，避免被 Cloudflare 判成异常流量。</summary>
+    public static readonly TimeSpan FavoriteRequestGap = TimeSpan.FromMilliseconds(450);
+
+    /// <summary>一批显示多少条命中。</summary>
+    public const int FavoriteBatchSize = 6;
+
+    /// <summary>一轮最多同步多少个作者（作者多时留到后续批次，别一次打几十个请求）。</summary>
+    public const int FavoriteSyncMaxAuthors = 12;
+
+    /// <summary>同步单个作者时最多补几页（防止某人一天发 100 帖把请求打满）。</summary>
+    private const int FavoriteAuthorMaxPages = 3;
+
+    /// <summary>是否处于「收藏作者的涂装」模式（界面显示提示条、排序下拉禁用）。</summary>
+    [ObservableProperty] private bool _isFavoriteAuthorsMode;
+
+    /// <summary>提示条文案：同步进度 / 已加载数量 / 到底空态。</summary>
+    [ObservableProperty] private string _favoriteModeText = "";
+
+    /// <summary>模式下只能按时间排序：作者页的时间序最直观，也与"最新"语义一致。</summary>
+    public bool IsSortEnabled => !IsFavoriteAuthorsMode;
+
+    partial void OnIsFavoriteAuthorsModeChanged(bool value) => OnPropertyChanged(nameof(IsSortEnabled));
+
+    private readonly HashSet<long> _favoriteAuthorIds = new();       // 数值 id（条目匹配用）
+    private readonly HashSet<string> _favoriteAuthorNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _favoriteAuthorRawIds = new();     // 原始 id 串（请求 user= 用）
+    private readonly HashSet<long> _favoriteServed = new();          // 已上屏的帖子 id
+
+    private bool _favoriteBusy;
+    private bool _favoriteSyncPending;
+
+    /// <summary>
+    /// 进入「收藏作者的涂装」：清空筛选、排序回时间序，然后按作者同步 + 本地归并。
+    /// </summary>
+    /// <returns>收藏为空 → <c>false</c>（调用方据此不进入空模式）。</returns>
+    public bool EnterFavoriteAuthorsMode()
+    {
+        var favorites = WtLiveFavoriteAuthors.Load();
+
+        _favoriteAuthorIds.Clear();
+        _favoriteAuthorNames.Clear();
+        _favoriteAuthorRawIds.Clear();
+        _favoriteServed.Clear();
+
+        foreach (var author in favorites)
+        {
+            if (long.TryParse(author.Id, out var id) && id > 0)
+            {
+                _favoriteAuthorIds.Add(id);
+                _favoriteAuthorRawIds.Add(author.Id);
+            }
+
+            if (!string.IsNullOrWhiteSpace(author.Name)) _favoriteAuthorNames.Add(author.Name.Trim());
+        }
+
+        if (_favoriteAuthorIds.Count == 0 && _favoriteAuthorNames.Count == 0) return false;
+
+        // 独占：清胶囊 / 清输入框 / 排序回时间序（抑制各自触发的自动重拉）
+        _restoringHistory = true;
+        try
+        {
+            ClearChips();
+            SearchText = "";
+
+            var created = SortOptions.FirstOrDefault(
+                o => string.Equals(o.Id, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal));
+
+            if (created != null) SelectedSortOption = created;
+        }
+        finally
+        {
+            _restoringHistory = false;
+        }
+
+        IsFavoriteAuthorsMode = true;
+        _favoriteSyncPending = true;
+        _favoriteBusy = false;
+
+        UpdateFavoriteModeText();
+        StartRefresh();   // 清列表 → RequestMore() 走上面的分支
+
+        return true;
+    }
+
+    /// <summary>退出模式：恢复"所有涂装"。</summary>
+    [RelayCommand]
+    private void ExitFavoriteAuthorsMode()
+    {
+        if (!IsFavoriteAuthorsMode) return;
+
+        IsFavoriteAuthorsMode = false;
+        _favoriteAuthorIds.Clear();
+        _favoriteAuthorNames.Clear();
+        _favoriteAuthorRawIds.Clear();
+        _favoriteServed.Clear();
+        _favoriteSyncPending = true;
+        FavoriteModeText = "";
+
+        StartRefresh();
+    }
+
+    /// <summary>收藏作者模式的一批：先同步（限一次/作者/TTL）→ 从缓存吐 → 不够再翻各作者的下一页。</summary>
+    private async Task LoadMoreFavoritesAsync()
+    {
+        if (_favoriteBusy) return;
+
+        _favoriteBusy = true;
+        IsLoading = true;
+
+        var session = _session;
+
+        try
+        {
+            if (_favoriteSyncPending)
+            {
+                _favoriteSyncPending = false;
+                await SyncFavoriteAuthorsAsync(session);
+            }
+
+            var added = await ServeFavoriteCacheAsync(session);
+
+            if (added == 0)
+            {
+                // 缓存里没有新的了 → 每个作者往下翻一页（仍在缓存的顺序里）
+                await FetchAuthorNextPagesAsync(session);
+                added = await ServeFavoriteCacheAsync(session);
+            }
+
+            if (added == 0 && !WtLiveAuthorFeedCache.AnyAuthorHasMore(_favoriteAuthorRawIds))
+                ErrorMessage = ""; // 到底了：由提示条显示空态/总数，不报错
+        }
+        finally
+        {
+            _favoriteBusy = false;
+            IsLoading = false;
+            UpdateFavoriteModeText();
+        }
+    }
+
+    /// <summary>
+    /// 同步"过期的作者"：每个作者取第 0 页，页内出现 ≤ 已记录的最新帖 id 即说明没新帖；
+    /// 页满且全是新帖就再往下翻（最多 <see cref="FavoriteAuthorMaxPages"/> 页）。
+    /// </summary>
+    private async Task SyncFavoriteAuthorsAsync(int session)
+    {
+        var stale = WtLiveAuthorFeedCache.AuthorsNeedingSync(_favoriteAuthorRawIds, FavoriteAuthorSyncTtl);
+        if (stale.Count == 0) return;
+
+        var total = Math.Min(stale.Count, FavoriteSyncMaxAuthors);
+        var done = 0;
+
+        foreach (var authorId in stale.Take(FavoriteSyncMaxAuthors))
+        {
+            if (session != _session || !IsFavoriteAuthorsMode) return;
+
+            if (done > 0) await Task.Delay(FavoriteRequestGap
+                                           + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
+
+            done++;
+            FavoriteModeText = Loc.Format("wtlive.favoriteMode.syncing", done, total);
+
+            var previousMax = WtLiveAuthorFeedCache.MaxPostId(authorId);
+            var pageIndex = 0;
+
+            while (pageIndex < FavoriteAuthorMaxPages)
+            {
+                WTLiveFeedPage page;
+
+                try
+                {
+                    page = await WTLiveService.FetchFeedPageAsync(
+                        pageIndex, null, null, WtLiveSortCatalog.DefaultSort, authorId, CancellationToken.None);
+                }
+                catch (Exception)
+                {
+                    break; // 单个作者失败不影响其余；下次进页面再同步
+                }
+
+                if (session != _session) return;
+                if (page.Items.Count == 0) { WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, previousMax, -1); break; }
+
+                WtLiveAuthorFeedCache.Upsert(page.Items);
+
+                var full = page.Items.Count >= WTLiveService.FeedPageSize;
+                var overlapped = previousMax > 0 && page.Items.Any(item => item.LangGroup <= previousMax);
+
+                if (overlapped || !full)
+                {
+                    var max = page.Items.Max(item => item.LangGroup);
+                    WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, Math.Max(max, previousMax), full ? pageIndex + 1 : -1);
+                    break;
+                }
+
+                pageIndex++;
+
+                if (pageIndex < FavoriteAuthorMaxPages) await Task.Delay(FavoriteRequestGap);
+            }
+        }
+
+        // 作者太多，一轮没同步完 → 下一批接着同步
+        if (stale.Count > FavoriteSyncMaxAuthors) _favoriteSyncPending = true;
+
+        _ = Task.Run(WtLiveAuthorFeedCache.Save);
+    }
+
+    /// <summary>每个"还能往下翻"的作者各取下一页（作者页第 N 页）。</summary>
+    private async Task FetchAuthorNextPagesAsync(int session)
+    {
+        var first = true;
+
+        foreach (var authorId in _favoriteAuthorRawIds)
+        {
+            if (session != _session || !IsFavoriteAuthorsMode) return;
+
+            var pageIndex = WtLiveAuthorFeedCache.NextPage(authorId);
+            if (pageIndex < 0) continue; // 该作者已到底
+
+            if (!first) await Task.Delay(FavoriteRequestGap + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
+            first = false;
+
+            FavoriteModeText = Loc.Format("wtlive.favoriteMode.fetching", pageIndex + 1);
+
+            WTLiveFeedPage page;
+
+            try
+            {
+                page = await WTLiveService.FetchFeedPageAsync(
+                    pageIndex, null, null, WtLiveSortCatalog.DefaultSort, authorId, CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            if (session != _session) return;
+
+            WtLiveAuthorFeedCache.Upsert(page.Items);
+
+            var full = page.Items.Count >= WTLiveService.FeedPageSize;
+            WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, 0, full ? pageIndex + 1 : -1);
+        }
+
+        _ = Task.Run(WtLiveAuthorFeedCache.Save);
+    }
+
+    /// <summary>从缓存里吐一批命中（按 id 倒序 = 时间倒序），返回吐了几条。</summary>
+    private async Task<int> ServeFavoriteCacheAsync(int session)
+    {
+        if (session != _session || !IsFavoriteAuthorsMode) return 0;
+
+        var served = _favoriteServed;
+
+        var hits = await Task.Run(() => WtLiveAuthorFeedCache
+            .QueryByAuthors(_favoriteAuthorIds, _favoriteAuthorNames)
+            .Where(item => !served.Contains(item.LangGroup))
+            .Take(FavoriteBatchSize)
+            .ToList());
+
+        if (session != _session) return 0;
+        if (hits.Count == 0) return 0;
+
+        foreach (var hit in hits) _favoriteServed.Add(hit.LangGroup);
+
+        foreach (var hit in hits)
+        {
+            if (Items.Any(existing => existing.LangGroup == hit.LangGroup)) continue;
+
+            var card = new WtLiveCardItem(hit, DownloadCardCommand, SearchUserByCardCommand,
+                ReloadThumbnailCommand);
+            Items.Add(card);
+
+            if (InsideVisibleWindow(Items.Count - 1)) _ = LoadThumbnailAsync(card);
+        }
+
+        return hits.Count;
+    }
+
+    /// <summary>提示条文案。</summary>
+    private void UpdateFavoriteModeText()
+    {
+        if (!IsFavoriteAuthorsMode)
+        {
+            FavoriteModeText = "";
+            return;
+        }
+
+        var authors = _favoriteAuthorIds.Count + _favoriteAuthorNames.Count;
+
+        FavoriteModeText = Items.Count == 0 && !_favoriteBusy
+                           && !WtLiveAuthorFeedCache.AnyAuthorHasMore(_favoriteAuthorRawIds)
+            ? Loc.Format("wtlive.favoriteMode.empty", authors)
+            : Loc.Format("wtlive.favoriteMode.status", authors, Items.Count);
     }
 
     /// <summary>

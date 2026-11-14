@@ -325,6 +325,9 @@ public partial class WtLiveDetailViewModel : ObservableObject
         try
         {
             post = await WTLiveService.FetchPostAsync(card.LangGroup, CancellationToken.None);
+
+            // 顺手把详情回写进"收藏作者"缓存（§3.15）：这里本来就要请求详情，不额外打一次
+            WtLiveAuthorFeedCache.MarkRefreshedFromPost(post);
         }
         catch (Exception ex)
         {

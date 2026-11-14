@@ -359,6 +359,66 @@ internal static class SelfTest
                          + $"，去掉首词 = [{WtLiveTag.DropFirstToken("  #anime #skin")}]（应 [#skin]）"
                          + $"，连字符不是标签字符 = {WtLiveTag.LooksLikeTag("f-15")}（应 False）");
 
+            // ---- 收藏作者：按作者拉取 + 每作者游标缓存（§3.15）----
+            static WTLiveFeedItem AuthorPost(string author, long authorId, long langGroup) => new(
+                LangGroup: langGroup, Author: author, AuthorId: authorId, AuthorAvatar: "",
+                Title: "t", Description: "", PreviewUrl: null, Ratio: 16d / 9, PreviewWidth: 0,
+                FileName: "a.zip", FileLink: "l", FileSize: 1, Downloads: 0, Likes: 0, Views: 0,
+                PostUrl: "u", Tags: Array.Empty<string>());
+
+            var authorCacheDir = Path.Combine(workDir, "author-feed-test");
+            Directory.CreateDirectory(authorCacheDir);
+
+            WtLiveAuthorFeedCache.Reset();
+            WtLiveAuthorFeedCache.Configure(authorCacheDir);
+
+            WtLiveAuthorFeedCache.Upsert(new[]
+            {
+                AuthorPost("Alice", 42, 302),
+                AuthorPost("Alice", 42, 300),
+                AuthorPost("Bob", 43, 301)
+            });
+
+            WtLiveAuthorFeedCache.MarkAuthorSynced("42", 302, 1);   // 还有下一页
+            WtLiveAuthorFeedCache.MarkAuthorSynced("43", 301, -1);  // 已到底
+
+            var authorIds = new HashSet<long> { 42, 43 };
+            var noNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var authorQuery = WtLiveAuthorFeedCache.QueryByAuthors(authorIds, noNames);
+            var stale = WtLiveAuthorFeedCache.AuthorsNeedingSync(new[] { "42", "43", "99" }, TimeSpan.FromMinutes(10));
+
+            var authorCursorOk = authorQuery.Count == 3
+                                 && authorQuery[0].LangGroup == 302      // 按 id 倒序 = 时间倒序
+                                 && WtLiveAuthorFeedCache.MaxPostId("42") == 302
+                                 && WtLiveAuthorFeedCache.NextPage("42") == 1
+                                 && WtLiveAuthorFeedCache.NextPage("43") == -1
+                                 && WtLiveAuthorFeedCache.AnyAuthorHasMore(new[] { "42" })
+                                 && !WtLiveAuthorFeedCache.AnyAuthorHasMore(new[] { "43" })
+                                 && stale.Count == 1 && stale[0] == "99"; // 只有"没同步过"的那位需要同步
+
+            // 落盘往返：作者游标也要活下来
+            WtLiveAuthorFeedCache.Save();
+            var authorCacheFileOk = File.Exists(WtLiveAuthorFeedCache.FilePath(authorCacheDir));
+
+            WtLiveAuthorFeedCache.Reset();
+            WtLiveAuthorFeedCache.Configure(authorCacheDir);
+
+            var authorReloaded = WtLiveAuthorFeedCache.QueryByAuthors(authorIds, noNames);
+            var authorCacheOk = authorCursorOk && authorCacheFileOk
+                                && authorReloaded.Count == 3
+                                && WtLiveAuthorFeedCache.NextPage("42") == 1
+                                && WtLiveAuthorFeedCache.MaxPostId("42") == 302;
+
+            log.AppendLine($"收藏作者缓存: 按作者查 {authorQuery.Count} 条（应 3，按 id 倒序）/ 游标（42 有下页、43 到底）= {authorCursorOk}（应 True）、"
+                         + $"落盘往返 {authorReloaded.Count} 条（应 3）= {authorCacheOk}（应 True）");
+
+            if (!authorCacheOk)
+                log.AppendLine("自检异常：收藏作者的按作者缓存不对（作者游标 / 排序 / 落盘往返）");
+
+            WtLiveAuthorFeedCache.Reset();
+            WtLiveAuthorFeedCache.Configure("");
+
             // ---- WT Live 搜索胶囊（标签 / 载具）：条件叠在胶囊上，查询串由胶囊拼出来 ----
             var chipVm = new WtLiveViewModel();
             chipVm.AppendTagChip("#anime");

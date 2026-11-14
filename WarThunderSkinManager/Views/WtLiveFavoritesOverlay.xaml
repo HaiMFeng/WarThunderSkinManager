@@ -52,11 +52,21 @@
                                    Style="{StaticResource PageSubtitle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Button Content="&#xF00D;" Style="{StaticResource IconButton}"
-                            Width="28" Height="28" FontSize="14"
-                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                            ToolTip="{loc:Loc common.close}"
-                            Command="{Binding WtLive.Favorites.CloseCommand}"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <!-- 「查看收藏作者的涂装」（§3.15）：与逐作者筛选不同，走的是
+                             "站点默认排序的原始 feed + 本地按收藏过滤"（站点没有合并查询的接口） -->
+                        <Button Content="{loc:Loc wtlive.favorites.viewSkins}"
+                                Style="{StaticResource SecondaryButton}"
+                                Height="28" Padding="10,0" FontSize="12" Margin="0,0,8,0"
+                                VerticalAlignment="Center"
+                                ToolTip="{loc:Loc wtlive.favorites.viewSkinsHint}"
+                                Command="{Binding WtLive.Favorites.ViewFavoriteSkinsCommand}"/>
+                        <Button Content="&#xF00D;" Style="{StaticResource IconButton}"
+                                Width="28" Height="28" FontSize="14"
+                                VerticalAlignment="Center"
+                                ToolTip="{loc:Loc common.close}"
+                                Command="{Binding WtLive.Favorites.CloseCommand}"/>
+                    </StackPanel>
                 </Grid>
 
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"

@@ -277,6 +277,9 @@ public partial class SkinsViewModel : ObservableObject
     {
         if (post.File == null) return; // 弹窗侧已拦截
 
+        // 开始下载时手里已有详情响应 → 顺手回写"收藏作者"缓存（§3.15），不额外请求
+        WtLiveAuthorFeedCache.MarkRefreshedFromPost(post);
+
         var item = new WtLiveDownloadItem(post.LangGroup,
             WtLiveLink.PostUrl(post.LangGroup),
             post.File.Name, post.Author, post.DisplayName,

@@ -475,6 +475,7 @@ public partial class MainViewModel : ObservableObject
         // 收藏的作者（§3.17）：唯一的本地数据，存配置目录 → 先注入目录再载入。
         // 放在缓存配置**之后**：载入时就开始取头像（走那份图片缓存），顺序反了会白白少缓存一轮
         WtLiveFavoriteAuthors.Configure(config.ConfigDirectory);
+        WtLiveAuthorFeedCache.Configure(config.ConfigDirectory);
         WtLive.Favorites.Reload();
 
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
@@ -1125,6 +1126,7 @@ public partial class MainViewModel : ObservableObject
                 VehicleIconService.Configure(Config.ConfigDirectory); // 载具图标缓存同理
                 // 收藏的作者也在配置目录里 → 换目录要换成新目录那份（旧目录的文件原样留着）
                 WtLiveFavoriteAuthors.Configure(Config.ConfigDirectory);
+                WtLiveAuthorFeedCache.Configure(Config.ConfigDirectory);
                 WtLive.Favorites.Reload();
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 OnPropertyChanged(nameof(ResourceBlockEnabled)); // 「更新资源」卡随目录就绪启停（§3.15）

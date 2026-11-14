@@ -122,6 +122,7 @@
                               Style="{StaticResource BaseComboBox}"
                               ToolTip="{loc:Loc wtlive.sort.label}"
                               ItemsSource="{Binding WtLive.SortOptions}"
+                              IsEnabled="{Binding WtLive.IsSortEnabled}"
                               SelectedItem="{Binding WtLive.SelectedSortOption, Mode=TwoWay}">
                         <!-- 用 ItemTemplate 而非 DisplayMemberPath：自定义模板下前者能正确传到选择区 -->
                         <ComboBox.ItemTemplate>
@@ -469,6 +470,32 @@
                     <!-- VirtualizationMode=Recycling：滚出视口的卡片容器**回收复用**（面板自己在窗口外
                          调 Recycle）—— 首次实例化一张卡片模板约 4 ms，复用只换 DataContext，
                          不做这一步，快速滚动时每滚一屏就是十几处 4 ms 的卡顿 -->
+                    <!-- 「收藏作者的涂装」模式提示条（§3.15）：显示扫描进度 / 空态说明，右侧 × 退出。
+                         模式是"原始 feed + 本地按收藏过滤"；排序可随时更换（换排序 = 按新顺序重扫）。 -->
+                    <Border Margin="0,4,0,4" Padding="12,9" CornerRadius="8"
+                            Background="{StaticResource BrushSurface2}"
+                            BorderBrush="{StaticResource BrushBorder}" BorderThickness="1">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WtLive.IsFavoriteAuthorsMode}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <TextBlock Text="{Binding WtLive.FavoriteModeText}" TextWrapping="Wrap"
+                                       Margin="0,0,32,0" VerticalAlignment="Center"/>
+                            <Button Content="&#xF00D;" Style="{StaticResource IconButton}"
+                                    Width="24" Height="24" FontSize="12"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    ToolTip="{loc:Loc common.close}"
+                                    Command="{Binding WtLive.ExitFavoriteAuthorsModeCommand}"/>
+                        </Grid>
+                    </Border>
+
                     <!-- 上方留 4：第一排不贴着区域顶边（悬停的上浮已去掉，这点余量留着当缩进） -->
                     <ItemsControl x:Name="CardList" Margin="0,4,0,0" ItemsSource="{Binding WtLive.Items}"
                                   VirtualizingPanel.IsVirtualizing="True"
