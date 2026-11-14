@@ -765,16 +765,19 @@ public partial class WtLiveViewModel : ObservableObject
 
         // 顺带收集"收藏作者的新帖"：追平后直接插到列表最前，不用等用户滚到缓存底部
         var newHits = new List<WTLiveFeedItem>();
+        var fetched = 0;
 
-        for (var index = 0; index < FavoriteCatchUpMaxPages; index++)
+        try
         {
-            if (index > 0)
+            for (var index = 0; index < FavoriteCatchUpMaxPages; index++)
             {
-                await Task.Delay(FavoriteScanInterval + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
-                if (session != _session || !IsFavoriteAuthorsMode) return;
-            }
+                if (index > 0)
+                {
+                    await Task.Delay(FavoriteScanInterval + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
+                    if (session != _session || !IsFavoriteAuthorsMode) return;
+                }
 
-            FavoriteModeText = Loc.Format("wtlive.favoriteMode.checking", index + 1);
+                FavoriteModeText = Loc.Format("wtlive.favoriteMode.checking", index + 1);
 
             WTLiveFeedPage page;
             try
@@ -787,25 +790,35 @@ public partial class WtLiveViewModel : ObservableObject
                 return; // 追赶失败不算错：本地缓存照样能看，下次再追
             }
 
-            if (session != _session) return;
+                if (session != _session) return;
 
-            // **先判定再入库**：整页都见过 = 已经追平
-            var allKnown = WtLiveFeedCache.AllKnown(page.Items.Select(item => item.LangGroup));
+                fetched++;
 
-            _favoriteScannedPosts += page.Items.Count;
+                // **先判定再入库**：整页都见过 = 已经追平
+                var allKnown = WtLiveFeedCache.AllKnown(page.Items.Select(item => item.LangGroup));
 
-            foreach (var item in page.Items)
-            {
-                if (!_cacheServed.Contains(item.LangGroup)
-                    && MatchesFavoriteAuthor(item, _favoriteAuthorIds, _favoriteAuthorNames))
+                _favoriteScannedPosts += page.Items.Count;
+
+                foreach (var item in page.Items)
                 {
-                    newHits.Add(item);
+                    if (!_cacheServed.Contains(item.LangGroup)
+                        && MatchesFavoriteAuthor(item, _favoriteAuthorIds, _favoriteAuthorNames))
+                    {
+                        newHits.Add(item);
+                    }
                 }
+
+                WtLiveFeedCache.Upsert(page.Items);
+
+                if (allKnown || !page.HasMore) break;
             }
-
-            WtLiveFeedCache.Upsert(page.Items);
-
-            if (allKnown || !page.HasMore) break;
+        }
+        finally
+        {
+            // 追赶翻过的页 = 当前查询已经走到过的位置：让滚动扫描从这里接着往下，
+            // 不把刚缓存的页再扫一遍（否则那几页请求等于白打）
+            if (fetched > 0 && session == _session && IsFavoriteAuthorsMode)
+                _nextPage = Math.Max(_nextPage, fetched);
         }
 
         WtLiveFeedCache.MarkCatchUp(DateTime.UtcNow);
