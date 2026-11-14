@@ -359,6 +359,39 @@ internal static class SelfTest
                          + $"，去掉首词 = [{WtLiveTag.DropFirstToken("  #anime #skin")}]（应 [#skin]）"
                          + $"，连字符不是标签字符 = {WtLiveTag.LooksLikeTag("f-15")}（应 False）");
 
+            // ---- 「收藏作者的涂装」模式（§3.15）：匹配口径 + 补页预算 ----
+            // 站点没有"所有收藏作者"的合并查询 → 走默认排序的原始 feed，页内按收藏过滤；
+            // 某页零命中要接着翻，但必须有上限（否则一条都没有时会无限打站点）。
+            static WTLiveFeedItem FeedItem(string author, long authorId) => new(
+                LangGroup: 1, Author: author, AuthorId: authorId, AuthorAvatar: "",
+                Title: "t", Description: "d", PreviewUrl: null, Ratio: 16d / 9, PreviewWidth: 0,
+                FileName: "a.zip", FileLink: "l", FileSize: 1, Downloads: 0, Likes: 0, Views: 0,
+                PostUrl: "u", Tags: Array.Empty<string>());
+
+            var favoriteIds = new HashSet<long> { 42 };
+            var favoriteNames = new HashSet<string>(new[] { "Alice" }, StringComparer.OrdinalIgnoreCase);
+
+            var favoriteMatchOk =
+                WtLiveViewModel.MatchesFavoriteAuthor(FeedItem("Bob", 42), favoriteIds, favoriteNames)
+                && !WtLiveViewModel.MatchesFavoriteAuthor(FeedItem("Alice", 43), favoriteIds, favoriteNames)
+                && WtLiveViewModel.MatchesFavoriteAuthor(FeedItem("alice", 0), favoriteIds, favoriteNames)
+                && !WtLiveViewModel.MatchesFavoriteAuthor(FeedItem("Carol", 0), favoriteIds, favoriteNames)
+                && !WtLiveViewModel.MatchesFavoriteAuthor(FeedItem("", 0), favoriteIds, favoriteNames);
+
+            var scanBudgetOk =
+                WtLiveViewModel.ShouldScanNextPage(0, 0, exhausted: false)
+                && WtLiveViewModel.ShouldScanNextPage(WtLiveViewModel.FavoriteScanMaxPagesPerPull - 1, 0, false)
+                && !WtLiveViewModel.ShouldScanNextPage(WtLiveViewModel.FavoriteScanMaxPagesPerPull, 0, false)
+                && !WtLiveViewModel.ShouldScanNextPage(0, WtLiveViewModel.FavoriteScanMinHitsPerPull, false)
+                && !WtLiveViewModel.ShouldScanNextPage(0, 0, exhausted: true);
+
+            log.AppendLine($"收藏作者模式: 匹配（id 优先 / 昵称兜底 / 空昵称排除）= {favoriteMatchOk}（应 True）、"
+                         + $"补页预算（至少 {WtLiveViewModel.FavoriteScanMinHitsPerPull} 条、最多 {WtLiveViewModel.FavoriteScanMaxPagesPerPull} 页、到底即停）= {scanBudgetOk}（应 True）");
+
+            if (!favoriteMatchOk || !scanBudgetOk)
+                log.AppendLine("自检异常：收藏作者模式的匹配口径或补页预算不对"
+                             + "（会把非收藏作者放进来，或零命中时无限翻页）");
+
             // ---- WT Live 搜索胶囊（标签 / 载具）：条件叠在胶囊上，查询串由胶囊拼出来 ----
             var chipVm = new WtLiveViewModel();
             chipVm.AppendTagChip("#anime");

@@ -79,6 +79,64 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>搜索框文本 = **正在输入的那一段**（胶囊生效后会清空；见 <see cref="ApplySuggestion"/>）。</summary>
     [ObservableProperty] private string _searchText = "";
 
+    // ---------- 「收藏作者的涂装」模式（§3.15）----------
+    //
+    // 站点**没有**"所有收藏作者的作品"接口，也不能把多个作者 id 塞进一次 user= 查询。
+    // 做法：走站点默认排序的**原始 feed**（无载具 / 无标签 / 无作者 / 无关键词），
+    // 每页 25 条在本地按收藏集合过滤；某页一条都不命中就继续拉下一页，直到凑够一批或站点到底。
+    // 代价是可能连续发几次请求 —— 所以页数、命中数都有上限，页与页之间固定间隔，避免触发风控。
+
+    /// <summary>单次滚动最多自动扫描的页数（25 条/页）——收藏作者可能长期不发帖，必须封顶。</summary>
+    public const int FavoriteScanMaxPagesPerPull = 8;
+
+    /// <summary>一次滚动至少凑够几条命中才收手；另有页数上限兜底。</summary>
+    public const int FavoriteScanMinHitsPerPull = 6;
+
+    /// <summary>自动补页之间的最小间隔：连续请求很容易被站点风控盯上。</summary>
+    public static readonly TimeSpan FavoriteScanInterval = TimeSpan.FromMilliseconds(450);
+
+    /// <summary>收藏作者的数值 id（feed 里给了 author id 时用它精确匹配）。</summary>
+    private readonly HashSet<long> _favoriteAuthorIds = new();
+
+    /// <summary>收藏作者的昵称（接口没给 id 时按昵称兜底；大小写不敏感）。</summary>
+    private readonly HashSet<string> _favoriteAuthorNames = new(StringComparer.OrdinalIgnoreCase);
+
+    private int _favoriteScannedPosts;   // 累计扫描帖数（文案用）
+    private int _favoriteScanHits;       // 累计命中条数（文案用）
+
+    /// <summary>是否处于「收藏作者的涂装」模式（界面顶部因此显示提示条、排序下拉禁用）。</summary>
+    [ObservableProperty] private bool _isFavoriteAuthorsMode;
+
+    /// <summary>提示条文案：扫描进度 / 到底仍无结果时的空态说明。</summary>
+    [ObservableProperty] private string _favoriteModeText = "";
+
+    /// <summary>模式下禁止换排序：本模式的语义就是"站点默认排序的原始 feed 再本地过滤"。</summary>
+    public bool IsSortEnabled => !IsFavoriteAuthorsMode;
+
+    partial void OnIsFavoriteAuthorsModeChanged(bool value) => OnPropertyChanged(nameof(IsSortEnabled));
+
+    /// <summary>
+    /// 这一条是不是收藏作者的作品：**id 优先**（feed 一般给 author id），
+    /// 接口没给 id（0）时用昵称兜底；两者都没有 → 不算命中（宁可漏一条，也不把陌生人放进来）。
+    /// </summary>
+    internal static bool MatchesFavoriteAuthor(
+        WTLiveFeedItem item, IReadOnlySet<long> authorIds, IReadOnlySet<string> authorNames)
+    {
+        if (item.AuthorId > 0) return authorIds.Contains(item.AuthorId);
+
+        return !string.IsNullOrWhiteSpace(item.Author)
+               && authorNames.Contains(item.Author.Trim());
+    }
+
+    /// <summary>
+    /// 是否该继续自动补页：站点还有下一页、没超过页数上限、命中数还没达标。
+    /// 抽成纯函数是为了自检能直接覆盖（见 <c>Dev/SelfTest.cs</c>）。
+    /// </summary>
+    internal static bool ShouldScanNextPage(int scannedPages, int hits, bool exhausted)
+        => !exhausted
+           && scannedPages < FavoriteScanMaxPagesPerPull
+           && hits < FavoriteScanMinHitsPerPull;
+
     /// <summary>搜索下拉项（载具 / 标签 / 清除，见 <see cref="WtLiveSearchSuggestion"/>）。</summary>
     public ObservableCollection<WtLiveSearchSuggestion> Suggestions { get; } = new();
 
@@ -283,6 +341,7 @@ public partial class WtLiveViewModel : ObservableObject
 
         Detail.ApplyLanguageChange();                  // 详情浮窗的统计行（打开期间切语言）
         OnPropertyChanged(nameof(ActiveFilterText));   // 空态的「所有涂装」也要跟着换语言
+        UpdateFavoriteModeText();                      // 「收藏作者」提示条的进度文案
     }
 
     /// <summary>
@@ -469,7 +528,125 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (!CanLoadMore) return;
 
-        _ = LoadNextPageAsync();
+        if (IsFavoriteAuthorsMode) _ = PullFavoritePagesAsync();
+        else _ = LoadNextPageAsync();
+    }
+
+    /// <summary>
+    /// 进入「收藏作者的涂装」：清空所有筛选、排序回站点默认，然后按"原始 feed + 本地过滤"扫描。
+    /// </summary>
+    /// <returns>收藏为空 → <c>false</c>（调用方据此提示，不进入空模式）。</returns>
+    public bool EnterFavoriteAuthorsMode()
+    {
+        var favorites = WtLiveFavoriteAuthors.Load();
+
+        _favoriteAuthorIds.Clear();
+        _favoriteAuthorNames.Clear();
+
+        foreach (var author in favorites)
+        {
+            if (long.TryParse(author.Id, out var id) && id > 0) _favoriteAuthorIds.Add(id);
+            if (!string.IsNullOrWhiteSpace(author.Name)) _favoriteAuthorNames.Add(author.Name.Trim());
+        }
+
+        if (_favoriteAuthorIds.Count == 0 && _favoriteAuthorNames.Count == 0) return false;
+
+        // 独占：清胶囊 / 清输入框 / 排序回默认。期间用 _restoringHistory 抑制各自的自动重拉，
+        // 否则清一次胶囊就会触发一次请求
+        _restoringHistory = true;
+        try
+        {
+            ClearChips();
+            SearchText = "";
+
+            var created = SortOptions.FirstOrDefault(
+                o => string.Equals(o.Id, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal));
+
+            if (created != null) SelectedSortOption = created;
+        }
+        finally
+        {
+            _restoringHistory = false;
+        }
+
+        IsFavoriteAuthorsMode = true;
+        _favoriteScannedPosts = 0;
+        _favoriteScanHits = 0;
+        UpdateFavoriteModeText();
+
+        StartRefresh(); // 清空列表 → RequestMore() 会走补页逻辑
+
+        return true;
+    }
+
+    /// <summary>退出模式：恢复成"所有涂装"（默认排序、无筛选）。</summary>
+    [RelayCommand]
+    private void ExitFavoriteAuthorsMode()
+    {
+        if (!IsFavoriteAuthorsMode) return;
+
+        IsFavoriteAuthorsMode = false;
+        _favoriteAuthorIds.Clear();
+        _favoriteAuthorNames.Clear();
+        _favoriteScannedPosts = 0;
+        _favoriteScanHits = 0;
+        FavoriteModeText = "";
+
+        StartRefresh();
+    }
+
+    /// <summary>模式文案：正常显示扫描进度；到底且一条没找到时给空态说明。</summary>
+    private void UpdateFavoriteModeText()
+    {
+        if (!IsFavoriteAuthorsMode)
+        {
+            FavoriteModeText = "";
+            return;
+        }
+
+        FavoriteModeText = IsExhausted && Items.Count == 0
+            ? Loc.Format("wtlive.favoriteMode.empty", _favoriteScannedPosts)
+            : Loc.Format("wtlive.favoriteMode.status",
+                _favoriteAuthorIds.Count + _favoriteAuthorNames.Count, _favoriteScannedPosts, Items.Count);
+    }
+
+    /// <summary>
+    /// 收藏作者模式的取数循环：一页一页拉，页内过滤；命中不足就继续，直到页数上限 / 命中够数 / 站点到底。
+    /// </summary>
+    /// <remarks>
+    /// **限速**：第一次（用户刚点按钮）立即发；之后每页之间等 <see cref="FavoriteScanInterval"/>
+    /// 再加 0–120 ms 抖动 —— 连续 8 次请求打得太密容易被 Cloudflare 判成异常流量。
+    /// </remarks>
+    private async Task PullFavoritePagesAsync()
+    {
+        if (IsLoading) return;
+
+        // **每趟单独计数**：页数/命中上限是"这一趟滚动"的预算，
+        // 不能用累计值（否则第一次凑够 6 条之后，后续每一趟都会立刻判定"够了"而不再扫描）
+        var pages = 0;
+        var hits = 0;
+
+        while (ShouldScanNextPage(pages, hits, IsExhausted))
+        {
+            if (pages > 0)
+            {
+                await Task.Delay(FavoriteScanInterval + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
+                if (!IsFavoriteAuthorsMode) return; // 等待期间用户退出了
+            }
+
+            var added = await LoadNextPageAsync();
+            pages++;
+
+            if (added < 0) break; // 出错（ErrorMessage 已给出），别再连着打
+
+            hits += added;
+            _favoriteScanHits += added;
+            UpdateFavoriteModeText();
+
+            if (added > 0 && hits >= FavoriteScanMinHitsPerPull) break;
+        }
+
+        UpdateFavoriteModeText();
     }
 
     /// <summary>
@@ -1202,7 +1379,8 @@ public partial class WtLiveViewModel : ObservableObject
         }
     }
 
-    private async Task LoadNextPageAsync()
+    /// <returns>本页新增到列表的条数（收藏作者模式下 = 命中数）；<c>-1</c> = 失败或会话已作废。</returns>
+    private async Task<int> LoadNextPageAsync()
     {
         // 这一趟属于哪个会话：等待期间用户换了条件 / 后退 → 结果必须**整批丢弃**，
         // 否则旧查询的卡片会追加到新列表里（列表与筛选条件对不上）
@@ -1219,10 +1397,18 @@ public partial class WtLiveViewModel : ObservableObject
                 _nextPage, VehicleFilter, TagQuery.Length > 0 ? TagQuery : null, SortId, UserFilter,
                 CancellationToken.None);
 
-            if (session != _session) return;
+            if (session != _session) return -1;
+
+            // 收藏作者模式：整页先按收藏集合过滤（不命中的整条丢掉，也不进列表）
+            _favoriteScannedPosts += IsFavoriteAuthorsMode ? page.Items.Count : 0;
+
+            var added = 0;
 
             foreach (var item in page.Items)
             {
+                if (IsFavoriteAuthorsMode
+                    && !MatchesFavoriteAuthor(item, _favoriteAuthorIds, _favoriteAuthorNames)) continue;
+
                 // 跨页去重：lang_group 唯一（同一帖子多语言版本已在接口侧归并，§10）
                 if (Items.Any(existing => existing.LangGroup == item.LangGroup)) continue;
 
@@ -1232,6 +1418,7 @@ public partial class WtLiveViewModel : ObservableObject
                 var card = new WtLiveCardItem(item, DownloadCardCommand, SearchUserByCardCommand,
                     ReloadThumbnailCommand);
                 Items.Add(card);
+                added++;
 
                 // 缩略图不再"加进来就取"：只取**可视窗口内**的（见 SetVisibleWindow），窗口外的等滚到近处再取
                 // —— 快速翻页时能省掉一大批"下一刻就被释放"的下载与解码
@@ -1240,10 +1427,14 @@ public partial class WtLiveViewModel : ObservableObject
 
             _nextPage++;
             IsExhausted = !page.HasMore;
+
+            return added;
         }
         catch (Exception ex)
         {
             if (session == _session) ErrorMessage = Loc.Format("wtlive.list.failed", ex.Message);
+
+            return -1;
         }
         finally
         {

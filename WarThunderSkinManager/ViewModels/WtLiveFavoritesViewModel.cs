@@ -120,11 +120,28 @@ public partial class WtLiveFavoritesViewModel : ObservableObject
     /// <summary>标题右侧的条数（「共 N 位」）。</summary>
     public string CountText => Loc.Format("wtlive.favorites.count", Items.Count);
 
+    /// <summary>收藏非空时才允许「查看收藏作者的涂装」（空集合进去只会得到空列表）。</summary>
+    public bool CanViewSkins => Items.Count > 0;
+
+    /// <summary>
+    /// 「查看收藏作者的涂装」（§3.15）：站点没有"所有收藏作者"的接口，所以在浏览页里走
+    /// 站点默认排序的原始 feed + 本地按收藏过滤（见 <see cref="WtLiveViewModel.EnterFavoriteAuthorsMode"/>）。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanViewSkins))]
+    private void ViewFavoriteSkins()
+    {
+        if (Owner == null || !Owner.EnterFavoriteAuthorsMode()) return;
+
+        IsOpen = false; // 关掉浮窗，结果就在浏览页里
+    }
+
     public WtLiveFavoritesViewModel()
         => Items.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(CountText));
+            OnPropertyChanged(nameof(CanViewSkins));
+            ViewFavoriteSkinsCommand.NotifyCanExecuteChanged();
         };
 
     /// <summary>
