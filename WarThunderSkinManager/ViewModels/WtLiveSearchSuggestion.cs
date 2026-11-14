@@ -30,7 +30,16 @@ public enum WtLiveSearchKind
     User,
 
     /// <summary>清除全部条件与关键词，回到全部涂装。</summary>
-    Clear
+    Clear,
+
+    /// <summary>
+    /// **本地筛选**（`*tag`）：不发请求，只在此客户端 AND 过滤。
+    /// <para>
+    /// 站点把多个 `#tag` 当并集，无法表达"同时具备"；这类条件只能在本地加。
+    /// 纯 `*`（没有任何服务端条件）时，第一个会被提升成服务端标签请求以省请求量。
+    /// </para>
+    /// </summary>
+    Local
 }
 
 /// <summary>

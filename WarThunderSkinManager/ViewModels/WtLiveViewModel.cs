@@ -118,6 +118,74 @@ public partial class WtLiveViewModel : ObservableObject
     internal string TagQuery => WtLiveTag.ToQuery(
         Chips.Where(c => c.Kind == WtLiveChipKind.Tag).Select(c => c.Value));
 
+    /// <summary>本地筛选（`*tag`）的标签值；**不发请求**，只在客户端 AND 过滤。</summary>
+    internal IReadOnlyList<string> LocalFilters
+        => Chips.Where(c => c.Kind == WtLiveChipKind.Local).Select(c => c.Value).ToList();
+
+    /// <summary>是否有本地筛选（界面据此显示摘要）。</summary>
+    public bool HasLocalFilters => Chips.Any(c => c.Kind == WtLiveChipKind.Local);
+
+    /// <summary>
+    /// 实际发出去的查询 + 剩下的本地筛选。
+    /// <para>
+    /// **纯 `*`（一个服务端条件都没有）时，第一个 `*` 提升成 `#tag` 请求**：
+    /// 否则 `*anime` 会变成"拉全站再本地筛"。提升是**每次构建查询时现算**的，
+    /// 所以增减载具 / 标签 / 作者时会自动切换 —— 不会出现"删了条件还在拉全站"。
+    /// </para>
+    /// </summary>
+    internal (string? Vehicle, string? Search, string? User, IReadOnlyList<string> Locals) BuildQuery()
+    {
+        var (search, locals) = PromoteLocalFilters(VehicleFilter, UserFilter,
+            TagQuery.Length > 0 ? TagQuery : null, LocalFilters);
+
+        return (VehicleFilter, search, UserFilter, locals);
+    }
+
+    /// <summary>
+    /// "纯 `*` 时把第一个提升成服务端标签请求"的规则本身（纯函数，便于自检）。
+    /// </summary>
+    /// <param name="vehicle">载具条件（null = 无）</param>
+    /// <param name="user">作者条件（null = 无）</param>
+    /// <param name="serverSearch">已有的标签查询串（null = 无）</param>
+    /// <param name="locals">本地筛选（`*tag` 的值）</param>
+    internal static (string? Search, IReadOnlyList<string> Locals) PromoteLocalFilters(
+        string? vehicle, string? user, string? serverSearch, IReadOnlyList<string> locals)
+    {
+        var remaining = locals.ToList();
+
+        if (remaining.Count > 0 && vehicle == null && user == null && serverSearch == null)
+            return (WtLiveTag.ToQuery(new[] { remaining[0] }), remaining.Skip(1).ToList());
+
+        return (serverSearch, remaining);
+    }
+
+    /// <summary>
+    /// 标签归一化：去掉 <c>#</c> / <c>*</c> 前缀、转小写、忽略 <c>-</c> 与 <c>_</c>
+    /// （站点标签里不能有连字符，所以 `*f-15` 与 `*f_15` 视为同一个）。
+    /// </summary>
+    internal static string NormalizeTag(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return "";
+
+        var text = tag.Trim();
+        while (text.Length > 0 && (text[0] == '#' || text[0] == '*')) text = text[1..].TrimStart();
+
+        return string.Concat(text.Where(ch => ch != '-' && ch != '_').Select(char.ToLowerInvariant));
+    }
+
+    /// <summary>一条列表项是否同时具备所有本地筛选标签（AND）。</summary>
+    internal static bool MatchesLocalFilters(WTLiveFeedItem item, IReadOnlyList<string> locals)
+    {
+        if (locals.Count == 0) return true;
+
+        var tags = item.Tags.Select(NormalizeTag).Where(t => t.Length > 0).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var local in locals)
+            if (!tags.Contains(NormalizeTag(local))) return false;
+
+        return true;
+    }
+
     /// <summary>
     /// 当前查询的摘要（**没有筛选时 = "所有涂装"**）：胶囊在界面上是"一块块"，这行把它写成人话，
     /// 也点明走的是哪条通道（按载具 / 按标签 / 按作者）。页头左列第二行**始终**显示它（不像以前那样收起），
@@ -140,6 +208,11 @@ public partial class WtLiveViewModel : ObservableObject
             var tags = Chips.Where(c => c.Kind == WtLiveChipKind.Tag)
                 .Select(c => WtLiveTag.ToQueryToken(c.Value)).ToList();
             if (tags.Count > 0) parts.Add(Loc.Format("wtlive.search.byTag", string.Join(' ', tags)));
+
+            var locals = LocalFilters;
+            if (locals.Count > 0)
+                parts.Add(Loc.Format("wtlive.search.byLocal",
+                    string.Join(' ', locals.Select(t => "*" + t))));
 
             return parts.Count == 0 ? Loc["wtlive.search.all"] : string.Join(" · ", parts);
         }
@@ -1218,6 +1291,12 @@ public partial class WtLiveViewModel : ObservableObject
                 AppendUserChip(suggestion.Value, suggestion.Text);
                 break;
 
+            case WtLiveSearchKind.Local:
+                // 只吃掉"正在输入的那一个词"（与标签一致），其余输入留在框里
+                SearchText = WtLiveTag.DropFirstToken(SearchText);
+                AppendLocalFilterChip(suggestion.Value);
+                break;
+
             case WtLiveSearchKind.Clear:
                 SearchText = "";
                 ClearChips();
@@ -1351,7 +1430,7 @@ public partial class WtLiveViewModel : ObservableObject
         if (Chips.Any(c => c.Kind == WtLiveChipKind.Tag
                            && string.Equals(c.Value, value, StringComparison.OrdinalIgnoreCase))) return;
 
-        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Tag, value, value));
+        AddServerChip(new WtLiveSearchChip(WtLiveChipKind.Tag, value, value));
     }
 
     /// <summary>
@@ -1364,7 +1443,7 @@ public partial class WtLiveViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(vehicleId)) return;
 
         ClearChips(WtLiveChipKind.Vehicle);
-        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Vehicle, vehicleId, displayName ?? ""));
+        AddServerChip(new WtLiveSearchChip(WtLiveChipKind.Vehicle, vehicleId, displayName ?? ""));
     }
 
     /// <summary>
@@ -1383,8 +1462,39 @@ public partial class WtLiveViewModel : ObservableObject
         var id = WtLiveUser.NormalizeId(userId);
         if (id.Length == 0) return;
 
-        ClearChips();
-        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.User, id, displayName ?? ""));
+        // 作者是服务端维度：清掉载具 / 标签 / 旧作者，但**保留本地筛选**（它不发请求）
+        ClearChips(WtLiveChipKind.Vehicle);
+        ClearChips(WtLiveChipKind.Tag);
+        ClearChips(WtLiveChipKind.User);
+
+        AddServerChip(new WtLiveSearchChip(WtLiveChipKind.User, id, displayName ?? ""));
+    }
+
+    /// <summary>
+    /// 加一个**服务端**胶囊（载具 / 标签 / 作者）：必须排在所有本地筛选**之前**，
+    /// 这样胶囊条上的顺序永远是「载具 → 作者 → 标签 → *本地筛选」。
+    /// </summary>
+    private void AddServerChip(WtLiveSearchChip chip)
+    {
+        var index = 0;
+        while (index < Chips.Count && Chips[index].Kind != WtLiveChipKind.Local) index++;
+
+        Chips.Insert(index, chip);
+    }
+
+    /// <summary>
+    /// 加一个**本地筛选**胶囊（`*tag`）：不发请求，只做本地 AND 过滤；固定排在最后。
+    /// 重复项（归一化后相同）直接忽略。
+    /// </summary>
+    internal void AppendLocalFilterChip(string? tag)
+    {
+        var value = NormalizeTag(tag);
+        if (value.Length == 0) return;
+
+        if (Chips.Any(c => c.Kind == WtLiveChipKind.Local
+                           && string.Equals(NormalizeTag(c.Value), value, StringComparison.Ordinal))) return;
+
+        Chips.Add(new WtLiveSearchChip(WtLiveChipKind.Local, value, value));
     }
 
     /// <summary>清掉全部胶囊（<paramref name="kind"/> 非空时只清这一类）；**不刷新**。</summary>
@@ -1445,7 +1555,10 @@ public partial class WtLiveViewModel : ObservableObject
 
             if (token.Length > 0)
             {
-                AppendTagChip(token);
+                // `*xxx` = 本地筛选（粘贴 "*a *b" 也能一次收两个）
+                if (token[0] == '*') AppendLocalFilterChip(token);
+                else AppendTagChip(token);
+
                 added = true;
             }
 
@@ -1489,8 +1602,28 @@ public partial class WtLiveViewModel : ObservableObject
 
         var text = SearchText.Trim();
         var authorId = WtLiveUser.Normalize(text); // 只认 "@ + 纯数字"（作者 id 是正整数）
+        var firstToken = WtLiveTag.FirstToken(text);
 
-        if (authorId.Length > 0)
+        if (firstToken.StartsWith('*'))
+        {
+            // `*xxx` = 本地筛选：没有站点候选，只给这一条（回车 / 点击即加），
+            // 顺便保留"清除"，免得用户只能靠退格
+            var value = NormalizeTag(firstToken);
+
+            if (value.Length > 0)
+            {
+                Suggestions.Add(new WtLiveSearchSuggestion
+                {
+                    Kind = WtLiveSearchKind.Local,
+                    Display = WtLiveSearchChipCatalog.LocalLabel(value),
+                    Detail = Loc["wtlive.search.localDetail"],
+                    Value = value,
+                    Text = value,
+                    Icon = WtLiveSearchChipCatalog.LocalIcon
+                });
+            }
+        }
+        else if (authorId.Length > 0)
         {
             // 作者通道（@id）：整段输入就是一个作者。站点按 user= 筛，昵称只是显示名、不能当查询值，
             // 所以这一项没有"名字匹配"可言——给的就是那一个 id
@@ -1622,14 +1755,20 @@ public partial class WtLiveViewModel : ObservableObject
         {
             // 浏览请求都是短请求：不设取消（退出即进程结束；可取消的长任务在下载列表那边）
             // 作者筛选独占：有它时 VehicleFilter / TagQuery 必然为空（见 AppendUserChip）
+            // 本地筛选（`*tag`）不进请求，只在下面过滤；纯 `*` 时第一个会被 BuildQuery 提升成标签请求
+            var query = BuildQuery();
+
             var page = await WTLiveService.FetchFeedPageAsync(
-                _nextPage, VehicleFilter, TagQuery.Length > 0 ? TagQuery : null, SortId, UserFilter,
+                _nextPage, query.Vehicle, query.Search, SortId, query.User,
                 CancellationToken.None);
 
             if (session != _session) return;
 
             foreach (var item in page.Items)
             {
+                // 本地筛选：不匹配的直接丢弃（不是隐藏 —— 免得影响去重与"到底"判断）
+                if (!MatchesLocalFilters(item, query.Locals)) continue;
+
                 // 跨页去重：lang_group 唯一（同一帖子多语言版本已在接口侧归并，§10）
                 if (Items.Any(existing => existing.LangGroup == item.LangGroup)) continue;
 

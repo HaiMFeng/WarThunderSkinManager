@@ -18,7 +18,17 @@ public enum WtLiveChipKind
     /// 站点同时给 <c>user=</c> 与 <c>searchString=</c> / <c>vehicle=</c> 时结果语义不明，
     /// 所以加作者胶囊会清掉其余条件、有作者胶囊时也加不进其他（见 <see cref="WtLiveViewModel"/>）。
     /// </summary>
-    User
+    User,
+
+    /// <summary>
+    /// **本地筛选**（`*tag`）：<c>*</c> 开头，只在此客户端过滤，**不发请求**。
+    /// <para>
+    /// 站点把多个 `#tag` 当**并集**，没法表达"同时具备 A 和 B"，所以这些条件只能本地 AND。
+    /// 位置固定在所有载具 / 作者 / 标签胶囊**之后**（见 <c>AddServerChip</c>）。
+    /// 当"一个服务端条件都没有、只有 `*`"时，第一个 `*` 会被提升成服务端标签请求（减少请求量）。
+    /// </para>
+    /// </summary>
+    Local
 }
 
 /// <summary>
@@ -60,6 +70,7 @@ public partial class WtLiveSearchChip : ObservableObject
     {
         WtLiveChipKind.Vehicle => WtLiveSearchChipCatalog.VehicleLabel(Text),
         WtLiveChipKind.User => WtLiveSearchChipCatalog.UserLabel(Text),
+        WtLiveChipKind.Local => WtLiveSearchChipCatalog.LocalLabel(Text),
         _ => WtLiveSearchChipCatalog.TagLabel(Text)
     };
 
@@ -68,6 +79,7 @@ public partial class WtLiveSearchChip : ObservableObject
     {
         WtLiveChipKind.Vehicle => WtLiveSearchChipCatalog.VehicleIcon,
         WtLiveChipKind.User => WtLiveSearchChipCatalog.UserIcon,
+        WtLiveChipKind.Local => WtLiveSearchChipCatalog.LocalIcon,
         _ => WtLiveSearchChipCatalog.TagIcon
     };
 
@@ -105,6 +117,9 @@ internal static class WtLiveSearchChipCatalog
     /// <summary>清空「×」图标。</summary>
     internal const string ClearIcon = "\uF00D";
 
+    /// <summary>本地筛选图标（Font Awesome <c>filter</c>）：与"发请求的标签"在视觉上区分开。</summary>
+    internal const string LocalIcon = "\uF0B0";
+
     /// <summary>载具胶囊 / 候选文案：<c>载具:F-15E</c>。</summary>
     internal static string VehicleLabel(string text) => Format("wtlive.chip.vehicle", text);
 
@@ -116,6 +131,9 @@ internal static class WtLiveSearchChipCatalog
     /// 也可能只有 id（在搜索框里手打 <c>@147560834</c> 时），两者都走这一套文案。
     /// </summary>
     internal static string UserLabel(string text) => Format("wtlive.chip.user", text);
+
+    /// <summary>本地筛选胶囊文案：<c>筛选:anime</c>（前缀带 <c>*</c> 时更直观）。</summary>
+    internal static string LocalLabel(string text) => Format("wtlive.chip.local", text);
 
     private static string Format(string key, string text)
         => string.Format(LocalizationManager.Instance[key], text);

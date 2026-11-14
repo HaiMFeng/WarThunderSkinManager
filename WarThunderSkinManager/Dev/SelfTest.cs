@@ -432,6 +432,44 @@ internal static class SelfTest
             WtLiveAuthorFeedCache.Reset();
             WtLiveAuthorFeedCache.Configure("");
 
+            // ---- 本地筛选（`*tag`，§3.17）：归一化 / AND 匹配 / 纯 `*` 时的"首个提升为请求" ----
+            static WTLiveFeedItem Tagged(params string[] tags) => new(
+                LangGroup: 1, Author: "a", AuthorId: 1, AuthorAvatar: "",
+                Title: "t", Description: "", PreviewUrl: null, Ratio: 1, PreviewWidth: 0,
+                FileName: "a.zip", FileLink: "l", FileSize: 1, Downloads: 0, Likes: 0, Views: 0,
+                PostUrl: "u", Tags: tags);
+
+            var normalizeOk = WtLiveViewModel.NormalizeTag("*Anime") == "anime"
+                              && WtLiveViewModel.NormalizeTag("#anime") == "anime"
+                              && WtLiveViewModel.NormalizeTag("f-15") == "f15"
+                              && WtLiveViewModel.NormalizeTag("f_15") == "f15"
+                              && WtLiveViewModel.NormalizeTag("  ") == "";
+
+            var matchOk = WtLiveViewModel.MatchesLocalFilters(Tagged("Anime", "comic"), new[] { "anime" })
+                          && WtLiveViewModel.MatchesLocalFilters(Tagged("anime", "scifi"), new[] { "anime", "sci-fi" })
+                          && !WtLiveViewModel.MatchesLocalFilters(Tagged("anime"), new[] { "anime", "comic" })
+                          && WtLiveViewModel.MatchesLocalFilters(Tagged("anime"), Array.Empty<string>());
+
+            // 纯 `*`：第一个提升成服务端标签请求；有任何服务端条件就全部留在本地
+            var promoteAlone = WtLiveViewModel.PromoteLocalFilters(null, null, null, new[] { "anime" });
+            var promoteMulti = WtLiveViewModel.PromoteLocalFilters(null, null, null, new[] { "f_15e", "anime", "comic" });
+            var promoteWithVehicle = WtLiveViewModel.PromoteLocalFilters("f_15e", null, null, new[] { "anime" });
+            var promoteWithTag = WtLiveViewModel.PromoteLocalFilters(null, null, "#f_15e", new[] { "comic" });
+
+            var promoteOk = promoteAlone.Search == "#anime" && promoteAlone.Locals.Count == 0
+                            && promoteMulti.Search == "#f_15e" && promoteMulti.Locals.Count == 2
+                            && promoteWithVehicle.Search == null && promoteWithVehicle.Locals.Count == 1
+                            && promoteWithTag.Search == "#f_15e" && promoteWithTag.Locals.Count == 1;
+
+            var localFilterOk = normalizeOk && matchOk && promoteOk;
+
+            log.AppendLine($"本地筛选   : 归一化（*#大小写/连字符/下划线）= {normalizeOk}（应 True）、AND 匹配 = {matchOk}（应 True）、"
+                         + $"纯 * 首个提升为标签请求 = {promoteOk}（应 True）→ {localFilterOk}");
+
+            if (!localFilterOk)
+                log.AppendLine("自检异常：本地筛选（*tag）的归一化 / 匹配 / 提升规则不对"
+                             + "（会漏筛、错筛，或纯 * 时退化成拉全站）");
+
             // ---- WT Live 搜索胶囊（标签 / 载具）：条件叠在胶囊上，查询串由胶囊拼出来 ----
             var chipVm = new WtLiveViewModel();
             chipVm.AppendTagChip("#anime");
