@@ -405,13 +405,21 @@ internal static class SelfTest
             WtLiveAuthorFeedCache.Configure(authorCacheDir);
 
             var authorReloaded = WtLiveAuthorFeedCache.QueryByAuthors(authorIds, noNames);
-            var authorCacheOk = authorCursorOk && authorCacheFileOk
+
+            // 上屏顺序：后续批次可能夹着更新的帖子，必须按 id 降序插到正确位置（不能 Add 到末尾）
+            var existingIds = new long[] { 10, 8, 6 };
+            var orderOk = WtLiveViewModel.OrderedInsertIndex(existingIds, 9) == 1   // 插在 10 之后、8 之前
+                          && WtLiveViewModel.OrderedInsertIndex(existingIds, 11) == 0  // 最新 → 最前
+                          && WtLiveViewModel.OrderedInsertIndex(existingIds, 5) == 3   // 更旧 → 末尾
+                          && WtLiveViewModel.OrderedInsertIndex(Array.Empty<long>(), 7) == 0;
+
+            var authorCacheOk = authorCursorOk && authorCacheFileOk && orderOk
                                 && authorReloaded.Count == 3
                                 && WtLiveAuthorFeedCache.NextPage("42") == 1
                                 && WtLiveAuthorFeedCache.MaxPostId("42") == 302;
 
             log.AppendLine($"收藏作者缓存: 按作者查 {authorQuery.Count} 条（应 3，按 id 倒序）/ 游标（42 有下页、43 到底）= {authorCursorOk}（应 True）、"
-                         + $"落盘往返 {authorReloaded.Count} 条（应 3）= {authorCacheOk}（应 True）");
+                         + $"落盘往返 {authorReloaded.Count} 条（应 3）、按 id 降序插入 = {orderOk}（应 True）= {authorCacheOk}（应 True）");
 
             if (!authorCacheOk)
                 log.AppendLine("自检异常：收藏作者的按作者缓存不对（作者游标 / 排序 / 落盘往返）");

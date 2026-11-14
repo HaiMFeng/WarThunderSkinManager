@@ -757,12 +757,27 @@ public partial class WtLiveViewModel : ObservableObject
 
             var card = new WtLiveCardItem(hit, DownloadCardCommand, SearchUserByCardCommand,
                 ReloadThumbnailCommand);
-            Items.Add(card);
 
-            if (InsideVisibleWindow(Items.Count - 1)) _ = LoadThumbnailAsync(card);
+            // **按 id 降序插入到正确位置**，不要直接 Add：
+            // 后续批次里可能夹着"同步刚带回的新帖"（id 更大），Add 到末尾会让顺序乱掉
+            var index = OrderedInsertIndex(Items.Select(existing => existing.LangGroup).ToList(), hit.LangGroup);
+            Items.Insert(index, card);
+
+            if (InsideVisibleWindow(index)) _ = LoadThumbnailAsync(card);
         }
 
         return hits.Count;
+    }
+
+    /// <summary>
+    /// 降序列表的插入位置：返回第一个 id **小于** <paramref name="langGroup"/> 的下标
+    /// （即保证插入后整个列表仍是 id 降序）。
+    /// </summary>
+    internal static int OrderedInsertIndex(IReadOnlyList<long> ascendingIds, long langGroup)
+    {
+        var index = 0;
+        while (index < ascendingIds.Count && ascendingIds[index] > langGroup) index++;
+        return index;
     }
 
     /// <summary>提示条文案。</summary>
