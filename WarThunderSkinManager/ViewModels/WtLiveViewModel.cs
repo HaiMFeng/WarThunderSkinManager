@@ -173,6 +173,30 @@ public partial class WtLiveViewModel : ObservableObject
         return string.Concat(text.Where(ch => ch != '-' && ch != '_').Select(char.ToLowerInvariant));
     }
 
+    /// <summary>
+    /// `*` 的候选排名：从"已经加载出来的列表"里收集标签，按出现次数降序（同频按名字），
+    /// 只保留**本地已生效集合之外**、且以 <paramref name="prefix"/> 开头的。
+    /// 纯函数（不碰 UI，便于自检）。
+    /// </summary>
+    internal static List<(string Tag, int Count)> RankLocalFilterCandidates(
+        IEnumerable<string> tags, string prefix, IReadOnlySet<string> exclude, int take)
+    {
+        if (take <= 0) return new List<(string, int)>();
+
+        var head = NormalizeTag(prefix);
+
+        return tags
+            .Select(NormalizeTag)
+            .Where(tag => tag.Length > 0 && !exclude.Contains(tag))
+            .Where(tag => head.Length == 0 || tag.StartsWith(head, StringComparison.Ordinal))
+            .GroupBy(tag => tag, StringComparer.Ordinal)
+            .Select(group => (Tag: group.Key, Count: group.Count()))
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Tag, StringComparer.Ordinal)
+            .Take(take)
+            .ToList();
+    }
+
     /// <summary>一条列表项是否同时具备所有本地筛选标签（AND）。</summary>
     internal static bool MatchesLocalFilters(WTLiveFeedItem item, IReadOnlyList<string> locals)
     {
@@ -244,6 +268,9 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>下拉里最多列出的载具条数（其余靠继续输入收敛；键盘上下也够用）。</summary>
     private const int MaxVehicleSuggestions = 6;
+
+    /// <summary>`*` 的候选条数上限（从已加载列表的标签里排名取前几个）。</summary>
+    private const int MaxLocalFilterSuggestions = 8;
 
     /// <summary>
     /// 搜索下拉用的载具**模糊匹配索引**（<c>units.csv</c> 的全部可玩载具 + 归一化，后台加载；
@@ -1606,11 +1633,16 @@ public partial class WtLiveViewModel : ObservableObject
 
         if (firstToken.StartsWith('*'))
         {
-            // `*xxx` = 本地筛选：没有站点候选，只给这一条（回车 / 点击即加），
-            // 顺便保留"清除"，免得用户只能靠退格
+            // `*xxx` = 本地筛选：候选**不发请求**，直接拿"当前已加载列表里出现过的标签"排名，
+            // 输入 `*` 本身也会列出最常用的几个（与 `#` 的候选体验一致，但零请求）
             var value = NormalizeTag(firstToken);
+            var already = LocalFilters.Select(NormalizeTag).ToHashSet(StringComparer.Ordinal);
 
-            if (value.Length > 0)
+            var ranked = RankLocalFilterCandidates(
+                Items.SelectMany(item => item.Tags), value, already, MaxLocalFilterSuggestions);
+
+            // 正在输入的那个即使还没出现过，也放在最前面（回车即可加）
+            if (value.Length > 0 && ranked.All(candidate => candidate.Tag != value))
             {
                 Suggestions.Add(new WtLiveSearchSuggestion
                 {
@@ -1619,6 +1651,21 @@ public partial class WtLiveViewModel : ObservableObject
                     Detail = Loc["wtlive.search.localDetail"],
                     Value = value,
                     Text = value,
+                    Icon = WtLiveSearchChipCatalog.LocalIcon
+                });
+            }
+
+            foreach (var (tag, count) in ranked)
+            {
+                Suggestions.Add(new WtLiveSearchSuggestion
+                {
+                    Kind = WtLiveSearchKind.Local,
+                    Display = WtLiveSearchChipCatalog.LocalLabel(tag),
+                    Detail = count > 0
+                        ? Loc.Format("wtlive.search.localMatch", count)
+                        : Loc["wtlive.search.localDetail"],
+                    Value = tag,
+                    Text = tag,
                     Icon = WtLiveSearchChipCatalog.LocalIcon
                 });
             }

@@ -609,6 +609,7 @@
   "wtlive.chip.tag": "标签:{0}",
   "wtlive.chip.local": "筛选:{0}",
   "wtlive.search.localDetail": "仅本地筛选，不发请求",
+  "wtlive.search.localMatch": "本地筛选 · 当前列表出现 {0} 次",
   "wtlive.search.byLocal": "本地筛选 {0}",
   "wtlive.chip.user": "用户:{0}",
   "wtlive.sort.label": "排序方式",

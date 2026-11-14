@@ -461,10 +461,28 @@ internal static class SelfTest
                             && promoteWithVehicle.Search == null && promoteWithVehicle.Locals.Count == 1
                             && promoteWithTag.Search == "#f_15e" && promoteWithTag.Locals.Count == 1;
 
-            var localFilterOk = normalizeOk && matchOk && promoteOk;
+            // `*` 的候选排名：按出现次数、前缀过滤、排除已生效项（零请求，来自已加载列表）
+            var sampleTags = new[] { "anime", "anime", "comic", "Anime", "sci-fi" };
+            var rankedAll = WtLiveViewModel.RankLocalFilterCandidates(
+                sampleTags, "", new HashSet<string>(StringComparer.Ordinal), 3);
+            var rankedPrefix = WtLiveViewModel.RankLocalFilterCandidates(
+                sampleTags, "*an", new HashSet<string>(StringComparer.Ordinal), 8);
+            var rankedExcluded = WtLiveViewModel.RankLocalFilterCandidates(
+                sampleTags, "", new HashSet<string> { "anime" }, 8);
+
+            var rankOk = rankedAll.Count == 3
+                         && rankedAll[0] == ("anime", 3)          // 同标签大小写合并、按次数降序
+                         && rankedAll[1].Tag == "comic"            // 同频按名字
+                         && rankedPrefix.Count == 1 && rankedPrefix[0].Tag == "anime"  // 前缀（忽略 *）
+                         && rankedExcluded.All(entry => entry.Tag != "anime")          // 已生效的不再提示
+                         && WtLiveViewModel.RankLocalFilterCandidates(
+                                sampleTags, "zzz", new HashSet<string>(), 8).Count == 0;
+
+            var localFilterOk = normalizeOk && matchOk && promoteOk && rankOk;
 
             log.AppendLine($"本地筛选   : 归一化（*#大小写/连字符/下划线）= {normalizeOk}（应 True）、AND 匹配 = {matchOk}（应 True）、"
-                         + $"纯 * 首个提升为标签请求 = {promoteOk}（应 True）→ {localFilterOk}");
+                         + $"纯 * 首个提升为标签请求 = {promoteOk}（应 True）、"
+                         + $"* 候选排名（次数/前缀/排除）= {rankOk}（应 True）→ {localFilterOk}");
 
             if (!localFilterOk)
                 log.AppendLine("自检异常：本地筛选（*tag）的归一化 / 匹配 / 提升规则不对"
