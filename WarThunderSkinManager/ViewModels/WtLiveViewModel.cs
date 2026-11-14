@@ -128,7 +128,6 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>本次模式内已从缓存上屏的帖子 id（用集合而不是游标：追赶后新条目会插到最前面）。</summary>
     private readonly HashSet<long> _cacheServed = new();
 
-    private bool _cacheDrained;
 
     /// <summary>一批（缓存 6 条 / 扫描若干页）是否正在跑 —— 挡住滚动的重入。</summary>
     private bool _favoriteBatchRunning;
@@ -146,7 +145,13 @@ public partial class WtLiveViewModel : ObservableObject
     private int _favoriteAutoRetries;
 
     private const int FavoriteAutoRetryLimit = 2;
-    private bool _catchUpDone;
+
+    // ---- 缓存连续区（两端取数的核心状态）----
+    private bool _cachePrepared;   // 本会话是否已经"追平 + 对齐"过
+    private bool _cacheActive;     // 连续区可用（false = 本会话纯网络，绝不拿缓存拼列表）
+    private long _cacheCursorId;   // 缓存吐出位置（不含）：只吐 id 严格小于它的
+    private long _sessionTopId;    // 进入时缓存的最新锚点
+    private int _sessionNewCount;  // 前端补抓发现的新增条数（算页码位移）
 
     /// <summary>是否处于「收藏作者的涂装」模式（界面顶部因此显示提示条、排序下拉禁用）。</summary>
     [ObservableProperty] private bool _isFavoriteAuthorsMode;
@@ -620,8 +625,11 @@ public partial class WtLiveViewModel : ObservableObject
         _favoriteScannedPosts = 0;
         _favoriteScanHits = 0;
         _cacheServed.Clear();
-        _cacheDrained = false;
-        _catchUpDone = false;
+        _cachePrepared = false;
+        _cacheActive = false;
+        _cacheCursorId = 0;
+        _sessionTopId = 0;
+        _sessionNewCount = 0;
         _favoriteAutoRetries = 0;
         UpdateFavoriteModeText();
 
@@ -646,8 +654,11 @@ public partial class WtLiveViewModel : ObservableObject
         _favoriteScannedPosts = 0;
         _favoriteScanHits = 0;
         _cacheServed.Clear();
-        _cacheDrained = false;
-        _catchUpDone = false;
+        _cachePrepared = false;
+        _cacheActive = false;
+        _cacheCursorId = 0;
+        _sessionTopId = 0;
+        _sessionNewCount = 0;
         FavoriteModeText = "";
 
         StartRefresh();
@@ -667,6 +678,15 @@ public partial class WtLiveViewModel : ObservableObject
             : Loc.Format("wtlive.favoriteMode.status",
                 _favoriteAuthorIds.Count + _favoriteAuthorNames.Count, _favoriteScannedPosts, Items.Count);
     }
+
+    /// <summary>
+    /// 当前查询是否就是"默认排序 + 无筛选"——**缓存只对这种查询有效**：
+    /// 页码语义、id 顺序都只有在这个口径下才一致。
+    /// </summary>
+    private bool IsDefaultFeedQuery
+        => Chips.Count == 0
+           && SearchText.Length == 0
+           && string.Equals(SortId, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal);
 
     /// <summary>当前条件下能不能吃缓存：只有"默认排序（最新）"的 feed 与缓存的顺序语义一致。</summary>
     private bool CanUseFeedCache
@@ -692,14 +712,11 @@ public partial class WtLiveViewModel : ObservableObject
         {
             if (CanUseFeedCache)
             {
+                // 第一次进来先"追平 + 对齐"：补新增、确认与缓存重叠、定好底部续取的页码
+                if (!_cachePrepared) await CatchUpFeedAsync();
+
                 var served = await ShowCachedHitsAsync(FavoriteScanMinHitsPerPull);
                 if (served >= FavoriteScanMinHitsPerPull) return;
-
-                // 缓存见底：追赶一次新帖（同一会话一次就够），再看本地能不能补出命中
-                if (!_catchUpDone) await CatchUpFeedAsync();
-
-                _cacheDrained = false; // 追赶可能带回了新命中
-                if (await ShowCachedHitsAsync(FavoriteScanMinHitsPerPull) > 0) return;
             }
 
             await ScanFavoritePagesAsync();
@@ -728,32 +745,129 @@ public partial class WtLiveViewModel : ObservableObject
         if (Items.Count > itemsBefore) _favoriteAutoRetries = 0; // 有产出 → 计数归零
     }
 
-    /// <summary>从本地缓存吐一批命中（**先刷新再上屏**）。返回这一批吐了几条。</summary>
+    /// <summary>
+    /// 从缓存**连续区**吐一批命中（**先刷新再上屏**）。返回这一批吐了几条。
+    /// </summary>
+    /// <remarks>
+    /// 按 id 游标滚动，不按页码切片：新帖会把页码整体后移，按页切片会错位；
+    /// 按 id 滚动永远只往下走，配合"去重"不会重复、也不会跳。
+    /// </remarks>
     private async Task<int> ShowCachedHitsAsync(int take)
     {
-        if (_cacheDrained || take <= 0) return 0;
+        if (!_cacheActive || take <= 0) return 0;
 
-        // 首次查询要解压 + 反序列化几 MB 的缓存：放后台，别让首帧卡住
+        var cursor = _cacheCursorId;
         var served = _cacheServed;
-        var hits = await Task.Run(() => WtLiveFeedCache
-            .QueryByAuthors(_favoriteAuthorIds, _favoriteAuthorNames)   // 已按 lang_group 倒序
-            .Where(item => !served.Contains(item.LangGroup))
-            .Take(take)
-            .ToList());
+
+        // 首次查询要解压 + 反序列化几 MB：放后台；多取一些，过滤掉非收藏作者后仍够一批
+        var window = await Task.Run(() => WtLiveFeedCache.NextBelow(cursor, Math.Max(take * 4, take)));
 
         if (_favoriteBatchSession != _session) return 0;
 
-        if (hits.Count == 0)
+        if (window.Count == 0)
         {
-            _cacheDrained = true;
+            // 连续区到底：算出"底部那页现在在第几页"，从这里接着走网络
+            _cacheActive = false;
+            await AlignBottomPageAsync();
             return 0;
         }
 
+        // 游标必须往前走（哪怕这批都被作者过滤掉），否则会卡在同一段
+        _cacheCursorId = window.Min(item => item.LangGroup);
+
+        var hits = window
+            .Where(item => !served.Contains(item.LangGroup)
+                           && MatchesFavoriteAuthor(item, _favoriteAuthorIds, _favoriteAuthorNames))
+            .Take(take)
+            .ToList();
+
+        if (hits.Count == 0) return 0;
+
         foreach (var hit in hits) _cacheServed.Add(hit.LangGroup);
-        if (hits.Count < take) _cacheDrained = true;
 
         await AddFavoriteCardsAsync(hits);
         return hits.Count;
+    }
+
+    /// <summary>
+    /// 缓存连续区吐完之后，算出**现在**该从第几页继续请求，并校验对齐。
+    /// </summary>
+    /// <remarks>
+    /// 新增 N 条 → 旧的第 p 页变成第 `p + N/25` 页（每页固定 25 条），
+    /// 但删帖/隐藏会让页码往回漂，所以必须用"这一页的 id 区间是否包含底部锚点"来校验：
+    /// 包含 → 对齐；都更新 → 再往深一页；都更旧 → 回退一页。
+    /// **3 次探不准就作废连续区、从第 0 页走网络** —— 宁可多请求，不能漏帖。
+    /// </remarks>
+    /// <summary>
+    /// 底部续取的页码估算：旧页码 + 期间新增条数 / 每页条数（每页固定 25，见 <see cref="WTLiveService.FeedPageSize"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 误差最多 1 页：新增条数不是 25 的整数倍时，锚点在本页的位置会让它偏一页；
+    /// 有删帖时还会往回偏。所以调用方必须**探页校验**（看该页 id 区间是否含底部锚点），
+    /// 校验不过就作废连续区 —— 宁可多请求，不能漏帖。
+    /// </remarks>
+    internal static int EstimateBottomPage(int hintPage, int newCount)
+        => Math.Max(0, hintPage + Math.Max(0, newCount) / WTLiveService.FeedPageSize);
+
+    private async Task AlignBottomPageAsync()
+    {
+        if (!WtLiveFeedCache.Contiguous)
+        {
+            _nextPage = 0;
+            return;
+        }
+
+        var bottomId = WtLiveFeedCache.BottomId;
+        if (bottomId <= 0)
+        {
+            _nextPage = WtLiveFeedCache.PagesCovered;
+            return;
+        }
+
+        var page = EstimateBottomPage(WtLiveFeedCache.BottomPageHint, _sessionNewCount);
+        if (page < 0) page = 0;
+
+        for (var probe = 0; probe < 3; probe++)
+        {
+            if (probe > 0)
+            {
+                await Task.Delay(FavoriteScanInterval + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
+                if (!IsFavoriteAuthorsMode) return;
+            }
+
+            WTLiveFeedPage fetched;
+            try
+            {
+                fetched = await WTLiveService.FetchFeedPageAsync(
+                    page, null, null, WtLiveSortCatalog.DefaultSort, null, CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                break;
+            }
+
+            if (fetched.Items.Count == 0) break;
+
+            var min = fetched.Items.Min(item => item.LangGroup);
+            var max = fetched.Items.Max(item => item.LangGroup);
+
+            WtLiveFeedCache.Upsert(fetched.Items);
+
+            if (min <= bottomId && bottomId <= max)
+            {
+                // 这一页就是缓存底部所在页（内容全在缓存里）→ 下一页开始走网络
+                WtLiveFeedCache.MarkPageCovered(page, fetched.Items[0].LangGroup, fetched.Items[^1].LangGroup);
+                _nextPage = page + 1;
+                return;
+            }
+
+            if (min > bottomId) page++;   // 这页都比底部锚点新 → 还没到底，往深走
+            else page--;                  // 冲过头了 → 回退
+        }
+
+        // 对不齐：不猜。作废连续区，从第 0 页重新按网络浏览
+        WtLiveFeedCache.InvalidateContiguity();
+        _nextPage = 0;
     }
 
     /// <summary>
@@ -809,15 +923,21 @@ public partial class WtLiveViewModel : ObservableObject
     /// </summary>
     private async Task CatchUpFeedAsync()
     {
-        _catchUpDone = true;
+        _cachePrepared = true;
+        _cacheActive = false;
 
-        if (DateTime.UtcNow - WtLiveFeedCache.LastCatchUp < FavoriteCatchUpMinInterval) return;
+        // 没有可信的连续区（上次缺口太大 / 刚被作废）→ 本会话纯网络，绝不拿缓存拼列表
+        if (!WtLiveFeedCache.Contiguous || WtLiveFeedCache.TopId <= 0) return;
+
+        _sessionTopId = WtLiveFeedCache.TopId;
+        _sessionNewCount = 0;
 
         var session = _session;
 
         // 顺带收集"收藏作者的新帖"：追平后直接插到列表最前，不用等用户滚到缓存底部
         var newHits = new List<WTLiveFeedItem>();
         var fetched = 0;
+        var overlapped = false;
 
         try
         {
@@ -846,8 +966,11 @@ public partial class WtLiveViewModel : ObservableObject
 
                 fetched++;
 
-                // **先判定再入库**：整页都见过 = 已经追平
-                var allKnown = WtLiveFeedCache.AllKnown(page.Items.Select(item => item.LangGroup));
+                // **重叠确认**：页内出现 ≤ 上次最新锚点（TopId）的 id = 已经接到旧缓存上。
+                // 用"重叠"而不是"整页都见过"：一页里既有新帖又有旧帖时也必须停（漏查也无所谓，
+                // 旧帖本来就在缓存里）；反过来只要还没看到 ≤ TopId，就说明上面还有新帖，继续翻。
+                overlapped = page.Items.Any(item => item.LangGroup <= _sessionTopId);
+                _sessionNewCount += page.Items.Count(item => item.LangGroup > _sessionTopId);
 
                 _favoriteScannedPosts += page.Items.Count;
 
@@ -861,16 +984,34 @@ public partial class WtLiveViewModel : ObservableObject
                 }
 
                 WtLiveFeedCache.Upsert(page.Items);
+                WtLiveFeedCache.MarkPageCovered(index, page.Items[0].LangGroup, page.Items[^1].LangGroup);
 
-                if (allKnown || !page.HasMore) break;
+                if (overlapped) break;
+                if (!page.HasMore) { overlapped = true; break; }   // 到底 = 没有更旧的区，也就不存在缺口
             }
         }
         finally
         {
-            // 追赶翻过的页 = 当前查询已经走到过的位置：让滚动扫描从这里接着往下，
-            // 不把刚缓存的页再扫一遍（否则那几页请求等于白打）
-            if (fetched > 0 && session == _session && IsFavoriteAuthorsMode)
-                _nextPage = Math.Max(_nextPage, fetched);
+            if (session == _session && IsFavoriteAuthorsMode)
+            {
+                // 追赶翻过的页 = 当前查询已经走到过的位置
+                if (fetched > 0) _nextPage = Math.Max(_nextPage, fetched);
+
+                if (!overlapped)
+                {
+                    // 前端缺口超过上限（20 页 / 500 帖）：**不猜**。作废连续区，本会话纯网络，
+                    // 下个会话从第 0 页重新累积 —— 宁可多请求，也不能留一段看不见的空窗。
+                    WtLiveFeedCache.InvalidateContiguity();
+                    _cacheActive = false;
+                    _nextPage = 0;
+                }
+                else
+                {
+                    // 已接到旧缓存上：从这里开始吃缓存（只吐 id ≤ TopId 的，更新的刚才已经刷过）
+                    _cacheActive = WtLiveFeedCache.Contiguous;
+                    _cacheCursorId = _sessionTopId + 1;
+                }
+            }
         }
 
         WtLiveFeedCache.MarkCatchUp(DateTime.UtcNow);
@@ -1018,7 +1159,13 @@ public partial class WtLiveViewModel : ObservableObject
             _favoriteScannedPosts = 0;
             _favoriteScanHits = 0;
             _cacheServed.Clear();
-            _cacheDrained = false;
+
+            // 重来一轮：从第 0 页重新追平、重新对齐（缓存连续区本身仍然有效）
+            _cachePrepared = false;
+            _cacheActive = false;
+            _cacheCursorId = 0;
+            _sessionNewCount = 0;
+
             UpdateFavoriteModeText();
         }
 
@@ -1178,7 +1325,10 @@ public partial class WtLiveViewModel : ObservableObject
                 _favoriteScannedPosts = 0;
                 _favoriteScanHits = 0;
                 _cacheServed.Clear();
-                _cacheDrained = false;
+                _cachePrepared = false;
+                _cacheActive = false;
+                _cacheCursorId = 0;
+                _sessionNewCount = 0;
                 FavoriteModeText = "";
             }
 
@@ -1746,8 +1896,10 @@ public partial class WtLiveViewModel : ObservableObject
                 if (TryAddCard(item)) added++;
             }
 
-            // 记下"从 0 起连续覆盖到哪"：下次进入从这儿接着扫，不重扫已缓存页
-            WtLiveFeedCache.MarkPageCovered(_nextPage);
+            // 记下"从 0 起连续覆盖到哪"：下次进入从这儿接着扫，不重扫已缓存页。
+            // **只在默认查询下记**：带筛选 / 换了排序时页码语义不同，记进去会污染连续区
+            if (IsDefaultFeedQuery && page.Items.Count > 0)
+                WtLiveFeedCache.MarkPageCovered(_nextPage, page.Items[0].LangGroup, page.Items[^1].LangGroup);
 
             _nextPage++;
             IsExhausted = !page.HasMore;

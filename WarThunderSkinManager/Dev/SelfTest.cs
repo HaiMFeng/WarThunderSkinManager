@@ -425,6 +425,34 @@ internal static class SelfTest
             WtLiveFeedCache.MarkRefreshFailed(302, WtLiveViewModel.FavoriteRefreshRetryDelay);
             var retryBackoffAfter = WtLiveFeedCache.NeedsRefresh(302, WtLiveViewModel.FavoriteRefreshMaxAge);
 
+            // 连续区不变量：只吐 [BottomId, TopId]，失效后一条都不吐；底部页码估算
+            WtLiveFeedCache.Reset();
+            WtLiveFeedCache.Configure(feedCacheDir);
+            WtLiveFeedCache.Upsert(new[]
+            {
+                FeedItem("A", 42, 302),
+                FeedItem("A", 42, 301),
+                FeedItem("A", 42, 300)
+            });
+
+            WtLiveFeedCache.MarkPageCovered(0, 302, 300);
+
+            var contiguousWin = WtLiveFeedCache.NextBelow(303, 10);   // 3 条（全在连续区）
+            var belowWindow = WtLiveFeedCache.NextBelow(301, 10);     // 1 条（300）
+            var watermarksOk = WtLiveFeedCache.TopId == 302
+                               && WtLiveFeedCache.BottomId == 300
+                               && WtLiveFeedCache.PagesCovered == 1
+                               && WtLiveFeedCache.Contiguous;
+
+            WtLiveFeedCache.InvalidateContiguity();
+            var afterInvalid = WtLiveFeedCache.NextBelow(303, 10);    // 失效后不吐
+
+            var contiguousOk = contiguousWin.Count == 3 && belowWindow.Count == 1
+                               && afterInvalid.Count == 0 && watermarksOk
+                               && WtLiveViewModel.EstimateBottomPage(20, 60) == 22
+                               && WtLiveViewModel.EstimateBottomPage(0, 0) == 0
+                               && WtLiveViewModel.EstimateBottomPage(5, 24) == 5;
+
             var feedCacheOk = cacheQuery.Count == 2
                               && cacheQuery[0].LangGroup == 302          // 按 lang_group 倒序
                               && cacheFileOk
@@ -435,12 +463,14 @@ internal static class SelfTest
                               && WtLiveFeedCache.AllKnown(new long[] { 300, 301, 302 })
                               && !WtLiveFeedCache.AllKnown(new long[] { 300, 999 })
                               && refreshBefore && !refreshAfter
-                              && retryBackoffBefore && !retryBackoffAfter;
+                              && retryBackoffBefore && !retryBackoffAfter
+                              && contiguousOk;
 
             log.AppendLine($"元数据缓存 : 按作者查 {cacheQuery.Count} 条（应 2）/ 落盘往返 {cacheReloaded.Count} 条（应 2）"
                          + $"，整页已知即停 = {WtLiveFeedCache.AllKnown(new long[] { 300, 301, 302 })}（应 True）、"
                          + $"一周内刷新过就不再刷 = {refreshBefore && !refreshAfter}（应 True）、"
-                         + $"刷新失败只退避 10 分钟 = {retryBackoffBefore && !retryBackoffAfter}（应 True）"
+                         + $"刷新失败只退避 10 分钟 = {retryBackoffBefore && !retryBackoffAfter}（应 True）、"
+                         + $"连续区只吐 [BottomId, TopId] 且失效后不吐 = {contiguousOk}（应 True）"
                          + $"→ {feedCacheOk}");
 
             if (!feedCacheOk)

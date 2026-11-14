@@ -55,6 +55,24 @@ public static class WtLiveFeedCache
     /// </summary>
     public static int PagesCovered { get; private set; }
 
+    /// <summary>连续区**最新**一条的 id（= 上次访问时第 0 页的首条）。0 = 没有连续区。</summary>
+    public static long TopId { get; private set; }
+
+    /// <summary>
+    /// 连续区**最深一页的末条 id**（最旧的一条）。它既是"缓存能吐到哪"的下界，
+    /// 也是底部续取的对齐锚点 —— 用末条而不是首条，否则最深一页里比首条更旧的条目会被漏掉。
+    /// </summary>
+    public static long BottomId { get; private set; }
+
+    /// <summary>取到 <see cref="BottomId"/> 时的页码（0 起）；配合新增条数推算现在在哪一页。</summary>
+    public static int BottomPageHint { get; private set; }
+
+    /// <summary>
+    /// 连续区是否可信。**不可信时一律不吃缓存**（宁可多请求，也不能漏帖）：
+    /// 前端缺口太大、底部对齐失败，都会把它置 false。
+    /// </summary>
+    public static bool Contiguous { get; private set; }
+
     /// <summary>缓存条数（自检 / 设置页显示用）。</summary>
     public static int Count
     {
@@ -79,6 +97,10 @@ public static class WtLiveFeedCache
             _loaded = false;
             LastCatchUp = DateTime.MinValue;
             PagesCovered = 0;
+            TopId = 0;
+            BottomId = 0;
+            BottomPageHint = 0;
+            Contiguous = false;
         }
     }
 
@@ -260,22 +282,80 @@ public static class WtLiveFeedCache
     }
 
     /// <summary>
-    /// 标记"第 <paramref name="pageIndex"/> 页已经顺序取过"。
-    /// 只有**从 0 起连续**才算：跳页（例如从别处开始扫）不算覆盖，避免把中间的洞当已覆盖。
+    /// 标记"第 <paramref name="pageIndex"/> 页已顺序取到，且该页首条 id = <paramref name="firstId"/>"。
     /// </summary>
-    public static void MarkPageCovered(int pageIndex)
+    /// <remarks>
+    /// 只认**从 0 起连续**的页：跳页（从别处开始扫）不推进覆盖页数，避免把中间的洞当成已覆盖。
+    /// 第 0 页更新 <see cref="TopId"/>（最新锚点），同时更新底部锚点（页首 id + 页码）。
+    /// </remarks>
+    public static void MarkPageCovered(int pageIndex, long firstId, long lastId)
     {
         lock (Gate)
         {
+            if (firstId > 0 && pageIndex == 0) TopId = Math.Max(TopId, firstId);
+
             if (pageIndex == PagesCovered) PagesCovered = pageIndex + 1;
-            else if (pageIndex > PagesCovered) return; // 有洞，不动
+
+            if (lastId > 0 && pageIndex >= BottomPageHint)
+            {
+                BottomPageHint = pageIndex;
+                BottomId = lastId;   // 页尾（最旧）：连续区的下界
+            }
+
+            Contiguous = true;
+        }
+    }
+
+    /// <summary>
+    /// 取连续区里 **id 小于 <paramref name="cursorId"/>** 的下 <paramref name="take"/> 条（降序）。
+    /// 只吐"连续区"内的条目（`[BottomId, TopId]`）—— 从中间页取过的零散条目不参与展示，
+    /// 否则列表中间会出现洞。
+    /// </summary>
+    public static List<WTLiveFeedItem> NextBelow(long cursorId, int take)
+    {
+        EnsureLoaded();
+        if (!Contiguous || take <= 0) return new List<WTLiveFeedItem>();
+
+        lock (Gate)
+        {
+            var lower = BottomId > 0 ? BottomId : long.MinValue;
+
+            return Entries.Values
+                .Where(e => e.LangGroup < cursorId && e.LangGroup >= lower)
+                .OrderByDescending(e => e.LangGroup)
+                .Take(take)
+                .Select(ToItem)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// 让连续区失效：**不再吃缓存**，直到重新从第 0 页顺序取满。
+    /// 前端缺口过大、底部对齐失败时调用 —— 宁可多请求也不能漏帖。
+    /// </summary>
+    public static void InvalidateContiguity()
+    {
+        lock (Gate)
+        {
+            Contiguous = false;
+            PagesCovered = 0;
+            TopId = 0;
+            BottomId = 0;
+            BottomPageHint = 0;
         }
     }
 
     /// <summary>重置覆盖页数（换条件 / 缓存重建时）。</summary>
     public static void ResetPagesCovered()
     {
-        lock (Gate) PagesCovered = 0;
+        lock (Gate)
+        {
+            PagesCovered = 0;
+            TopId = 0;
+            BottomId = 0;
+            BottomPageHint = 0;
+            Contiguous = false;
+        }
     }
 
     /// <summary>把缓存写盘（原子：临时名 + 改名）。失败静默 —— 缓存可丢，下次会重新攒。</summary>
@@ -289,9 +369,17 @@ public static class WtLiveFeedCache
         List<Entry> snapshot;
         long catchUp;
         int pages;
+        long top;
+        long bottom;
+        int bottomHint;
+        bool contiguous;
 
         lock (Gate)
         {
+            top = TopId;
+            bottom = BottomId;
+            bottomHint = BottomPageHint;
+            contiguous = Contiguous;
             snapshot = Entries.Values.OrderByDescending(e => e.LangGroup).ToList();
             catchUp = LastCatchUp == DateTime.MinValue
                 ? 0
@@ -310,8 +398,16 @@ public static class WtLiveFeedCache
             using (var gzip = new GZipStream(file, CompressionLevel.Fastest))
             using (var writer = new StreamWriter(gzip, new UTF8Encoding(false)))
             {
-                writer.WriteLine(JsonSerializer.Serialize(
-                    new Header { H = FormatVersion, CatchUp = catchUp, Pages = pages }));
+                writer.WriteLine(JsonSerializer.Serialize(new Header
+                {
+                    H = FormatVersion,
+                    CatchUp = catchUp,
+                    Pages = pages,
+                    Top = top,
+                    Bottom = bottom,
+                    BottomHint = bottomHint,
+                    Contiguous = contiguous
+                }));
 
                 foreach (var entry in snapshot)
                     writer.WriteLine(JsonSerializer.Serialize(entry));
@@ -345,6 +441,10 @@ public static class WtLiveFeedCache
             _loaded = false;
             LastCatchUp = DateTime.MinValue;
             PagesCovered = 0;
+            TopId = 0;
+            BottomId = 0;
+            BottomPageHint = 0;
+            Contiguous = false;
         }
     }
 
@@ -394,6 +494,14 @@ public static class WtLiveFeedCache
                         if (header is { CatchUp: > 0 })
                             LastCatchUp = DateTimeOffset.FromUnixTimeSeconds(header.CatchUp).UtcDateTime;
                         if (header is { Pages: > 0 }) PagesCovered = header.Pages;
+
+                        if (header is { Top: > 0 })
+                        {
+                            TopId = header.Top;
+                            BottomId = header.Bottom;
+                            BottomPageHint = header.BottomHint;
+                            Contiguous = header.Contiguous;
+                        }
 
                         if (header == null || header.H != FormatVersion) return; // 版本不符：当空缓存重建
                         continue;
@@ -461,6 +569,18 @@ public static class WtLiveFeedCache
 
         /// <summary>从第 0 页起连续覆盖的页数（翻页游标用）。</summary>
         [JsonPropertyName("p")] public int Pages { get; set; }
+
+        /// <summary>连续区最新 id（新帖追赶的锚点）。</summary>
+        [JsonPropertyName("top")] public long Top { get; set; }
+
+        /// <summary>连续区最深一页的首条 id（底部对齐锚点）。</summary>
+        [JsonPropertyName("bottom")] public long Bottom { get; set; }
+
+        /// <summary>取到 <see cref="Bottom"/> 时的页码。</summary>
+        [JsonPropertyName("bh")] public int BottomHint { get; set; }
+
+        /// <summary>连续区是否可信。</summary>
+        [JsonPropertyName("ok")] public bool Contiguous { get; set; }
     }
 
     /// <summary>磁盘格式（短键名压体积；1 万条约 1.5–3 MB）。</summary>
