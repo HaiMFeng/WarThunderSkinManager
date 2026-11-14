@@ -122,7 +122,6 @@
                               Style="{StaticResource BaseComboBox}"
                               ToolTip="{loc:Loc wtlive.sort.label}"
                               ItemsSource="{Binding WtLive.SortOptions}"
-                              IsEnabled="{Binding WtLive.IsSortEnabled}"
                               SelectedItem="{Binding WtLive.SelectedSortOption, Mode=TwoWay}">
                         <!-- 用 ItemTemplate 而非 DisplayMemberPath：自定义模板下前者能正确传到选择区 -->
                         <ComboBox.ItemTemplate>
@@ -471,7 +470,7 @@
                          调 Recycle）—— 首次实例化一张卡片模板约 4 ms，复用只换 DataContext，
                          不做这一步，快速滚动时每滚一屏就是十几处 4 ms 的卡顿 -->
                     <!-- 「收藏作者的涂装」模式提示条（§3.15）：显示扫描进度 / 空态说明，右侧 × 退出。
-                         模式是"站点默认排序的原始 feed + 本地按收藏过滤"，所以此时排序下拉禁用。 -->
+                         模式是"原始 feed + 本地按收藏过滤"；排序可随时更换（换排序 = 按新顺序重扫）。 -->
                     <Border Margin="0,4,0,4" Padding="12,9" CornerRadius="8"
                             Background="{StaticResource BrushSurface2}"
                             BorderBrush="{StaticResource BrushBorder}" BorderThickness="1">

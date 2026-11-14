@@ -82,8 +82,9 @@ public partial class WtLiveViewModel : ObservableObject
     // ---------- 「收藏作者的涂装」模式（§3.15）----------
     //
     // 站点**没有**"所有收藏作者的作品"接口，也不能把多个作者 id 塞进一次 user= 查询。
-    // 做法：走站点默认排序的**原始 feed**（无载具 / 无标签 / 无作者 / 无关键词），
+    // 做法：走**原始 feed**（无载具 / 无标签 / 无作者 / 无关键词；进入时排序回默认），
     // 每页 25 条在本地按收藏集合过滤；某页一条都不命中就继续拉下一页，直到凑够一批或站点到底。
+    // 排序**不锁死**：换排序就是拿另一种顺序重扫一遍（用户自由，页数/命中预算与限速不变）。
     // 代价是可能连续发几次请求 —— 所以页数、命中数都有上限，页与页之间固定间隔，避免触发风控。
 
     /// <summary>单次滚动最多自动扫描的页数（25 条/页）——收藏作者可能长期不发帖，必须封顶。</summary>
@@ -109,11 +110,6 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>提示条文案：扫描进度 / 到底仍无结果时的空态说明。</summary>
     [ObservableProperty] private string _favoriteModeText = "";
-
-    /// <summary>模式下禁止换排序：本模式的语义就是"站点默认排序的原始 feed 再本地过滤"。</summary>
-    public bool IsSortEnabled => !IsFavoriteAuthorsMode;
-
-    partial void OnIsFavoriteAuthorsModeChanged(bool value) => OnPropertyChanged(nameof(IsSortEnabled));
 
     /// <summary>
     /// 这一条是不是收藏作者的作品：**id 优先**（feed 一般给 author id），
@@ -683,6 +679,14 @@ public partial class WtLiveViewModel : ObservableObject
             return;
         }
 
+        // 收藏作者模式**不写浏览历史**：条目只描述普通浏览的条件，
+        // 把"命中子集"记成一条会让后退回来出现"卡片是子集、标签却写所有涂装"的错配
+        if (IsFavoriteAuthorsMode)
+        {
+            StartRefresh();
+            return;
+        }
+
         PushNewEntry();
         StartRefresh();
     }
@@ -707,6 +711,14 @@ public partial class WtLiveViewModel : ObservableObject
         _nextPage = 0;
         IsExhausted = false;
         ErrorMessage = "";
+
+        // 收藏作者模式下，换排序 / 刷新都是一次**新的扫描**：累计计数从 0 起
+        if (IsFavoriteAuthorsMode)
+        {
+            _favoriteScannedPosts = 0;
+            _favoriteScanHits = 0;
+            UpdateFavoriteModeText();
+        }
 
         RequestMore();
     }
@@ -803,6 +815,9 @@ public partial class WtLiveViewModel : ObservableObject
         // 排队期间保持条目不动：新条目在 StartRefresh 真正开始时才压入（见 RefreshAfterNavigation 的注释）。
         if (_refreshQueuedRecordsHistory) return;
 
+        // 同上：模式内的卡片是"命中子集"，不能写回普通浏览的历史条目
+        if (IsFavoriteAuthorsMode) return;
+
         _history.ReplaceCurrent(Snapshot());
     }
 
@@ -850,6 +865,18 @@ public partial class WtLiveViewModel : ObservableObject
             _refreshQueuedRecordsHistory = false;
             IsLoading = false;
             IsSuggestionsOpen = false;
+
+            // 历史条目只记录"普通浏览"的条件：恢复时先退出收藏作者模式，
+            // 否则会出现"模式还开着、条件却被换成某次筛选"的错配
+            if (IsFavoriteAuthorsMode)
+            {
+                IsFavoriteAuthorsMode = false;
+                _favoriteAuthorIds.Clear();
+                _favoriteAuthorNames.Clear();
+                _favoriteScannedPosts = 0;
+                _favoriteScanHits = 0;
+                FavoriteModeText = "";
+            }
 
             Chips.Clear();
             foreach (var chip in entry.Chips)
