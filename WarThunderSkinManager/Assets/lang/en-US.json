@@ -609,7 +609,6 @@
   "wtlive.chip.tag": "tag:{0}",
   "wtlive.chip.local": "Filter: {0}",
   "wtlive.search.localDetail": "Local filter only, no request sent",
-  "wtlive.search.localMatch": "Local filter · {0} matches in the current list",
   "wtlive.search.byLocal": "Local filter {0}",
   "wtlive.chip.user": "user:{0}",
   "wtlive.sort.label": "Sort by",

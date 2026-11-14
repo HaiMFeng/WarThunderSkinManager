@@ -173,30 +173,6 @@ public partial class WtLiveViewModel : ObservableObject
         return string.Concat(text.Where(ch => ch != '-' && ch != '_').Select(char.ToLowerInvariant));
     }
 
-    /// <summary>
-    /// `*` 的候选排名：从"已经加载出来的列表"里收集标签，按出现次数降序（同频按名字），
-    /// 只保留**本地已生效集合之外**、且以 <paramref name="prefix"/> 开头的。
-    /// 纯函数（不碰 UI，便于自检）。
-    /// </summary>
-    internal static List<(string Tag, int Count)> RankLocalFilterCandidates(
-        IEnumerable<string> tags, string prefix, IReadOnlySet<string> exclude, int take)
-    {
-        if (take <= 0) return new List<(string, int)>();
-
-        var head = NormalizeTag(prefix);
-
-        return tags
-            .Select(NormalizeTag)
-            .Where(tag => tag.Length > 0 && !exclude.Contains(tag))
-            .Where(tag => head.Length == 0 || tag.StartsWith(head, StringComparison.Ordinal))
-            .GroupBy(tag => tag, StringComparer.Ordinal)
-            .Select(group => (Tag: group.Key, Count: group.Count()))
-            .OrderByDescending(entry => entry.Count)
-            .ThenBy(entry => entry.Tag, StringComparer.Ordinal)
-            .Take(take)
-            .ToList();
-    }
-
     /// <summary>一条列表项是否同时具备所有本地筛选标签（AND）。</summary>
     internal static bool MatchesLocalFilters(WTLiveFeedItem item, IReadOnlyList<string> locals)
     {
@@ -268,9 +244,6 @@ public partial class WtLiveViewModel : ObservableObject
 
     /// <summary>下拉里最多列出的载具条数（其余靠继续输入收敛；键盘上下也够用）。</summary>
     private const int MaxVehicleSuggestions = 6;
-
-    /// <summary>`*` 的候选条数上限（从已加载列表的标签里排名取前几个）。</summary>
-    private const int MaxLocalFilterSuggestions = 8;
 
     /// <summary>
     /// 搜索下拉用的载具**模糊匹配索引**（<c>units.csv</c> 的全部可玩载具 + 归一化，后台加载；
@@ -1296,6 +1269,9 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (suggestion == null) return;
 
+        // 只输入 `*` 时给的那条是提示（值为空）：回车不该留下一条"什么也没变"的历史
+        if (suggestion.Kind == WtLiveSearchKind.Local && NormalizeTag(suggestion.Value).Length == 0) return;
+
         BeginNavigation(); // 先记下"应用候选之前"的页状态
 
         switch (suggestion.Kind)
@@ -1633,42 +1609,20 @@ public partial class WtLiveViewModel : ObservableObject
 
         if (firstToken.StartsWith('*'))
         {
-            // `*xxx` = 本地筛选：候选**不发请求**，直接拿"当前已加载列表里出现过的标签"排名，
-            // 输入 `*` 本身也会列出最常用的几个（与 `#` 的候选体验一致，但零请求）
+            // `*xxx` = 本地筛选：**只有这一条**（与 `#anime` 只给一条标签候选同理）。
+            // 只输入 `*` 时也给一条（值是空的）—— 用来告诉用户 `*` 是"本地筛选"，
+            // 回车不会加上任何东西（空值直接忽略）。
             var value = NormalizeTag(firstToken);
-            var already = LocalFilters.Select(NormalizeTag).ToHashSet(StringComparer.Ordinal);
 
-            var ranked = RankLocalFilterCandidates(
-                Items.SelectMany(item => item.Tags), value, already, MaxLocalFilterSuggestions);
-
-            // 正在输入的那个即使还没出现过，也放在最前面（回车即可加）
-            if (value.Length > 0 && ranked.All(candidate => candidate.Tag != value))
+            Suggestions.Add(new WtLiveSearchSuggestion
             {
-                Suggestions.Add(new WtLiveSearchSuggestion
-                {
-                    Kind = WtLiveSearchKind.Local,
-                    Display = WtLiveSearchChipCatalog.LocalLabel(value),
-                    Detail = Loc["wtlive.search.localDetail"],
-                    Value = value,
-                    Text = value,
-                    Icon = WtLiveSearchChipCatalog.LocalIcon
-                });
-            }
-
-            foreach (var (tag, count) in ranked)
-            {
-                Suggestions.Add(new WtLiveSearchSuggestion
-                {
-                    Kind = WtLiveSearchKind.Local,
-                    Display = WtLiveSearchChipCatalog.LocalLabel(tag),
-                    Detail = count > 0
-                        ? Loc.Format("wtlive.search.localMatch", count)
-                        : Loc["wtlive.search.localDetail"],
-                    Value = tag,
-                    Text = tag,
-                    Icon = WtLiveSearchChipCatalog.LocalIcon
-                });
-            }
+                Kind = WtLiveSearchKind.Local,
+                Display = value.Length > 0 ? WtLiveSearchChipCatalog.LocalLabel(value) : "*",
+                Detail = Loc["wtlive.search.localDetail"],
+                Value = value,
+                Text = value,
+                Icon = WtLiveSearchChipCatalog.LocalIcon
+            });
         }
         else if (authorId.Length > 0)
         {
@@ -1705,6 +1659,21 @@ public partial class WtLiveViewModel : ObservableObject
                         Value = token,
                         Text = token,
                         Icon = WtLiveSearchChipCatalog.TagIcon
+                    });
+                }
+
+                // 普通词（不带 `#`）再给一条同名的**本地筛选**候选：站点多标签只能并集，
+                // 想"同时具备"就得靠 `*`，所以这两个候选成对出现（`#` 开头时只给标签）。
+                if (!tagged && token.Length > 0)
+                {
+                    Suggestions.Add(new WtLiveSearchSuggestion
+                    {
+                        Kind = WtLiveSearchKind.Local,
+                        Display = WtLiveSearchChipCatalog.LocalLabel(NormalizeTag(token)),
+                        Detail = Loc["wtlive.search.localDetail"],
+                        Value = NormalizeTag(token),
+                        Text = NormalizeTag(token),
+                        Icon = WtLiveSearchChipCatalog.LocalIcon
                     });
                 }
 
