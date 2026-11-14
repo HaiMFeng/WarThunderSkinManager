@@ -519,6 +519,9 @@ public partial class WtLiveViewModel : ObservableObject
     private bool _favoriteBusy;
     private bool _favoriteSyncPending;
 
+    /// <summary>这一轮跑着的时候又有人要一批（滚动 / 刷新）→ 结束后补跑一次，否则会"卡住不动"。</summary>
+    private bool _favoritePending;
+
     /// <summary>
     /// 进入「收藏作者的涂装」：清空筛选、排序回时间序，然后按作者同步 + 本地归并。
     /// </summary>
@@ -584,6 +587,7 @@ public partial class WtLiveViewModel : ObservableObject
         _favoriteAuthorRawIds.Clear();
         _favoriteServed.Clear();
         _favoriteSyncPending = true;
+        _favoritePending = false;
         FavoriteModeText = "";
 
         StartRefresh();
@@ -592,9 +596,14 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>收藏作者模式的一批：先同步（限一次/作者/TTL）→ 从缓存吐 → 不够再翻各作者的下一页。</summary>
     private async Task LoadMoreFavoritesAsync()
     {
-        if (_favoriteBusy) return;
+        if (_favoriteBusy)
+        {
+            _favoritePending = true; // 正在跑：结束后补跑，别把这次请求丢掉
+            return;
+        }
 
         _favoriteBusy = true;
+        _favoritePending = false;
         IsLoading = true;
 
         var session = _session;
@@ -624,6 +633,12 @@ public partial class WtLiveViewModel : ObservableObject
             _favoriteBusy = false;
             IsLoading = false;
             UpdateFavoriteModeText();
+
+            if (_favoritePending && IsFavoriteAuthorsMode)
+            {
+                _favoritePending = false;
+                _ = LoadMoreFavoritesAsync(); // 期间被丢弃的那次请求在这里补上
+            }
         }
     }
 
@@ -789,7 +804,10 @@ public partial class WtLiveViewModel : ObservableObject
             return;
         }
 
-        var authors = _favoriteAuthorIds.Count + _favoriteAuthorNames.Count;
+        // **作者数按"人"算**：一个作者同时有 id 和昵称，两者相加会把 10 位显示成 20 位
+        var authors = _favoriteAuthorRawIds.Count > 0
+            ? _favoriteAuthorRawIds.Count
+            : _favoriteAuthorNames.Count;
 
         FavoriteModeText = Items.Count == 0 && !_favoriteBusy
                            && !WtLiveAuthorFeedCache.AnyAuthorHasMore(_favoriteAuthorRawIds)
@@ -805,11 +823,36 @@ public partial class WtLiveViewModel : ObservableObject
     [RelayCommand]
     private void Refresh()
     {
+        if (IsFavoriteAuthorsMode)
+        {
+            RefreshFavorites();
+            return;
+        }
+
         RememberCurrentEntry(); // 先把当前滚动 / 已加载范围写回：刷新后仍属于同一个"页"
 
         if (IsLoading)
         {
             _refreshQueued = true;
+            return;
+        }
+
+        StartRefresh();
+    }
+
+    /// <summary>
+    /// 收藏作者模式内的刷新：**先清掉"已上屏"标记**再重新吐一遍。
+    /// 不清的话，新列表会把所有条目都当成"已经显示过"过滤掉 —— 表现就是"刷新一下内容全没了"，
+    /// 然后落到"翻各作者下一页"，于是列表从旧内容开始（看起来像乱序 / 丢内容）。
+    /// </summary>
+    private void RefreshFavorites()
+    {
+        _favoriteServed.Clear();
+        _favoriteSyncPending = true;
+
+        if (_favoriteBusy)
+        {
+            _favoritePending = true; // 正在跑：等这一轮结束再补一遍
             return;
         }
 
@@ -950,6 +993,9 @@ public partial class WtLiveViewModel : ObservableObject
         // 写进当前条目，后退回来就看到与筛选不符的列表（再滚动还会拿新条件去请求下一页、追加到旧列表上）。
         // 排队期间保持条目不动：新条目在 StartRefresh 真正开始时才压入（见 RefreshAfterNavigation 的注释）。
         if (_refreshQueuedRecordsHistory) return;
+
+        // 收藏作者模式的卡片是「收藏作者子集」，不是任何一次普通查询的结果：别写进浏览历史
+        if (IsFavoriteAuthorsMode) return;
 
         _history.ReplaceCurrent(Snapshot());
     }
