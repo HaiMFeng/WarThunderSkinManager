@@ -485,17 +485,17 @@ public partial class WtLiveViewModel : ObservableObject
     // 命中率 100%，不需要在全局 feed 里大海捞针，也不需要页码位移 / 对齐那一套。
     // 每个作者只维护三个游标（最新帖 id / 下一页 / 上次同步时间，见 WtLiveAuthorFeedCache）。
 
-    /// <summary>同一作者多久之内不重复同步（第 0 页）。</summary>
-    public static readonly TimeSpan FavoriteAuthorSyncTtl = TimeSpan.FromMinutes(10);
-
     /// <summary>作者之间的请求间隔：串行 + 限速，避免被 Cloudflare 判成异常流量。</summary>
     public static readonly TimeSpan FavoriteRequestGap = TimeSpan.FromMilliseconds(450);
 
     /// <summary>一批显示多少条命中。</summary>
     public const int FavoriteBatchSize = 6;
 
-    /// <summary>一轮最多同步多少个作者（作者多时留到后续批次，别一次打几十个请求）。</summary>
-    public const int FavoriteSyncMaxAuthors = 12;
+    /// <summary>一次刷新最多同步多少个作者（作者多时留到后续批次，别一次打几十个请求）。</summary>
+    public const int FavoriteSyncMaxAuthors = 30;
+
+    /// <summary>超过这么久没同步过 → 提示条提醒用户手动刷新（**不自动更新**）。</summary>
+    public static readonly TimeSpan FavoriteStaleThreshold = TimeSpan.FromDays(7);
 
     /// <summary>同步单个作者时最多补几页（防止某人一天发 100 帖把请求打满）。</summary>
     private const int FavoriteAuthorMaxPages = 3;
@@ -594,7 +594,11 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>收藏作者模式的一批：先同步（限一次/作者/TTL）→ 从缓存吐 → 不够再翻各作者的下一页。</summary>
-    private async Task LoadMoreFavoritesAsync()
+    /// <param name="forceSync">
+    /// true = 用户点了"刷新"：把所有收藏作者都同步一遍（忽略 TTL）；
+    /// false = 正常浏览：只给"从没同步过"的作者补一次，其余全走缓存。
+    /// </param>
+    private async Task LoadMoreFavoritesAsync(bool forceSync = false)
     {
         if (_favoriteBusy)
         {
@@ -610,10 +614,25 @@ public partial class WtLiveViewModel : ObservableObject
 
         try
         {
-            if (_favoriteSyncPending)
+            // **默认只用缓存**：只有"从来没同步过"的作者才自动拉一次（首次使用），
+            // 其余一律等用户点提示条上的刷新按钮 —— 否则每次进页面/刷新都要等十几秒
+            var autoTargets = forceSync
+                ? _favoriteAuthorRawIds.ToList()
+                : _favoriteAuthorRawIds
+                    .Where(id => WtLiveAuthorFeedCache.AuthorSyncedAt(id) == DateTime.MinValue)
+                    .ToList();
+
+            if (autoTargets.Count > 0) await SyncFavoriteAuthorsAsync(session, autoTargets);
+            else if (_favoriteSyncPending)
             {
+                // 上一轮作者太多没同步完（首次），接着补
                 _favoriteSyncPending = false;
-                await SyncFavoriteAuthorsAsync(session);
+
+                var rest = _favoriteAuthorRawIds
+                    .Where(id => WtLiveAuthorFeedCache.AuthorSyncedAt(id) == DateTime.MinValue)
+                    .ToList();
+
+                if (rest.Count > 0) await SyncFavoriteAuthorsAsync(session, rest);
             }
 
             var added = await ServeFavoriteCacheAsync(session);
@@ -643,18 +662,17 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 同步"过期的作者"：每个作者取第 0 页，页内出现 ≤ 已记录的最新帖 id 即说明没新帖；
+    /// 同步指定的作者：每个作者取第 0 页，页内出现 ≤ 已记录的最新帖 id 即说明没新帖；
     /// 页满且全是新帖就再往下翻（最多 <see cref="FavoriteAuthorMaxPages"/> 页）。
     /// </summary>
-    private async Task SyncFavoriteAuthorsAsync(int session)
+    private async Task SyncFavoriteAuthorsAsync(int session, List<string> targets)
     {
-        var stale = WtLiveAuthorFeedCache.AuthorsNeedingSync(_favoriteAuthorRawIds, FavoriteAuthorSyncTtl);
-        if (stale.Count == 0) return;
+        if (targets.Count == 0) return;
 
-        var total = Math.Min(stale.Count, FavoriteSyncMaxAuthors);
+        var total = Math.Min(targets.Count, FavoriteSyncMaxAuthors);
         var done = 0;
 
-        foreach (var authorId in stale.Take(FavoriteSyncMaxAuthors))
+        foreach (var authorId in targets.Take(FavoriteSyncMaxAuthors))
         {
             if (session != _session || !IsFavoriteAuthorsMode) return;
 
@@ -703,7 +721,7 @@ public partial class WtLiveViewModel : ObservableObject
         }
 
         // 作者太多，一轮没同步完 → 下一批接着同步
-        if (stale.Count > FavoriteSyncMaxAuthors) _favoriteSyncPending = true;
+        if (targets.Count > FavoriteSyncMaxAuthors) _favoriteSyncPending = true;
 
         _ = Task.Run(WtLiveAuthorFeedCache.Save);
     }
@@ -809,10 +827,16 @@ public partial class WtLiveViewModel : ObservableObject
             ? _favoriteAuthorRawIds.Count
             : _favoriteAuthorNames.Count;
 
-        FavoriteModeText = Items.Count == 0 && !_favoriteBusy
-                           && !WtLiveAuthorFeedCache.AnyAuthorHasMore(_favoriteAuthorRawIds)
-            ? Loc.Format("wtlive.favoriteMode.empty", authors)
-            : Loc.Format("wtlive.favoriteMode.status", authors, Items.Count);
+        // 提示条显示"共 N 个涂装"（缓存里的总数），不是"已显示几张"
+        var total = WtLiveAuthorFeedCache.CountForAuthors(_favoriteAuthorIds, _favoriteAuthorNames);
+
+        var newest = WtLiveAuthorFeedCache.NewestSyncedAt(_favoriteAuthorRawIds);
+        var staleDays = newest == DateTime.MinValue ? 0 : (int)(DateTime.UtcNow - newest).TotalDays;
+
+        // 超过一周没刷新过 → 提醒（**不自动更新**，用户自己决定何时点刷新）
+        FavoriteModeText = staleDays >= FavoriteStaleThreshold.TotalDays
+            ? Loc.Format("wtlive.favoriteMode.statusStale", authors, total, Math.Max(7, staleDays))
+            : Loc.Format("wtlive.favoriteMode.status", authors, total);
     }
 
     /// <summary>
@@ -825,7 +849,7 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (IsFavoriteAuthorsMode)
         {
-            RefreshFavorites();
+            _ = RefreshFavoriteSkinsAsync(); // 模式内刷新 = 同步并合并，不清列表
             return;
         }
 
@@ -841,22 +865,16 @@ public partial class WtLiveViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 收藏作者模式内的刷新：**先清掉"已上屏"标记**再重新吐一遍。
-    /// 不清的话，新列表会把所有条目都当成"已经显示过"过滤掉 —— 表现就是"刷新一下内容全没了"，
-    /// 然后落到"翻各作者下一页"，于是列表从旧内容开始（看起来像乱序 / 丢内容）。
+    /// 手动刷新（提示条上的刷新按钮 / 工具栏刷新）：把**所有**收藏作者同步一遍并合并新内容。
+    /// **不清空列表** —— 边同步边把新条目按 id 插到正确位置，用户不用干等十几秒看空屏。
     /// </summary>
-    private void RefreshFavorites()
+    [RelayCommand]
+    private async Task RefreshFavoriteSkinsAsync()
     {
-        _favoriteServed.Clear();
-        _favoriteSyncPending = true;
+        if (!IsFavoriteAuthorsMode) return;
 
-        if (_favoriteBusy)
-        {
-            _favoritePending = true; // 正在跑：等这一轮结束再补一遍
-            return;
-        }
-
-        StartRefresh();
+        _favoriteSyncPending = false;
+        await LoadMoreFavoritesAsync(forceSync: true);
     }
 
     /// <summary>

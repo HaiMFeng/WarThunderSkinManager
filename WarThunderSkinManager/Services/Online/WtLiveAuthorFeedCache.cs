@@ -93,6 +93,47 @@ public static class WtLiveAuthorFeedCache
         return list;
     }
 
+    /// <summary>该作者上次同步的时间（UTC）；<see cref="DateTime.MinValue"/> = 从来没同步过。</summary>
+    public static DateTime AuthorSyncedAt(string authorId)
+    {
+        EnsureLoaded();
+
+        lock (Gate)
+        {
+            return Authors.TryGetValue(authorId, out var s) && s.SyncedAt > 0
+                ? DateTimeOffset.FromUnixTimeSeconds(s.SyncedAt).UtcDateTime
+                : DateTime.MinValue;
+        }
+    }
+
+    /// <summary>这批作者里**最近一次**同步的时间（用来判断"整体多久没更新了"）。</summary>
+    public static DateTime NewestSyncedAt(IEnumerable<string> authorIds)
+    {
+        EnsureLoaded();
+
+        var newest = DateTime.MinValue;
+
+        lock (Gate)
+        {
+            foreach (var id in authorIds)
+            {
+                if (!Authors.TryGetValue(id, out var s) || s.SyncedAt <= 0) continue;
+
+                var at = DateTimeOffset.FromUnixTimeSeconds(s.SyncedAt).UtcDateTime;
+                if (at > newest) newest = at;
+            }
+        }
+
+        return newest;
+    }
+
+    /// <summary>命中的帖子总数（提示条"共 N 个涂装"用）。</summary>
+    public static int CountForAuthors(IReadOnlySet<long> authorIds, IReadOnlySet<string> authorNames)
+    {
+        EnsureLoaded();
+        lock (Gate) return Entries.Values.Count(e => Matches(e, authorIds, authorNames));
+    }
+
     /// <summary>该作者已有的最新帖 id（0 = 还没同步过）。</summary>
     public static long MaxPostId(string authorId)
     {

@@ -413,7 +413,12 @@ internal static class SelfTest
                           && WtLiveViewModel.OrderedInsertIndex(existingIds, 5) == 3   // 更旧 → 末尾
                           && WtLiveViewModel.OrderedInsertIndex(Array.Empty<long>(), 7) == 0;
 
-            var authorCacheOk = authorCursorOk && authorCacheFileOk && orderOk
+            // 提示条口径：命中总数 + "最近一次同步时间"（超过一周才提示手动刷新）
+            var newestSynced = WtLiveAuthorFeedCache.NewestSyncedAt(new[] { "42", "43" });
+            var countForAuthors = WtLiveAuthorFeedCache.CountForAuthors(authorIds, noNames);
+            var summaryOk = countForAuthors == 3 && newestSynced > DateTime.UtcNow.AddMinutes(-5);
+
+            var authorCacheOk = authorCursorOk && authorCacheFileOk && orderOk && summaryOk
                                 && authorReloaded.Count == 3
                                 && WtLiveAuthorFeedCache.NextPage("42") == 1
                                 && WtLiveAuthorFeedCache.MaxPostId("42") == 302;
