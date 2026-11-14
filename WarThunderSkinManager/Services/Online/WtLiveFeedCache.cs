@@ -160,6 +160,74 @@ public static class WtLiveFeedCache
         }
     }
 
+    /// <summary>按 id 取一条（不存在 → false）。</summary>
+    public static bool TryGet(long langGroup, out WTLiveFeedItem item)
+    {
+        EnsureLoaded();
+
+        lock (Gate)
+        {
+            if (Entries.TryGetValue(langGroup, out var entry))
+            {
+                item = ToItem(entry);
+                return true;
+            }
+        }
+
+        item = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// 用**详情响应**刷新缓存里对应的条目（标题 / 标签 / 附件 / 下载数 / 作者名）。
+    /// 由"打开详情 / 开始下载"顺手调用 —— 那时本来就要请求详情，**不产生额外请求**。
+    /// </summary>
+    /// <returns>缓存里没有这条 → <c>false</c>（不影响调用方）。</returns>
+    public static bool MarkRefreshedFromPost(WTLivePost post)
+    {
+        EnsureLoaded();
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        lock (Gate)
+        {
+            if (!Entries.TryGetValue(post.LangGroup, out var entry)) return false;
+
+            var description = post.DescriptionText ?? "";
+
+            if (description.Length > 0)
+                entry.Title = FirstLine(description, entry.FileName, post.LangGroup);
+
+            if (post.Author.Length > 0) entry.Author = post.Author;
+            if (post.Tags.Count > 0) entry.Tags = post.Tags.ToList();
+
+            if (post.File?.Name is { Length: > 0 } name) entry.FileName = name;
+            if (post.File?.Link is { Length: > 0 } link) entry.FileLink = link;
+            if (post.File?.Size > 0) entry.FileSize = post.File.Size;
+
+            entry.Downloads = post.Downloads;
+            entry.RefreshedAt = now;
+            entry.RetryAt = 0;
+
+            return true;
+        }
+    }
+
+    /// <summary>与 <c>WTLiveService.FeedTitle</c> 同口径（缓存层不引用服务层，保持独立）。</summary>
+    private static string FirstLine(string description, string fileName, long langGroup)
+    {
+        var line = description;
+        var breakIndex = line.IndexOf('\n');
+        if (breakIndex >= 0) line = line[..breakIndex];
+        line = line.Trim();
+        if (line.Length > 120) line = line[..120];
+        if (line.Length > 0) return line;
+
+        return fileName.Length > 0
+            ? Path.GetFileNameWithoutExtension(fileName)
+            : $"#{langGroup}";
+    }
+
     /// <summary>某条最后一次刷新的时间（UTC）；0 / 不存在 = 从没刷新过。</summary>
     public static DateTime RefreshedAt(long langGroup)
     {

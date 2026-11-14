@@ -447,8 +447,16 @@ internal static class SelfTest
             WtLiveFeedCache.InvalidateContiguity();
             var afterInvalid = WtLiveFeedCache.NextBelow(303, 10);    // 失效后不吐
 
+            // 缺口估算：只探第 0 页就决定"要不要追平"，避免一进来打十几页
+            var giveUpOk =
+                !WtLiveViewModel.ShouldGiveUpCatchUp(WtLiveViewModel.FavoriteCatchUpGiveUpPosts)
+                && WtLiveViewModel.ShouldGiveUpCatchUp(WtLiveViewModel.FavoriteCatchUpGiveUpPosts + 1)
+                && WtLiveViewModel.EstimateNewPosts(0, 2) == 0
+                && WtLiveViewModel.EstimateNewPosts(100, 2) == 50
+                && WtLiveViewModel.EstimateNewPosts(100, 0) == 0;
+
             var contiguousOk = contiguousWin.Count == 3 && belowWindow.Count == 1
-                               && afterInvalid.Count == 0 && watermarksOk
+                               && afterInvalid.Count == 0 && watermarksOk && giveUpOk
                                && WtLiveViewModel.EstimateBottomPage(20, 60) == 22
                                && WtLiveViewModel.EstimateBottomPage(0, 0) == 0
                                && WtLiveViewModel.EstimateBottomPage(5, 24) == 5;

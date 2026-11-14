@@ -106,11 +106,14 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>刷新失败后的短退避：一周的窗口太长，失败不能也压一周，10 分钟后再试。</summary>
     public static readonly TimeSpan FavoriteRefreshRetryDelay = TimeSpan.FromMinutes(10);
 
-    /// <summary>逐条刷新之间的间隔（详情接口，一次一条，别连着打）。</summary>
-    public static readonly TimeSpan FavoriteRefreshInterval = TimeSpan.FromMilliseconds(300);
-
     /// <summary>追赶新帖时最多翻多少页（25 条/页）；超了就等下一轮。</summary>
     public const int FavoriteCatchUpMaxPages = 20;
+
+    /// <summary>
+    /// 前端缺口（估算新增条数）超过这个值就认定"缓存太旧"，**本次不补**：
+    /// 用户正常翻页时顺手重建，免得一进来就为了追平打十几页请求。
+    /// </summary>
+    public const int FavoriteCatchUpGiveUpPosts = 250;
 
     /// <summary>同一会话里追赶过就够用，不必每次滚动都问站点（用户手动刷新可绕过）。</summary>
     public static readonly TimeSpan FavoriteCatchUpMinInterval = TimeSpan.FromMinutes(10);
@@ -809,6 +812,19 @@ public partial class WtLiveViewModel : ObservableObject
     internal static int EstimateBottomPage(int hintPage, int newCount)
         => Math.Max(0, hintPage + Math.Max(0, newCount) / WTLiveService.FeedPageSize);
 
+    /// <summary>
+    /// 估算"距上次使用新增了多少条"：id 跨度 ÷ 每帖平均占多少 id（密度由缓存自己算）。
+    /// 只用来决定"值不值得追平"，不参与定位，所以粗一点没关系。
+    /// </summary>
+    internal static int EstimateNewPosts(long idSpan, double idsPerPost)
+        => idsPerPost <= 0 || idSpan <= 0
+            ? 0
+            : (int)Math.Min(int.MaxValue, Math.Round(idSpan / idsPerPost));
+
+    /// <summary>缺口是否大到不值得补（缓存太旧 → 本次不追平，纯网络浏览，翻页时顺手重建）。</summary>
+    internal static bool ShouldGiveUpCatchUp(int estimatedNewPosts)
+        => estimatedNewPosts > FavoriteCatchUpGiveUpPosts;
+
     private async Task AlignBottomPageAsync()
     {
         if (!WtLiveFeedCache.Contiguous)
@@ -875,46 +891,21 @@ public partial class WtLiveViewModel : ObservableObject
     /// 刷新失败的沿用缓存内容，但仍记一次刷新时间 —— 免得每次滚动都对同一条反复请求。
     /// </summary>
     /// <param name="prepend">true = 插到列表最前（追赶到的"更新的"帖子）。</param>
-    private async Task AddFavoriteCardsAsync(IReadOnlyList<WTLiveFeedItem> hits, bool prepend = false)
+    private Task AddFavoriteCardsAsync(IReadOnlyList<WTLiveFeedItem> hits, bool prepend = false)
     {
-        var total = hits.Count;
-        var done = 0;
-
         foreach (var hit in hits)
         {
-            // 每个 await 之后复核：会话变了（退出模式 / 换条件 / 后退）就不再往列表里塞
-            if (_favoriteBatchSession != _session || !IsFavoriteAuthorsMode) return;
+            // 会话变了（退出模式 / 换条件 / 后退）就不再往列表里塞，否则数量对不上
+            if (_favoriteBatchSession != _session || !IsFavoriteAuthorsMode) break;
 
-            done++;
-
-            var item = hit;
-
-            if (WtLiveFeedCache.NeedsRefresh(hit.LangGroup, FavoriteRefreshMaxAge))
-            {
-                FavoriteModeText = Loc.Format("wtlive.favoriteMode.refreshing", done, total);
-
-                if (done > 1)
-                    await Task.Delay(FavoriteRefreshInterval
-                                     + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 80)));
-
-                var fresh = await WTLiveService.RefreshFeedItemAsync(hit, CancellationToken.None);
-
-                if (fresh != null)
-                {
-                    item = fresh;
-                    WtLiveFeedCache.MarkRefreshed(item);
-                }
-                else
-                {
-                    // 刷新窗口是一周，失败不能也压一周 → 只做短退避（10 分钟后再试）
-                    WtLiveFeedCache.MarkRefreshFailed(hit.LangGroup, FavoriteRefreshRetryDelay);
-                }
-            }
-
-            TryAddCard(item, prepend);
+            TryAddCard(hit, prepend);
         }
 
+        // **不再逐条刷新**：每条命中单独发一次详情，首屏就是 6 次请求。
+        // 帖子详情改由"打开详情 / 开始下载"时顺手回写缓存（那时本来就要请求，零额外开销）。
         WtLiveFeedCache.Save();
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -969,8 +960,21 @@ public partial class WtLiveViewModel : ObservableObject
                 // **重叠确认**：页内出现 ≤ 上次最新锚点（TopId）的 id = 已经接到旧缓存上。
                 // 用"重叠"而不是"整页都见过"：一页里既有新帖又有旧帖时也必须停（漏查也无所谓，
                 // 旧帖本来就在缓存里）；反过来只要还没看到 ≤ TopId，就说明上面还有新帖，继续翻。
+                if (page.Items.Count == 0) { overlapped = true; break; }
+
                 overlapped = page.Items.Any(item => item.LangGroup <= _sessionTopId);
                 _sessionNewCount += page.Items.Count(item => item.LangGroup > _sessionTopId);
+
+                // 只探到第 0 页就估算缺口：太久没来（> 250 条新帖）就别追了 ——
+                // 多付 1 页探测，而不是 20 页补抓；缓存留给"用户翻页时顺便重建"
+                if (index == 0 && !overlapped)
+                {
+                    var span = page.Items[0].LangGroup - _sessionTopId;
+                    var cachedCount = Math.Max(1, WtLiveFeedCache.Count);
+                    var density = (double)Math.Max(1, _sessionTopId - WtLiveFeedCache.BottomId) / cachedCount;
+
+                    if (ShouldGiveUpCatchUp(EstimateNewPosts(span, density))) break;
+                }
 
                 _favoriteScannedPosts += page.Items.Count;
 

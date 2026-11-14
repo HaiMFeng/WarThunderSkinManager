@@ -644,7 +644,6 @@
   "wtlive.favorites.viewSkinsHint": "Scans the latest skins in the site's default order and keeps only favorite authors (may need a few extra pages)",
   "wtlive.favoriteMode.status": "Favorite authors: {0} · scanned {1} posts · found {2}",
   "wtlive.favoriteMode.empty": "Scanned {0} posts; favorite authors have not posted skins recently",
-  "wtlive.favoriteMode.refreshing": "Refreshing matches {0} / {1}…",
   "wtlive.favoriteMode.checking": "Checking for new skins (page {0})…",
   "wtlive.favorites.empty": "No favorite authors yet. Open a skin's details and click the star next to the author name.",
   "wtlive.favorites.remove": "Remove from favorites",

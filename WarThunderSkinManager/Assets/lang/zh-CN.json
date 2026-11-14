@@ -644,7 +644,6 @@
   "wtlive.favorites.viewSkinsHint": "不逐个作者搜索：按站点默认顺序扫描最新涂装，只保留收藏作者的作品（必要时会多翻几页）",
   "wtlive.favoriteMode.status": "收藏作者 {0} 位 · 已扫描 {1} 帖 · 找到 {2} 个",
   "wtlive.favoriteMode.empty": "已扫描 {0} 帖，收藏的作者最近没有发布涂装",
-  "wtlive.favoriteMode.refreshing": "正在更新命中的涂装 {0} / {1}…",
   "wtlive.favoriteMode.checking": "正在检查新涂装（第 {0} 页）…",
   "wtlive.favorites.empty": "还没有收藏的作者。在涂装详情里点一下作者名旁的星标就能收藏。",
   "wtlive.favorites.remove": "取消收藏",
