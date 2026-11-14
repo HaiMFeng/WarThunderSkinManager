@@ -494,6 +494,9 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>一次刷新最多同步多少个作者（作者多时留到后续批次，别一次打几十个请求）。</summary>
     public const int FavoriteSyncMaxAuthors = 30;
 
+    /// <summary>一次"往下翻"最多打扰几个作者（按最新帖 id 优先）。</summary>
+    public const int FavoriteNextPageMaxAuthors = 5;
+
     /// <summary>超过这么久没同步过 → 提示条提醒用户手动刷新（**不自动更新**）。</summary>
     public static readonly TimeSpan FavoriteStaleThreshold = TimeSpan.FromDays(7);
 
@@ -516,9 +519,10 @@ public partial class WtLiveViewModel : ObservableObject
     private readonly List<string> _favoriteAuthorRawIds = new();     // 原始 id 串（请求 user= 用）
     private readonly HashSet<long> _favoriteServed = new();          // 已上屏的帖子 id
 
-    private bool _favoriteBusy;
-    private bool _favoriteSyncPending;
+    /// <summary>本会话是否已经为"缓存全空"补抓过一次（避免空收藏反复请求）。</summary>
+    private bool _favoriteFirstSyncDone;
 
+    private bool _favoriteBusy;
     /// <summary>这一轮跑着的时候又有人要一批（滚动 / 刷新）→ 结束后补跑一次，否则会"卡住不动"。</summary>
     private bool _favoritePending;
 
@@ -566,8 +570,8 @@ public partial class WtLiveViewModel : ObservableObject
         }
 
         IsFavoriteAuthorsMode = true;
-        _favoriteSyncPending = true;
         _favoriteBusy = false;
+        _favoriteFirstSyncDone = false;
 
         UpdateFavoriteModeText();
         StartRefresh();   // 清列表 → RequestMore() 走上面的分支
@@ -586,8 +590,8 @@ public partial class WtLiveViewModel : ObservableObject
         _favoriteAuthorNames.Clear();
         _favoriteAuthorRawIds.Clear();
         _favoriteServed.Clear();
-        _favoriteSyncPending = true;
         _favoritePending = false;
+        _favoriteFirstSyncDone = false;
         FavoriteModeText = "";
 
         StartRefresh();
@@ -614,25 +618,24 @@ public partial class WtLiveViewModel : ObservableObject
 
         try
         {
-            // **默认只用缓存**：只有"从来没同步过"的作者才自动拉一次（首次使用），
-            // 其余一律等用户点提示条上的刷新按钮 —— 否则每次进页面/刷新都要等十几秒
-            var autoTargets = forceSync
-                ? _favoriteAuthorRawIds.ToList()
-                : _favoriteAuthorRawIds
-                    .Where(id => WtLiveAuthorFeedCache.AuthorSyncedAt(id) == DateTime.MinValue)
-                    .ToList();
+            // **默认一个请求都不发**：
+            // · 手动刷新（forceSync）→ 同步全部作者；
+            // · 否则只有"缓存里一条收藏作者的涂装都没有"（真·首次）才自动拉一次。
+            // 判断依据是**缓存内容**，不是作者游标 —— 游标丢了（换配置目录 / 文件损坏）也不该让
+            // 每次进页面都重新同步一遍（那正是"重启后还要等半天"的来源）。
+            var cachedCount = WtLiveAuthorFeedCache.CountForAuthors(_favoriteAuthorIds, _favoriteAuthorNames);
 
-            if (autoTargets.Count > 0) await SyncFavoriteAuthorsAsync(session, autoTargets);
-            else if (_favoriteSyncPending)
+            if (forceSync)
             {
-                // 上一轮作者太多没同步完（首次），接着补
-                _favoriteSyncPending = false;
+                await SyncFavoriteAuthorsAsync(session, _favoriteAuthorRawIds);
+            }
+            else if (cachedCount == 0 && !_favoriteFirstSyncDone)
+            {
+                // 一个会话只补一次：万一收藏的作者确实都没有作品，别每次滚动都重新拉一遍
+                _favoriteFirstSyncDone = true;
 
-                var rest = _favoriteAuthorRawIds
-                    .Where(id => WtLiveAuthorFeedCache.AuthorSyncedAt(id) == DateTime.MinValue)
-                    .ToList();
-
-                if (rest.Count > 0) await SyncFavoriteAuthorsAsync(session, rest);
+                var firstTargets = _favoriteAuthorRawIds.Take(FavoriteSyncMaxAuthors).ToList();
+                if (firstTargets.Count > 0) await SyncFavoriteAuthorsAsync(session, firstTargets);
             }
 
             var added = await ServeFavoriteCacheAsync(session);
@@ -669,10 +672,10 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (targets.Count == 0) return;
 
-        var total = Math.Min(targets.Count, FavoriteSyncMaxAuthors);
+        var total = targets.Count;
         var done = 0;
 
-        foreach (var authorId in targets.Take(FavoriteSyncMaxAuthors))
+        foreach (var authorId in targets)
         {
             if (session != _session || !IsFavoriteAuthorsMode) return;
 
@@ -720,18 +723,23 @@ public partial class WtLiveViewModel : ObservableObject
             }
         }
 
-        // 作者太多，一轮没同步完 → 下一批接着同步
-        if (targets.Count > FavoriteSyncMaxAuthors) _favoriteSyncPending = true;
-
         _ = Task.Run(WtLiveAuthorFeedCache.Save);
     }
 
     /// <summary>每个"还能往下翻"的作者各取下一页（作者页第 N 页）。</summary>
     private async Task FetchAuthorNextPagesAsync(int session)
     {
+        // 一次只打扰"最新的帖 id 最大"的几个作者：他们最可能贡献更新的内容，
+        // 也避免一滚就同时打十几个作者的页（那是"等半天"的另一个来源）
+        var targets = _favoriteAuthorRawIds
+            .Where(id => WtLiveAuthorFeedCache.NextPage(id) >= 0)
+            .OrderByDescending(WtLiveAuthorFeedCache.MaxPostId)
+            .Take(FavoriteNextPageMaxAuthors)
+            .ToList();
+
         var first = true;
 
-        foreach (var authorId in _favoriteAuthorRawIds)
+        foreach (var authorId in targets)
         {
             if (session != _session || !IsFavoriteAuthorsMode) return;
 
@@ -873,7 +881,6 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (!IsFavoriteAuthorsMode) return;
 
-        _favoriteSyncPending = false;
         await LoadMoreFavoritesAsync(forceSync: true);
     }
 
