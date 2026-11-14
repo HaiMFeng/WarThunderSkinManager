@@ -97,10 +97,14 @@ public partial class WtLiveViewModel : ObservableObject
     public static readonly TimeSpan FavoriteScanInterval = TimeSpan.FromMilliseconds(450);
 
     /// <summary>
-    /// 展示命中**之前**，如果这条元数据比这个年龄更旧就先刷一次详情 ——
-    /// 帖子可能被作者改过标题 / 标签 / 换了附件（§3.15）。
+    /// 展示命中**之前**，如果这条元数据比这个年龄更旧就先刷一次详情。
+    /// **一周**：已经发布的涂装基本不会更新（作者顶多改标题 / 换附件，属于少数），
+    /// 没必要每次打开都逐条重拉（§3.15）。
     /// </summary>
-    public static readonly TimeSpan FavoriteRefreshMaxAge = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan FavoriteRefreshMaxAge = TimeSpan.FromDays(7);
+
+    /// <summary>刷新失败后的短退避：一周的窗口太长，失败不能也压一周，10 分钟后再试。</summary>
+    public static readonly TimeSpan FavoriteRefreshRetryDelay = TimeSpan.FromMinutes(10);
 
     /// <summary>逐条刷新之间的间隔（详情接口，一次一条，别连着打）。</summary>
     public static readonly TimeSpan FavoriteRefreshInterval = TimeSpan.FromMilliseconds(300);
@@ -728,9 +732,17 @@ public partial class WtLiveViewModel : ObservableObject
                                      + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 80)));
 
                 var fresh = await WTLiveService.RefreshFeedItemAsync(hit, CancellationToken.None);
-                if (fresh != null) item = fresh;
 
-                WtLiveFeedCache.MarkRefreshed(item);
+                if (fresh != null)
+                {
+                    item = fresh;
+                    WtLiveFeedCache.MarkRefreshed(item);
+                }
+                else
+                {
+                    // 刷新窗口是一周，失败不能也压一周 → 只做短退避（10 分钟后再试）
+                    WtLiveFeedCache.MarkRefreshFailed(hit.LangGroup, FavoriteRefreshRetryDelay);
+                }
             }
 
             TryAddCard(item, prepend);

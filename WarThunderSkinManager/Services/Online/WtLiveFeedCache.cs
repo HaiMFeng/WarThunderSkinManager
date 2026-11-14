@@ -143,11 +143,51 @@ public static class WtLiveFeedCache
         }
     }
 
-    /// <summary>是否该在展示前再刷一次（超过 <paramref name="maxAge"/> 或从没刷过）。</summary>
+    /// <summary>
+    /// 是否该在展示前再刷一次：超过 <paramref name="maxAge"/> 或从没刷过，
+    /// 且不在"上次刷新失败"的短退避里（见 <see cref="MarkRefreshFailed"/>）。
+    /// </summary>
     public static bool NeedsRefresh(long langGroup, TimeSpan maxAge)
     {
-        var at = RefreshedAt(langGroup);
-        return at == DateTime.MinValue || DateTime.UtcNow - at > maxAge;
+        EnsureLoaded();
+
+        DateTime at;
+        DateTime retryAt;
+
+        lock (Gate)
+        {
+            if (!Entries.TryGetValue(langGroup, out var entry)) return true;
+
+            at = entry.RefreshedAt == 0
+                ? DateTime.MinValue
+                : DateTimeOffset.FromUnixTimeSeconds(entry.RefreshedAt).UtcDateTime;
+
+            retryAt = entry.RetryAt == 0
+                ? DateTime.MinValue
+                : DateTimeOffset.FromUnixTimeSeconds(entry.RetryAt).UtcDateTime;
+        }
+
+        if (retryAt != DateTime.MinValue && DateTime.UtcNow < retryAt) return false;
+        if (at == DateTime.MinValue) return true;
+
+        return DateTime.UtcNow - at > maxAge;
+    }
+
+    /// <summary>
+    /// 记一次**刷新失败**：只做短退避（默认窗口可能是一周，失败压一周就太久了）。
+    /// </summary>
+    public static void MarkRefreshFailed(long langGroup, TimeSpan retryDelay)
+    {
+        EnsureLoaded();
+
+        var retryAt = DateTimeOffset.UtcNow.Add(retryDelay).ToUnixTimeSeconds();
+
+        lock (Gate)
+        {
+            if (!Entries.TryGetValue(langGroup, out var entry)) return;
+
+            entry.RetryAt = retryAt;
+        }
     }
 
     /// <summary>把一批列表项写进缓存（同 id 覆盖；只更新"列表能给"的字段）。</summary>
@@ -167,7 +207,11 @@ public static class WtLiveFeedCache
                 entry.LastSeen = now;
 
                 if (Entries.TryGetValue(item.LangGroup, out var existing))
-                    entry.RefreshedAt = existing.RefreshedAt; // 刷新时间不因列表更新而复位
+                {
+                    // 刷新时间 / 失败退避都不因列表更新而复位
+                    entry.RefreshedAt = existing.RefreshedAt;
+                    entry.RetryAt = existing.RetryAt;
+                }
 
                 Entries[item.LangGroup] = entry;
             }
@@ -190,6 +234,7 @@ public static class WtLiveFeedCache
             var entry = ToEntry(item);
             entry.LastSeen = now;
             entry.RefreshedAt = now;
+            entry.RetryAt = 0; // 刷新成功 → 清掉失败退避
             Entries[item.LangGroup] = entry;
         }
     }
@@ -423,5 +468,8 @@ public static class WtLiveFeedCache
         [JsonPropertyName("seen")] public long LastSeen { get; set; }
 
         [JsonPropertyName("ref")] public long RefreshedAt { get; set; }
+
+        /// <summary>刷新失败后的退避截止时间（0 = 没有退避）。</summary>
+        [JsonPropertyName("ra")] public long RetryAt { get; set; }
     }
 }

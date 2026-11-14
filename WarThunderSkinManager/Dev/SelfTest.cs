@@ -420,6 +420,11 @@ internal static class SelfTest
             WtLiveFeedCache.MarkRefreshed(FeedItem("Alice", 42, 300));
             var refreshAfter = WtLiveFeedCache.NeedsRefresh(300, WtLiveViewModel.FavoriteRefreshMaxAge);
 
+            // 刷新失败只做短退避（窗口是一周，失败压一周就太久了）
+            var retryBackoffBefore = WtLiveFeedCache.NeedsRefresh(302, WtLiveViewModel.FavoriteRefreshMaxAge);
+            WtLiveFeedCache.MarkRefreshFailed(302, WtLiveViewModel.FavoriteRefreshRetryDelay);
+            var retryBackoffAfter = WtLiveFeedCache.NeedsRefresh(302, WtLiveViewModel.FavoriteRefreshMaxAge);
+
             var feedCacheOk = cacheQuery.Count == 2
                               && cacheQuery[0].LangGroup == 302          // 按 lang_group 倒序
                               && cacheFileOk
@@ -429,11 +434,13 @@ internal static class SelfTest
                               && WtLiveFeedCache.MaxLangGroup == 302
                               && WtLiveFeedCache.AllKnown(new long[] { 300, 301, 302 })
                               && !WtLiveFeedCache.AllKnown(new long[] { 300, 999 })
-                              && refreshBefore && !refreshAfter;
+                              && refreshBefore && !refreshAfter
+                              && retryBackoffBefore && !retryBackoffAfter;
 
             log.AppendLine($"元数据缓存 : 按作者查 {cacheQuery.Count} 条（应 2）/ 落盘往返 {cacheReloaded.Count} 条（应 2）"
                          + $"，整页已知即停 = {WtLiveFeedCache.AllKnown(new long[] { 300, 301, 302 })}（应 True）、"
-                         + $"前 15 分钟刷新过就不再刷 = {refreshBefore && !refreshAfter}（应 True）"
+                         + $"一周内刷新过就不再刷 = {refreshBefore && !refreshAfter}（应 True）、"
+                         + $"刷新失败只退避 10 分钟 = {retryBackoffBefore && !retryBackoffAfter}（应 True）"
                          + $"→ {feedCacheOk}");
 
             if (!feedCacheOk)
