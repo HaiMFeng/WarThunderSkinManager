@@ -477,6 +477,9 @@ public partial class MainViewModel : ObservableObject
         WtLiveFavoriteAuthors.Configure(config.ConfigDirectory);
         WtLive.Favorites.Reload();
 
+        // WT Live 列表元数据缓存（§3.15「收藏作者的涂装」用它做本地筛选）
+        WtLiveFeedCache.Configure(config.ConfigDirectory);
+
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
         Themes = ThemeCatalog.ThemeIds.Select(id => new ThemeItem(id)).ToList();
         _selectedTheme = Themes.FirstOrDefault(
@@ -1126,6 +1129,7 @@ public partial class MainViewModel : ObservableObject
                 // 收藏的作者也在配置目录里 → 换目录要换成新目录那份（旧目录的文件原样留着）
                 WtLiveFavoriteAuthors.Configure(Config.ConfigDirectory);
                 WtLive.Favorites.Reload();
+                WtLiveFeedCache.Configure(Config.ConfigDirectory); // 列表元数据缓存（§3.15）
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 OnPropertyChanged(nameof(ResourceBlockEnabled)); // 「更新资源」卡随目录就绪启停（§3.15）
                 break;

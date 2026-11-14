@@ -362,8 +362,8 @@ internal static class SelfTest
             // ---- 「收藏作者的涂装」模式（§3.15）：匹配口径 + 补页预算 ----
             // 站点没有"所有收藏作者"的合并查询 → 走默认排序的原始 feed，页内按收藏过滤；
             // 某页零命中要接着翻，但必须有上限（否则一条都没有时会无限打站点）。
-            static WTLiveFeedItem FeedItem(string author, long authorId) => new(
-                LangGroup: 1, Author: author, AuthorId: authorId, AuthorAvatar: "",
+            static WTLiveFeedItem FeedItem(string author, long authorId, long langGroup = 1) => new(
+                LangGroup: langGroup, Author: author, AuthorId: authorId, AuthorAvatar: "",
                 Title: "t", Description: "d", PreviewUrl: null, Ratio: 16d / 9, PreviewWidth: 0,
                 FileName: "a.zip", FileLink: "l", FileSize: 1, Downloads: 0, Likes: 0, Views: 0,
                 PostUrl: "u", Tags: Array.Empty<string>());
@@ -391,6 +391,56 @@ internal static class SelfTest
             if (!favoriteMatchOk || !scanBudgetOk)
                 log.AppendLine("自检异常：收藏作者模式的匹配口径或补页预算不对"
                              + "（会把非收藏作者放进来，或零命中时无限翻页）");
+
+            // ---- 列表元数据缓存（§3.15）：落盘往返 / 按作者查 / 水位判定 / 刷新年龄 ----
+            var feedCacheDir = Path.Combine(workDir, "feed-cache-test");
+            Directory.CreateDirectory(feedCacheDir);
+
+            WtLiveFeedCache.Reset();
+            WtLiveFeedCache.Configure(feedCacheDir);
+
+            WtLiveFeedCache.Upsert(new[]
+            {
+                FeedItem("Alice", 42, 300),
+                FeedItem("Bob", 43, 301),
+                FeedItem("alice", 0, 302)   // 没有 author id → 昵称兜底
+            });
+
+            var cacheQuery = WtLiveFeedCache.QueryByAuthors(favoriteIds, favoriteNames);
+            var cacheFile = WtLiveFeedCache.FilePath(feedCacheDir);
+
+            WtLiveFeedCache.Save();
+            var cacheFileOk = File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 0;
+
+            WtLiveFeedCache.Reset();          // 丢掉内存，从磁盘重读
+            WtLiveFeedCache.Configure(feedCacheDir);
+            var cacheReloaded = WtLiveFeedCache.QueryByAuthors(favoriteIds, favoriteNames);
+
+            var refreshBefore = WtLiveFeedCache.NeedsRefresh(300, WtLiveViewModel.FavoriteRefreshMaxAge);
+            WtLiveFeedCache.MarkRefreshed(FeedItem("Alice", 42, 300));
+            var refreshAfter = WtLiveFeedCache.NeedsRefresh(300, WtLiveViewModel.FavoriteRefreshMaxAge);
+
+            var feedCacheOk = cacheQuery.Count == 2
+                              && cacheQuery[0].LangGroup == 302          // 按 lang_group 倒序
+                              && cacheFileOk
+                              && cacheReloaded.Count == 2                // 落盘能往返
+                              && WtLiveFeedCache.Contains(301)
+                              && !WtLiveFeedCache.Contains(999)
+                              && WtLiveFeedCache.MaxLangGroup == 302
+                              && WtLiveFeedCache.AllKnown(new long[] { 300, 301, 302 })
+                              && !WtLiveFeedCache.AllKnown(new long[] { 300, 999 })
+                              && refreshBefore && !refreshAfter;
+
+            log.AppendLine($"元数据缓存 : 按作者查 {cacheQuery.Count} 条（应 2）/ 落盘往返 {cacheReloaded.Count} 条（应 2）"
+                         + $"，整页已知即停 = {WtLiveFeedCache.AllKnown(new long[] { 300, 301, 302 })}（应 True）、"
+                         + $"前 15 分钟刷新过就不再刷 = {refreshBefore && !refreshAfter}（应 True）"
+                         + $"→ {feedCacheOk}");
+
+            if (!feedCacheOk)
+                log.AppendLine("自检异常：列表元数据缓存不对（落盘往返 / 按作者查询 / 水位判定 / 刷新年龄）");
+
+            WtLiveFeedCache.Reset();
+            WtLiveFeedCache.Configure("");
 
             // ---- WT Live 搜索胶囊（标签 / 载具）：条件叠在胶囊上，查询串由胶囊拼出来 ----
             var chipVm = new WtLiveViewModel();

@@ -96,6 +96,21 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>自动补页之间的最小间隔：连续请求很容易被站点风控盯上。</summary>
     public static readonly TimeSpan FavoriteScanInterval = TimeSpan.FromMilliseconds(450);
 
+    /// <summary>
+    /// 展示命中**之前**，如果这条元数据比这个年龄更旧就先刷一次详情 ——
+    /// 帖子可能被作者改过标题 / 标签 / 换了附件（§3.15）。
+    /// </summary>
+    public static readonly TimeSpan FavoriteRefreshMaxAge = TimeSpan.FromMinutes(15);
+
+    /// <summary>逐条刷新之间的间隔（详情接口，一次一条，别连着打）。</summary>
+    public static readonly TimeSpan FavoriteRefreshInterval = TimeSpan.FromMilliseconds(300);
+
+    /// <summary>追赶新帖时最多翻多少页（25 条/页）；超了就等下一轮。</summary>
+    public const int FavoriteCatchUpMaxPages = 20;
+
+    /// <summary>同一会话里追赶过就够用，不必每次滚动都问站点（用户手动刷新可绕过）。</summary>
+    public static readonly TimeSpan FavoriteCatchUpMinInterval = TimeSpan.FromMinutes(10);
+
     /// <summary>收藏作者的数值 id（feed 里给了 author id 时用它精确匹配）。</summary>
     private readonly HashSet<long> _favoriteAuthorIds = new();
 
@@ -104,6 +119,16 @@ public partial class WtLiveViewModel : ObservableObject
 
     private int _favoriteScannedPosts;   // 累计扫描帖数（文案用）
     private int _favoriteScanHits;       // 累计命中条数（文案用）
+
+    // 本地缓存的取用游标：已从缓存吐出的命中条数 / 缓存是否已经见底 / 本轮是否追赶过
+    /// <summary>本次模式内已从缓存上屏的帖子 id（用集合而不是游标：追赶后新条目会插到最前面）。</summary>
+    private readonly HashSet<long> _cacheServed = new();
+
+    private bool _cacheDrained;
+
+    /// <summary>一批（缓存 6 条 / 扫描若干页）是否正在跑 —— 挡住滚动的重入。</summary>
+    private bool _favoriteBatchRunning;
+    private bool _catchUpDone;
 
     /// <summary>是否处于「收藏作者的涂装」模式（界面顶部因此显示提示条、排序下拉禁用）。</summary>
     [ObservableProperty] private bool _isFavoriteAuthorsMode;
@@ -524,7 +549,7 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (!CanLoadMore) return;
 
-        if (IsFavoriteAuthorsMode) _ = PullFavoritePagesAsync();
+        if (IsFavoriteAuthorsMode) _ = LoadFavoriteBatchAsync();
         else _ = LoadNextPageAsync();
     }
 
@@ -568,6 +593,9 @@ public partial class WtLiveViewModel : ObservableObject
         IsFavoriteAuthorsMode = true;
         _favoriteScannedPosts = 0;
         _favoriteScanHits = 0;
+        _cacheServed.Clear();
+        _cacheDrained = false;
+        _catchUpDone = false;
         UpdateFavoriteModeText();
 
         StartRefresh(); // 清空列表 → RequestMore() 会走补页逻辑
@@ -586,6 +614,9 @@ public partial class WtLiveViewModel : ObservableObject
         _favoriteAuthorNames.Clear();
         _favoriteScannedPosts = 0;
         _favoriteScanHits = 0;
+        _cacheServed.Clear();
+        _cacheDrained = false;
+        _catchUpDone = false;
         FavoriteModeText = "";
 
         StartRefresh();
@@ -606,17 +637,185 @@ public partial class WtLiveViewModel : ObservableObject
                 _favoriteAuthorIds.Count + _favoriteAuthorNames.Count, _favoriteScannedPosts, Items.Count);
     }
 
+    /// <summary>当前条件下能不能吃缓存：只有"默认排序（最新）"的 feed 与缓存的顺序语义一致。</summary>
+    private bool CanUseFeedCache
+        => IsFavoriteAuthorsMode
+           && string.Equals(SortId, WtLiveSortCatalog.DefaultSort, StringComparison.Ordinal);
+
     /// <summary>
-    /// 收藏作者模式的取数循环：一页一页拉，页内过滤；命中不足就继续，直到页数上限 / 命中够数 / 站点到底。
+    /// 收藏作者模式的一批：**先本地缓存**（即时出结果，命中逐条刷新）→ 缓存见底才去站点补。
+    /// </summary>
+    private async Task LoadFavoriteBatchAsync()
+    {
+        // 独立的重入闸：内层 LoadNextPageAsync 会把 IsLoading 置回 false，
+        // 只靠 IsLoading 挡不住"扫描到一半又被滚动触发一批"
+        if (_favoriteBatchRunning || IsLoading) return;
+
+        _favoriteBatchRunning = true;
+        IsLoading = true;
+        try
+        {
+            if (CanUseFeedCache)
+            {
+                var served = await ShowCachedHitsAsync(FavoriteScanMinHitsPerPull);
+                if (served >= FavoriteScanMinHitsPerPull) return;
+
+                // 缓存见底：追赶一次新帖（同一会话一次就够），再看本地能不能补出命中
+                if (!_catchUpDone) await CatchUpFeedAsync();
+
+                _cacheDrained = false; // 追赶可能带回了新命中
+                if (await ShowCachedHitsAsync(FavoriteScanMinHitsPerPull) > 0) return;
+            }
+
+            await ScanFavoritePagesAsync();
+        }
+        finally
+        {
+            _favoriteBatchRunning = false;
+            IsLoading = false;
+            UpdateFavoriteModeText();
+        }
+    }
+
+    /// <summary>从本地缓存吐一批命中（**先刷新再上屏**）。返回这一批吐了几条。</summary>
+    private async Task<int> ShowCachedHitsAsync(int take)
+    {
+        if (_cacheDrained || take <= 0) return 0;
+
+        // 首次查询要解压 + 反序列化几 MB 的缓存：放后台，别让首帧卡住
+        var served = _cacheServed;
+        var hits = await Task.Run(() => WtLiveFeedCache
+            .QueryByAuthors(_favoriteAuthorIds, _favoriteAuthorNames)   // 已按 lang_group 倒序
+            .Where(item => !served.Contains(item.LangGroup))
+            .Take(take)
+            .ToList());
+
+        if (hits.Count == 0)
+        {
+            _cacheDrained = true;
+            return 0;
+        }
+
+        foreach (var hit in hits) _cacheServed.Add(hit.LangGroup);
+        if (hits.Count < take) _cacheDrained = true;
+
+        await AddFavoriteCardsAsync(hits);
+        return hits.Count;
+    }
+
+    /// <summary>
+    /// 上屏前**逐条刷新**：帖子可能被作者改过（标题 / 标签 / 换了附件），缓存只当索引。
+    /// 刷新失败的沿用缓存内容，但仍记一次刷新时间 —— 免得每次滚动都对同一条反复请求。
+    /// </summary>
+    /// <param name="prepend">true = 插到列表最前（追赶到的"更新的"帖子）。</param>
+    private async Task AddFavoriteCardsAsync(IReadOnlyList<WTLiveFeedItem> hits, bool prepend = false)
+    {
+        var total = hits.Count;
+        var done = 0;
+
+        foreach (var hit in hits)
+        {
+            done++;
+
+            var item = hit;
+
+            if (WtLiveFeedCache.NeedsRefresh(hit.LangGroup, FavoriteRefreshMaxAge))
+            {
+                FavoriteModeText = Loc.Format("wtlive.favoriteMode.refreshing", done, total);
+
+                if (done > 1)
+                    await Task.Delay(FavoriteRefreshInterval
+                                     + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 80)));
+
+                var fresh = await WTLiveService.RefreshFeedItemAsync(hit, CancellationToken.None);
+                if (fresh != null) item = fresh;
+
+                WtLiveFeedCache.MarkRefreshed(item);
+            }
+
+            TryAddCard(item, prepend);
+        }
+
+        WtLiveFeedCache.Save();
+    }
+
+    /// <summary>
+    /// 追赶新帖：从第 0 页按默认排序翻，**整页都见过**就说明追平了
+    /// （旧帖不会被插到中间，新帖只会出现在更前面）。
+    /// </summary>
+    private async Task CatchUpFeedAsync()
+    {
+        _catchUpDone = true;
+
+        if (DateTime.UtcNow - WtLiveFeedCache.LastCatchUp < FavoriteCatchUpMinInterval) return;
+
+        var session = _session;
+
+        // 顺带收集"收藏作者的新帖"：追平后直接插到列表最前，不用等用户滚到缓存底部
+        var newHits = new List<WTLiveFeedItem>();
+
+        for (var index = 0; index < FavoriteCatchUpMaxPages; index++)
+        {
+            if (index > 0)
+            {
+                await Task.Delay(FavoriteScanInterval + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 120)));
+                if (session != _session || !IsFavoriteAuthorsMode) return;
+            }
+
+            FavoriteModeText = Loc.Format("wtlive.favoriteMode.checking", index + 1);
+
+            WTLiveFeedPage page;
+            try
+            {
+                page = await WTLiveService.FetchFeedPageAsync(
+                    index, null, null, WtLiveSortCatalog.DefaultSort, null, CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                return; // 追赶失败不算错：本地缓存照样能看，下次再追
+            }
+
+            if (session != _session) return;
+
+            // **先判定再入库**：整页都见过 = 已经追平
+            var allKnown = WtLiveFeedCache.AllKnown(page.Items.Select(item => item.LangGroup));
+
+            _favoriteScannedPosts += page.Items.Count;
+
+            foreach (var item in page.Items)
+            {
+                if (!_cacheServed.Contains(item.LangGroup)
+                    && MatchesFavoriteAuthor(item, _favoriteAuthorIds, _favoriteAuthorNames))
+                {
+                    newHits.Add(item);
+                }
+            }
+
+            WtLiveFeedCache.Upsert(page.Items);
+
+            if (allKnown || !page.HasMore) break;
+        }
+
+        WtLiveFeedCache.MarkCatchUp(DateTime.UtcNow);
+        WtLiveFeedCache.Save();
+
+        if (newHits.Count == 0 || session != _session || !IsFavoriteAuthorsMode) return;
+
+        // 新帖排在缓存最前 → 插到列表顶部（同样先刷新再上屏）
+        foreach (var hit in newHits) _cacheServed.Add(hit.LangGroup);
+        await AddFavoriteCardsAsync(newHits, prepend: true);
+    }
+
+    /// <summary>
+    /// 缓存里没有更多命中时的回落：一页一页拉、页内过滤；命中不足就继续，
+    /// 直到页数上限 / 命中够数 / 站点到底。
     /// </summary>
     /// <remarks>
     /// **限速**：第一次（用户刚点按钮）立即发；之后每页之间等 <see cref="FavoriteScanInterval"/>
-    /// 再加 0–120 ms 抖动 —— 连续 8 次请求打得太密容易被 Cloudflare 判成异常流量。
+    /// 再加 0–120 ms 抖动 —— 连续几次请求打得太密容易被 Cloudflare 判成异常流量。
     /// </remarks>
-    private async Task PullFavoritePagesAsync()
+    private async Task ScanFavoritePagesAsync()
     {
-        if (IsLoading) return;
-
         // **每趟单独计数**：页数/命中上限是"这一趟滚动"的预算，
         // 不能用累计值（否则第一次凑够 6 条之后，后续每一趟都会立刻判定"够了"而不再扫描）
         var pages = 0;
@@ -643,6 +842,30 @@ public partial class WtLiveViewModel : ObservableObject
         }
 
         UpdateFavoriteModeText();
+    }
+
+    /// <summary>把一条列表项加成卡片（跨页去重）；已存在返回 <c>false</c>。</summary>
+    /// <param name="prepend">true = 插到最前（追赶到的更新帖子）。</param>
+    private bool TryAddCard(WTLiveFeedItem item, bool prepend = false)
+    {
+        if (Items.Any(existing => existing.LangGroup == item.LangGroup)) return false;
+
+        var card = new WtLiveCardItem(item, DownloadCardCommand, SearchUserByCardCommand, ReloadThumbnailCommand);
+
+        if (prepend)
+        {
+            Items.Insert(0, card);
+            if (InsideVisibleWindow(0)) _ = LoadThumbnailAsync(card);
+        }
+        else
+        {
+            Items.Add(card);
+
+            // 缩略图只在可视窗口内取（见 SetVisibleWindow）
+            if (InsideVisibleWindow(Items.Count - 1)) _ = LoadThumbnailAsync(card);
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -712,11 +935,13 @@ public partial class WtLiveViewModel : ObservableObject
         IsExhausted = false;
         ErrorMessage = "";
 
-        // 收藏作者模式下，换排序 / 刷新都是一次**新的扫描**：累计计数从 0 起
+        // 收藏作者模式下，换排序 / 刷新都是一次**新的扫描**：累计计数与缓存游标都从 0 起
         if (IsFavoriteAuthorsMode)
         {
             _favoriteScannedPosts = 0;
             _favoriteScanHits = 0;
+            _cacheServed.Clear();
+            _cacheDrained = false;
             UpdateFavoriteModeText();
         }
 
@@ -875,6 +1100,8 @@ public partial class WtLiveViewModel : ObservableObject
                 _favoriteAuthorNames.Clear();
                 _favoriteScannedPosts = 0;
                 _favoriteScanHits = 0;
+                _cacheServed.Clear();
+                _cacheDrained = false;
                 FavoriteModeText = "";
             }
 
@@ -1429,6 +1656,9 @@ public partial class WtLiveViewModel : ObservableObject
             // 收藏作者模式：整页先按收藏集合过滤（不命中的整条丢掉，也不进列表）
             _favoriteScannedPosts += IsFavoriteAuthorsMode ? page.Items.Count : 0;
 
+            // 见过的帖子一律攒进本地缓存（§3.15）：普通浏览、收藏作者模式、追赶都共用同一份索引
+            WtLiveFeedCache.Upsert(page.Items);
+
             var added = 0;
 
             foreach (var item in page.Items)
@@ -1436,20 +1666,7 @@ public partial class WtLiveViewModel : ObservableObject
                 if (IsFavoriteAuthorsMode
                     && !MatchesFavoriteAuthor(item, _favoriteAuthorIds, _favoriteAuthorNames)) continue;
 
-                // 跨页去重：lang_group 唯一（同一帖子多语言版本已在接口侧归并，§10）
-                if (Items.Any(existing => existing.LangGroup == item.LangGroup)) continue;
-
-                // 三个动作命令**注入到卡片上**：模板因此只用普通 {Binding}，不做祖先查找 ——
-                // 虚拟化容器被回收 / 复用时 `RelativeSource` 那条链会踩空（命令解析成 null），
-                // 表现就是"卡片上的按钮偶发点了没反应"（§3.17）
-                var card = new WtLiveCardItem(item, DownloadCardCommand, SearchUserByCardCommand,
-                    ReloadThumbnailCommand);
-                Items.Add(card);
-                added++;
-
-                // 缩略图不再"加进来就取"：只取**可视窗口内**的（见 SetVisibleWindow），窗口外的等滚到近处再取
-                // —— 快速翻页时能省掉一大批"下一刻就被释放"的下载与解码
-                if (InsideVisibleWindow(Items.Count - 1)) _ = LoadThumbnailAsync(card);
+                if (TryAddCard(item)) added++;
             }
 
             _nextPage++;

@@ -356,6 +356,42 @@ public static class WTLiveService
     }
 
     /// <summary>卡片标题：描述首行（作者一般把涂装名写在第一行）；没有描述时退回压缩包文件名 / 帖子 id。</summary>
+    /// <summary>
+    /// 用**详情接口**刷新一条列表项的可变字段（标题 / 标签 / 附件 / 下载数 / 作者名），
+    /// 供「收藏作者的涂装」在**展示命中之前**更新，避免缓存里是作者改过之后的旧数据（§3.15）。
+    /// </summary>
+    /// <remarks>
+    /// **只覆盖"会变的东西"**：作者 id / 头像 / 预览图与宽高比继续用列表值 ——
+    /// 详情接口没有 <c>author.id</c> / <c>avatar</c>，预览也只给原图（卡片拿原图解码太贵）。
+    /// 失败（网络 / 帖子已删）返回 <c>null</c>，调用方沿用缓存内容。
+    /// </remarks>
+    public static async Task<WTLiveFeedItem?> RefreshFeedItemAsync(WTLiveFeedItem cached, CancellationToken ct)
+    {
+        try
+        {
+            var post = await FetchPostAsync(cached.LangGroup, ct);
+
+            var description = post.DescriptionText ?? "";
+            var fileName = post.File?.Name is { Length: > 0 } name ? name : cached.FileName;
+
+            return cached with
+            {
+                Author = post.Author.Length > 0 ? post.Author : cached.Author,
+                Title = FeedTitle(description.Length > 0 ? description : cached.Title, fileName, cached.LangGroup),
+                Tags = post.Tags.Count > 0 ? post.Tags : cached.Tags,
+                FileName = fileName,
+                FileLink = post.File?.Link is { Length: > 0 } link ? link : cached.FileLink,
+                FileSize = post.File?.Size > 0 ? post.File.Size : cached.FileSize,
+                Downloads = post.Downloads,
+                PreviewUrl = cached.PreviewUrl ?? (post.ImageUrls.Count > 0 ? post.ImageUrls[0] : null)
+            };
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static string FeedTitle(string description, string fileName, long langGroup)
     {
         var line = description;
