@@ -156,6 +156,8 @@ public partial class WtLiveViewModel : ObservableObject
     private long _sessionTopId;    // 进入时缓存的最新锚点
     private int _sessionNewCount;  // 前端补抓发现的新增条数（算页码位移）
 
+    private bool _catchUpStarted;  // 后台追新是否已启动（一个会话只跑一次）
+
     /// <summary>是否处于「收藏作者的涂装」模式（界面顶部因此显示提示条、排序下拉禁用）。</summary>
     [ObservableProperty] private bool _isFavoriteAuthorsMode;
 
@@ -633,6 +635,7 @@ public partial class WtLiveViewModel : ObservableObject
         _cacheCursorId = 0;
         _sessionTopId = 0;
         _sessionNewCount = 0;
+        _catchUpStarted = false;
         _favoriteAutoRetries = 0;
         UpdateFavoriteModeText();
 
@@ -662,6 +665,7 @@ public partial class WtLiveViewModel : ObservableObject
         _cacheCursorId = 0;
         _sessionTopId = 0;
         _sessionNewCount = 0;
+        _catchUpStarted = false;
         FavoriteModeText = "";
 
         StartRefresh();
@@ -715,11 +719,21 @@ public partial class WtLiveViewModel : ObservableObject
         {
             if (CanUseFeedCache)
             {
-                // 第一次进来先"追平 + 对齐"：补新增、确认与缓存重叠、定好底部续取的页码
-                if (!_cachePrepared) await CatchUpFeedAsync();
+                // **先用落盘水位直接吃缓存（0 请求）**：重进页面时立刻出卡片，
+                // 不必先等一次"追平"网络请求（那正是"还是要慢慢刷"的原因）
+                if (!_cachePrepared) BeginCacheSession();
 
                 var served = await ShowCachedHitsAsync(FavoriteScanMinHitsPerPull);
-                if (served >= FavoriteScanMinHitsPerPull) return;
+                if (served >= FavoriteScanMinHitsPerPull)
+                {
+                    StartCatchUpInBackground(); // 新帖在后台补，补到就插到最前
+                    return;
+                }
+
+                // 本地没货（第一次用 / 缓存在这一页被过滤空了）→ 这次等它追平
+                await CatchUpFeedAsync();
+
+                if (await ShowCachedHitsAsync(FavoriteScanMinHitsPerPull) >= FavoriteScanMinHitsPerPull) return;
             }
 
             await ScanFavoritePagesAsync();
@@ -903,19 +917,57 @@ public partial class WtLiveViewModel : ObservableObject
 
         // **不再逐条刷新**：每条命中单独发一次详情，首屏就是 6 次请求。
         // 帖子详情改由"打开详情 / 开始下载"时顺手回写缓存（那时本来就要请求，零额外开销）。
-        WtLiveFeedCache.Save();
+        // 落盘放后台：整份缓存要重新 gzip 压缩，别卡在 UI 线程上（写失败无所谓，下次再写）
+        _ = Task.Run(WtLiveFeedCache.Save);
 
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// 追赶新帖：从第 0 页按默认排序翻，**整页都见过**就说明追平了
-    /// （旧帖不会被插到中间，新帖只会出现在更前面）。
+    /// 用**落盘水位**直接进入"吃缓存"状态（0 请求）：重进页面时先有内容，再谈追新。
+    /// </summary>
+    private void BeginCacheSession()
+    {
+        _cachePrepared = true;
+
+        var top = WtLiveFeedCache.TopId;
+
+        _cacheActive = WtLiveFeedCache.Contiguous && top > 0;
+        _sessionTopId = top;
+        _sessionNewCount = 0;
+        _cacheCursorId = top + 1;
+
+        // 网络续取从"已连续覆盖到的页"开始，不从第 0 页重扫
+        _nextPage = Math.Max(_nextPage, WtLiveFeedCache.PagesCovered);
+    }
+
+    /// <summary>后台追新（一个会话一次）：补到的新帖会刷新后插到列表最前。</summary>
+    private void StartCatchUpInBackground()
+    {
+        if (_catchUpStarted) return;
+
+        _catchUpStarted = true;
+        _ = RunCatchUpAsync();
+    }
+
+    private async Task RunCatchUpAsync()
+    {
+        try
+        {
+            await CatchUpFeedAsync();
+        }
+        catch
+        {
+            // 追新失败不影响已显示的缓存内容，下次进页面再试
+        }
+    }
+
+    /// <summary>
+    /// 追赶新帖：从第 0 页按默认排序翻，直到**页内出现 ≤ TopId 的 id**（与旧缓存重叠）。
     /// </summary>
     private async Task CatchUpFeedAsync()
     {
         _cachePrepared = true;
-        _cacheActive = false;
 
         // 没有可信的连续区（上次缺口太大 / 刚被作废）→ 本会话纯网络，绝不拿缓存拼列表
         if (!WtLiveFeedCache.Contiguous || WtLiveFeedCache.TopId <= 0) return;
@@ -1013,7 +1065,10 @@ public partial class WtLiveViewModel : ObservableObject
                 {
                     // 已接到旧缓存上：从这里开始吃缓存（只吐 id ≤ TopId 的，更新的刚才已经刷过）
                     _cacheActive = WtLiveFeedCache.Contiguous;
-                    _cacheCursorId = _sessionTopId + 1;
+
+                    // **只有在还没吐过任何缓存条目时**才把游标放到顶部；
+                    // 已经吐过就别回退，否则会把显示过的条目再遍历一遍（有去重，纯浪费）
+                    if (_cacheServed.Count == 0) _cacheCursorId = _sessionTopId + 1;
                 }
             }
         }
@@ -1164,11 +1219,12 @@ public partial class WtLiveViewModel : ObservableObject
             _favoriteScanHits = 0;
             _cacheServed.Clear();
 
-            // 重来一轮：从第 0 页重新追平、重新对齐（缓存连续区本身仍然有效）
+            // 重来一轮：先用缓存出内容，再后台追平/对齐（连续区本身仍然有效）
             _cachePrepared = false;
             _cacheActive = false;
             _cacheCursorId = 0;
             _sessionNewCount = 0;
+            _catchUpStarted = false;
 
             UpdateFavoriteModeText();
         }
