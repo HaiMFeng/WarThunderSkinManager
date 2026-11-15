@@ -442,6 +442,8 @@
   "vehicles.subtitle": "Vehicle Display Data: Display Name / Country / Structure",
   "vehicles.count": "Vehicles: {0}",
   "vehicles.search": "Search vehicles: in-game codename or display name",
+  "vehicles.tab.info": "Basic Info",
+  "vehicles.tab.parts": "Part structure",
   "vehicles.displayName": "Display Name",
   "vehicles.country": "Country",
   "vehicles.packageCount": "Skin Package {0}",

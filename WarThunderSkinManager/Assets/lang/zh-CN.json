@@ -443,6 +443,8 @@
   "vehicles.subtitle": "载具显示数据：显示名 / 国家 / 结构",
   "vehicles.count": "共 {0} 个载具",
   "vehicles.search": "搜索载具：游戏内代号或显示名",
+  "vehicles.tab.info": "基本信息",
+  "vehicles.tab.parts": "部件结构",
   "vehicles.displayName": "显示名",
   "vehicles.country": "国家",
   "vehicles.packageCount": "涂装包 {0}",

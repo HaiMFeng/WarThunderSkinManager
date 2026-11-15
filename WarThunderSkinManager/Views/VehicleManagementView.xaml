@@ -141,14 +141,9 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Row="0">
+                        <TabControl Style="{StaticResource UnderlineTabControl}">
+                            <TabItem Header="{loc:Loc vehicles.tab.info}" Style="{StaticResource UnderlineTabItem}">
+                            <StackPanel>
                                 <!-- 显示名（自动保存） -->
                                 <TextBlock Text="{loc:Loc vehicles.displayName}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
                                 <TextBox Style="{StaticResource BaseTextBox}" MaxWidth="380" HorizontalAlignment="Left"
@@ -253,8 +248,16 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                             </StackPanel>
+                            </TabItem>
 
-                            <StackPanel Grid.Row="1">
+                            <TabItem Header="{loc:Loc vehicles.tab.parts}" Style="{StaticResource UnderlineTabItem}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0">
                                 <!-- 部件（按 from 聚合；贴图适配在涂装管理页，见 §3.5 / §3.10）。
                                      标题右侧「+」= **手动补一个部件位置**：作者没适配、用户却明确知道
                                      "这辆也有"的位置（典型：同一枚导弹，涂装只给了另一辆车的贴图）。
@@ -285,7 +288,7 @@
                             </StackPanel>
 
                             <!-- 部件列表：ListBox 自带 VirtualizingStackPanel，只渲染可见行 -->
-                            <ListBox Grid.Row="2"
+                            <ListBox Grid.Row="1"
                                      Background="Transparent" BorderThickness="0" Padding="0"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      VirtualizingStackPanel.IsVirtualizing="True"
@@ -417,6 +420,8 @@
                                         </ListBox>
 
                                         </Grid>
+                            </TabItem>
+                        </TabControl>
                                         </DockPanel>
                 </Grid>
             </Border>
