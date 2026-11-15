@@ -1614,11 +1614,14 @@ public partial class WtLiveViewModel : ObservableObject
             // 回车不会加上任何东西（空值直接忽略）。
             var value = NormalizeTag(firstToken);
 
+            // 只有 `*` 时这条本身就是"仅本地筛选"的说明，不再另加副文案
             Suggestions.Add(new WtLiveSearchSuggestion
             {
                 Kind = WtLiveSearchKind.Local,
-                Display = value.Length > 0 ? WtLiveSearchChipCatalog.LocalLabel(value) : "*",
-                Detail = Loc["wtlive.search.localDetail"],
+                Display = value.Length > 0
+                    ? WtLiveSearchChipCatalog.LocalLabel(value)
+                    : Loc["wtlive.search.localDetail"],
+                Detail = value.Length > 0 ? Loc["wtlive.search.localDetail"] : "",
                 Value = value,
                 Text = value,
                 Icon = WtLiveSearchChipCatalog.LocalIcon
