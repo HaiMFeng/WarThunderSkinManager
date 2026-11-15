@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
@@ -264,11 +263,7 @@ public static class OutputService
                 continue;
             }
 
-            if (File.Exists(dst)) File.Delete(dst);
-            if (BlobStore.IsCompressed(src))
-                BlobStore.CopyBlobTo(src, dst);
-            else if (!TryCreateHardLink(dst, src))
-                File.Copy(src, dst, overwrite: true);
+            BlobStore.MaterializeBlob(src, dst); // 原子落定（先临时再替换，不"先删后写"）
 
             report.WrittenTextures++;
         }
@@ -419,11 +414,7 @@ public static class OutputService
                     continue;
                 }
 
-                if (File.Exists(dst)) File.Delete(dst);
-                if (BlobStore.IsCompressed(src))
-                    BlobStore.CopyBlobTo(src, dst);
-                else if (!TryCreateHardLink(dst, src))
-                    File.Copy(src, dst, overwrite: true);
+                BlobStore.MaterializeBlob(src, dst); // 原子落定（先临时再替换，不"先删后写"）
 
                 report.WrittenTextures++;
             }
@@ -497,21 +488,5 @@ public static class OutputService
         var expected = BlobStore.BlobHashOf(blobFile);
         if (string.IsNullOrEmpty(expected)) return false;
         return string.Equals(BlobStore.HashFile(dst), expected, StringComparison.Ordinal);
-    }
-
-    // 同盘硬链接省空间；跨卷失败则回退复制。
-    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
-
-    private static bool TryCreateHardLink(string linkPath, string existingPath)
-    {
-        try
-        {
-            return CreateHardLink(linkPath, existingPath, IntPtr.Zero);
-        }
-        catch
-        {
-            return false;
-        }
     }
 }

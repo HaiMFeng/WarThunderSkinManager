@@ -197,12 +197,67 @@ public static class BlobStore
     /// <summary>
     /// 把 blob 解压（或原样）写出到目标路径——导出 / 打包时替换原有的
     /// <c>File.Copy(blob, dst)</c> / 硬链接，使游戏与压缩 blob 解耦。
+    /// **原子落定**：先写同目录临时文件再 <c>File.Move</c> 覆盖目标，中断不会留下半截 / 缺失文件。
     /// </summary>
     public static void CopyBlobTo(string blobPath, string dst)
     {
-        using var src = OpenBlob(blobPath);
-        using var outStream = File.Create(dst);
-        src.CopyTo(outStream);
+        var dir = Path.GetDirectoryName(dst);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        var tmp = Path.Combine(dir ?? ".", Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            using (var src = OpenBlob(blobPath))
+            using (var outStream = File.Create(tmp))
+                src.CopyTo(outStream);
+            File.Move(tmp, dst, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (IOException) { } }
+        }
+    }
+
+    /// <summary>
+    /// 把 blob 的**原始内容**落定到 <paramref name="dst"/>（激活输出到游戏目录用）：
+    /// 压缩 blob → 解压复制；未压缩 blob → 同卷硬链接零拷贝（跨卷 / 不支持则复制）。
+    /// 两种方式都先落到同目录临时名、再 <c>File.Move</c> 覆盖目标，**原子替换**——
+    /// 不再「先删旧再写新」，中断也不会让游戏目录出现半截或缺失的贴图。
+    /// </summary>
+    public static void MaterializeBlob(string blobPath, string dst)
+    {
+        var dir = Path.GetDirectoryName(dst);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        var tmp = Path.Combine(dir ?? ".", Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            if (IsCompressed(blobPath))
+            {
+                using var src = OpenBlob(blobPath);
+                using var outStream = File.Create(tmp);
+                src.CopyTo(outStream);
+            }
+            else if (!TryCreateHardLink(tmp, blobPath))
+            {
+                File.Copy(blobPath, tmp, overwrite: true); // 跨卷 / 不支持硬链接 → 复制
+            }
+
+            File.Move(tmp, dst, overwrite: true); // 原子替换
+        }
+        finally
+        {
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (IOException) { } }
+        }
+    }
+
+    // 同盘硬链接省空间；跨卷 / 不支持时调用方回退复制。
+    [System.Runtime.InteropServices.DllImport("Kernel32.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+    private static bool TryCreateHardLink(string linkPath, string existingPath)
+    {
+        try { return CreateHardLink(linkPath, existingPath, IntPtr.Zero); }
+        catch { return false; }
     }
 
     /// <summary>
