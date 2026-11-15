@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
@@ -238,7 +238,7 @@ public static class OutputService
             // 两种"没有本地贴图"（包外引用 / 贴图缺失）给说明性告警
             if (!string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
-                var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
+                var blobPath = BlobStore.ResolveBlobPath(resourceDir, mapping.TextureRef);
                 if (File.Exists(blobPath)) scheduled.Add((mapping.ToFile, mapping.TextureRef));
                 else report.Warnings.Add(Loc.Format("output.warn.textureMissing", mapping.FromModule, mapping.ToFile));
             }
@@ -250,26 +250,25 @@ public static class OutputService
 
         // 调度贴图：blob → WTSM/<载具Id>/<to 原名>
         // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出。
-        // 同一 (to, blob) 被多条映射复用时只调度一次，避免对大贴图重复做内容比对
-        foreach (var (to, blobFile) in scheduled.Distinct())
+        // 同一 (to, blob) 被多条映射复用时只调度一次，避免对大贴图重复做内容比对。
+        // **并行**：压缩 blob 需解压（CPU + IO 双密集），逐贴图独立 → 多线程跑满多核，缩短等待。
+        var distinct = scheduled.Distinct().ToArray();
+        int written = 0, skipped = 0;
+        DedicatedWorkers.Run(distinct, TextureDegree(), item =>
         {
-            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile);
+            var (to, blobFile) = item;
+            var src = BlobStore.ResolveBlobPath(resourceDir, blobFile);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
 
-            if (File.Exists(dst) && SameContent(dst, src))
-            {
-                report.SkippedTextures++;
-                continue;
-            }
+            if (SameAsBlob(dst, blobFile)) { Interlocked.Increment(ref skipped); return; }
 
-            if (File.Exists(dst)) File.Delete(dst);
-            if (!TryCreateHardLink(dst, src))
-                File.Copy(src, dst, overwrite: true);
-
-            report.WrittenTextures++;
-        }
+            BlobStore.MaterializeBlob(src, dst); // 原子落定（先临时再替换，不"先删后写"）
+            Interlocked.Increment(ref written);
+        }, CancellationToken.None);
+        report.WrittenTextures += written;
+        report.SkippedTextures += skipped;
 
         // 清理不再被引用的贴图（WTSM 由程序维护）。
         // 保留集 = **真正被调度写出**的文件（相对路径，to 可能含子目录）；
@@ -370,7 +369,7 @@ public static class OutputService
                 // 指向游戏本体资源（无本地贴图）→ 条目照写，无需调度
                 if (string.IsNullOrWhiteSpace(mapping.TextureRef)) continue;
 
-                var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
+                var blobPath = BlobStore.ResolveBlobPath(resourceDir, mapping.TextureRef);
                 if (!File.Exists(blobPath))
                 {
                     report.Warnings.Add(Loc.Format("output.warn.textureMissing", mapping.FromModule, mapping.ToFile));
@@ -401,32 +400,31 @@ public static class OutputService
             }
         }
 
-        // ① 贴图（blk 是"生效点"，最后写）
-        foreach (var (to, blob) in scheduled)
+        // ① 贴图（blk 是"生效点"，最后写）—— 逐贴图独立，压缩 blob 需解压，**并行**跑满多核
+        int writtenTex = 0, skippedTex = 0;
+        var texGate = new object();
+        DedicatedWorkers.Run(scheduled, TextureDegree(), item =>
         {
-            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blob);
+            var (to, blob) = item;
+            var src = BlobStore.ResolveBlobPath(resourceDir, blob);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
 
             try
             {
-                if (File.Exists(dst) && SameContent(dst, src))
-                {
-                    report.SkippedTextures++;
-                    continue;
-                }
+                if (SameAsBlob(dst, blob)) { Interlocked.Increment(ref skippedTex); return; }
 
-                if (File.Exists(dst)) File.Delete(dst);
-                if (!TryCreateHardLink(dst, src)) File.Copy(src, dst, overwrite: true);
-
-                report.WrittenTextures++;
+                BlobStore.MaterializeBlob(src, dst); // 原子落定（先临时再替换，不"先删后写"）
+                Interlocked.Increment(ref writtenTex);
             }
             catch (Exception ex)
             {
-                report.Warnings.Add(Loc.Format("output.warn.writeFailed", to, ex.Message));
+                lock (texGate) report.Warnings.Add(Loc.Format("output.warn.writeFailed", to, ex.Message));
             }
-        }
+        }, CancellationToken.None);
+        report.WrittenTextures += writtenTex;
+        report.SkippedTextures += skippedTex;
 
         // ② blk：有包的写包内容；没包但要保槽位的写空 blk
         foreach (var (vehicleId, blkText) in blkWrites)
@@ -484,27 +482,16 @@ public static class OutputService
         }
     }
 
-    private static bool SameContent(string a, string b)
+    // dst 是否已是最新的原内容：直接用 blob 文件名里的原始内容哈希比对（无需解压），
+    // 比逐字节 SameContent 更快，且对压缩 blob 仍然正确。
+    private static bool SameAsBlob(string dst, string blobFile)
     {
-        var fa = new FileInfo(a);
-        var fb = new FileInfo(b);
-        if (fa.Length != fb.Length) return false;
-        return string.Equals(BlobStore.HashFile(a), BlobStore.HashFile(b), StringComparison.Ordinal);
+        if (!File.Exists(dst)) return false;
+        var expected = BlobStore.BlobHashOf(blobFile);
+        if (string.IsNullOrEmpty(expected)) return false;
+        return string.Equals(BlobStore.HashFile(dst), expected, StringComparison.Ordinal);
     }
 
-    // 同盘硬链接省空间；跨卷失败则回退复制。
-    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
-
-    private static bool TryCreateHardLink(string linkPath, string existingPath)
-    {
-        try
-        {
-            return CreateHardLink(linkPath, existingPath, IntPtr.Zero);
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    /// <summary>贴图落盘的并行度：解压 + 写盘是 CPU + IO 双密集，给满核数但不超过 8。</summary>
+    private static int TextureDegree() => Math.Clamp(Environment.ProcessorCount, 2, 8);
 }

@@ -524,6 +524,15 @@ public partial class MainViewModel : ObservableObject
 
         Config.PropertyChanged += OnConfigChanged;
 
+        // 存储压缩开关重启恢复（§6.5 扩展）：<c>CompressionEnabled</c> 是 BlobStore 的静态运行标志，
+        // 只在属性变更回调里设置；反序列化发生在订阅之前，启动不会重挂——这里补一次。
+        // CompressBlobs=true 必然是在用户确认过知会之后才落盘的（noticeSeen 同步置位），
+        // 所以启动只恢复标志、不弹知会、不重跑全量压缩（库早已压缩好，重跑只会徒增扫描）。
+        BlobStore.CompressionEnabled = Config.CompressBlobs;
+
+        // 启动即判定一次：数据库若整体是压缩态（新设备 / 配置目录重建后），把开关同步为「开」（不触发重压）
+        RefreshPendingConversion(syncToggle: true);
+
         // Saves 目录自动探测（§3.14）：默认路径存在即静默采用；失败不阻塞（设置页可手选，不参与迁移）
         if (string.IsNullOrWhiteSpace(Config.SavesDirectory))
         {
@@ -543,7 +552,8 @@ public partial class MainViewModel : ObservableObject
 
         // 附属载具（§3.19）：绑上/解绑后立刻重建该组输出 —— 子载具已激活的包迁到父目录，
         // 解绑则把它的文件从父目录清掉（"先写后删"由 RebuildGroup 保证不残留）
-        Vehicles.SubVehiclesChanged += (_, childId) => Skins.SyncSubVehicleGroup(childId);
+        // 解绑后 ParentOf(child) 已为空，必须把事件里的 parent 传下去，否则会去重建子载具自己的目录
+        Vehicles.SubVehiclesChanged += (parent, childId) => _ = Skins.SyncSubVehicleGroupAsync(childId, outputParent: parent);
 
         // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
         if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
@@ -1143,6 +1153,7 @@ public partial class MainViewModel : ObservableObject
             case nameof(AppConfig.ResourceDirectory):
                 // 存储条画的是"资源目录所在磁盘" → 换了目录就是换了一块盘，必须重测（顺带重测，不弹气泡）
                 StartStorageMeasure(announce: false);
+                RefreshPendingConversion(syncToggle: true); // 换了库 → 重新判定中间态，并把开关同步成新库的实际形态
                 break;
 
             case nameof(AppConfig.PartReuseEnabled):
@@ -1157,6 +1168,11 @@ public partial class MainViewModel : ObservableObject
             case nameof(AppConfig.GameSyncEnabled):
                 // 开启即尝试同步一次（游戏运行中 → 服务端报告跳过原因）
                 if (Config.GameSyncEnabled) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
+                break;
+
+            case nameof(AppConfig.CompressBlobs):
+                OnCompressBlobsToggled();
+                RefreshPendingConversion(); // 开关变了 → 目标形态变了，重算是否还存在中间态
                 break;
         }
 
@@ -1204,6 +1220,378 @@ public partial class MainViewModel : ObservableObject
         Config.PartReuseNoticeSeen = true; // 落盘由 OnConfigChanged 收尾统一做
 
         OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
+    }
+
+    /// <summary>
+    /// 是否存在「与当前模式不符」的 blob（中间态：压缩 / 还原被取消或崩溃后残留的反向格式）。
+    /// 只有它为真时才显示「压缩现有库 / 还原为未压缩」按钮——一切正常（全库已是当前模式）时按钮无意义，
+    /// 转换方向由 <see cref="AppConfig.CompressBlobs"/> 决定（开 → 压成 .wtsc，关 → 还原原始文件）。
+    /// </summary>
+    [ObservableProperty] private bool _hasPendingConversion;
+
+    /// <summary>
+    /// 刷新 <see cref="HasPendingConversion"/>：只看文件名后缀、不读内容。**在后台线程枚举**（几十万文件
+    /// 时不会卡 UI），算完回 UI 线程赋标志。
+    /// </summary>
+    /// <param name="syncToggle">
+    /// 数据库载入后是否把开关同步成库的实际形态：整库都是压缩态而开关是关 → 自动置开（新设备补完配置目录后
+    /// 不误导，也不触发全库重压）。只在启动 / 换资源目录 / 进设置页传 <c>true</c>，操作进行中（<see cref="AppBusy"/>）
+    /// 不抢；压缩 / 还原结束后的刷新传 <c>false</c>，避免把用户刚设的方向又翻回去。
+    /// </param>
+    private void RefreshPendingConversion(bool syncToggle = false)
+    {
+        var dir = Config.ResourceDirectory;
+        var wantCompressed = Config.CompressBlobs;
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            HasPendingConversion = false;
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            bool hasCompressed = false, hasPlain = false;
+            try
+            {
+                var blobsDir = BlobStore.BlobsDirectory(dir);
+                if (Directory.Exists(blobsDir))
+                {
+                    foreach (var f in Directory.EnumerateFiles(blobsDir))
+                    {
+                        if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (BlobStore.IsCompressed(f)) hasCompressed = true; else hasPlain = true;
+                        if (hasCompressed && hasPlain) break; // 混合：无需继续扫
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 读不到就当没有，不误显示按钮、也不误同步
+            }
+
+            // 是否存在与**目标形态**不符的 blob（有 → 显示续做按钮）
+            var pending = wantCompressed ? hasPlain : hasCompressed;
+
+            // 数据库整库压缩、而开关是关 → 同步为开（不触发全库重压，只改开关与运行标志）
+            var shouldSync = syncToggle && hasCompressed && !hasPlain && !wantCompressed
+                             && !AppBusy.IsBusy && _compressionConfirmDepth == 0;
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null)
+            {
+                if (shouldSync)
+                {
+                    BlobStore.CompressionEnabled = true;
+                    RevertCompressToggle(true);
+                    HasPendingConversion = false;
+                }
+                else
+                {
+                    HasPendingConversion = pending; // 无 UI 线程（自检 / 退出中）→ 直接赋值
+                }
+                return;
+            }
+
+            dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+            {
+                // 扫描期间目录 / 开关已变 → 这一趟结果作废（会由更新的那次刷新覆盖）
+                if (!string.Equals(Config.ResourceDirectory, dir, StringComparison.OrdinalIgnoreCase)) return;
+                if (Config.CompressBlobs != wantCompressed) return;
+
+                if (shouldSync && !AppBusy.IsBusy && _compressionConfirmDepth == 0)
+                {
+                    BlobStore.CompressionEnabled = true;
+                    RevertCompressToggle(true); // 程序化置开：不触发 OnCompressBlobsToggled 的批处理
+                    HasPendingConversion = false;
+                    return;
+                }
+
+                HasPendingConversion = pending;
+            }));
+        });
+    }
+
+    /// <summary>
+    /// 压缩开关重入哨兵：程序化回滚 <see cref="AppConfig.CompressBlobs"/> 时会再次触发
+    /// <see cref="OnCompressBlobsToggled"/>，用它跳过重入（否则回滚会误触发另一方向的分支）。
+    /// </summary>
+    private bool _compressToggleGuard;
+
+    /// <summary>
+    /// 正在显示"关闭 / 还原"多层确认框的深度（&gt;0 表示确认中）。模态框会跑嵌套消息泵，
+    /// 期间到达的自动同步回调必须被挡掉，否则会把开关翻成开启、与用户正在确认的"关闭 / 还原"打架。
+    /// </summary>
+    private int _compressionConfirmDepth;
+
+    /// <summary>
+    /// 存储压缩开关（§6.5 扩展）：开启 → 首次弹知会，确认后记住并立即压缩现有库（遮罩 + 全局锁）；
+    /// 关闭 → **多层知会**逐层确认，全部确认后把整个库解压还原（遮罩 + 全局锁，可取消）。
+    /// </summary>
+    private void OnCompressBlobsToggled()
+    {
+        // 程序化回滚开关引起的重入：直接忽略
+        if (_compressToggleGuard) return;
+
+        if (!Config.CompressBlobs)
+        {
+            // 关闭压缩 = 释放全库（解压还原）。关闭前多层知会，全部确认才动手
+            if (!ConfirmDisableCompression())
+            {
+                RevertCompressToggle(true); // 任一确认取消 → 保持启用
+                return;
+            }
+
+            BlobStore.CompressionEnabled = false; // 之后的新导入 / 迁移不再压缩
+            _ = RunDecompressAsync();
+            return;
+        }
+
+        // 新导入立即压缩（迁移进行中入库的新文件也压）
+        BlobStore.CompressionEnabled = true;
+
+        if (Config.CompressBlobsNoticeSeen)
+        {
+            _ = RunRecompressAsync();
+            return;
+        }
+
+        var accepted = MessageDialog.Confirm(
+            Loc.Format("settings.compress.notice",
+                Loc["settings.compress.noticeOk"], Loc["common.cancel"]),
+            Loc["settings.compress.noticeTitle"],
+            Loc["settings.compress.noticeOk"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
+
+        if (!accepted)
+        {
+            // 关键：取消启用 → 运行标志也要回滚，否则"开关显示关、实际新导入仍在压缩"
+            BlobStore.CompressionEnabled = false;
+            RevertCompressToggle(false);
+            return;
+        }
+
+        Config.CompressBlobsNoticeSeen = true;
+        _ = RunRecompressAsync();
+    }
+
+    /// <summary>程序化回滚压缩开关（不触发 <see cref="OnCompressBlobsToggled"/> 的重入）。</summary>
+    private void RevertCompressToggle(bool enabled)
+    {
+        _compressToggleGuard = true;
+        try { Config.CompressBlobs = enabled; }
+        finally { _compressToggleGuard = false; }
+    }
+
+    /// <summary>
+    /// 还原为未压缩前的**多层知会**：逐层 <see cref="MessageDialog.Confirm"/>，任一层取消即整体取消。
+    /// 第 1 层讲清后果（全库解压、耗时、锁定、可取消），第 2 层做最终确认（重写全库）。
+    /// </summary>
+    private bool ConfirmDisableCompression()
+    {
+        // 确认期间标记深度：模态框的嵌套消息泵里若跑到自动同步回调，会因 depth>0 被挡掉
+        _compressionConfirmDepth++;
+        try
+        {
+            if (!MessageDialog.Confirm(
+                    Loc.Format("settings.compress.disableNotice.1",
+                        Loc["settings.compress.continue"], Loc["common.cancel"]),
+                    Loc["settings.compress.disableTitle"],
+                    Loc["settings.compress.continue"], Loc["common.cancel"],
+                    icon: DialogIcon.Warning))
+            {
+                return false;
+            }
+
+            if (!MessageDialog.Confirm(
+                    Loc.Format("settings.compress.disableNotice.2",
+                        Loc["settings.compress.disableConfirm"], Loc["common.cancel"]),
+                    Loc["settings.compress.disableTitle"],
+                    Loc["settings.compress.disableConfirm"], Loc["common.cancel"],
+                    icon: DialogIcon.Warning))
+            {
+                return false;
+            }
+
+            // 第 3 层（仅当磁盘可能不够时）：估算所需空间，不足则**提醒但不阻止**
+            WarnIfDecompressSpaceInsufficient();
+            return true;
+        }
+        finally
+        {
+            _compressionConfirmDepth--;
+        }
+    }
+
+    /// <summary>
+    /// 解压前的空间估算：按「压缩 blob 总大小 × 10」估算所需空间，若磁盘可用空间更少则弹一轮
+    /// <see cref="MessageDialog.Warn"/>（单按钮）——**只提醒、不阻止**，用户清空间或坚持继续都行。
+    /// </summary>
+    private void WarnIfDecompressSpaceInsufficient()
+    {
+        var dir = Config.ResourceDirectory;
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return;
+
+        var (compressed, estimated) = BlobStore.EstimateDecompressSpace(dir);
+        if (compressed <= 0) return; // 没有压缩 blob，无需估算
+
+        var free = FreeSpaceBytes(dir);
+        if (free < 0 || free >= estimated) return; // 读不到磁盘信息 → 不打扰
+
+        MessageDialog.Warn(
+            Loc.Format("settings.compress.spaceInsufficient",
+                DataResetService.FormatSize(estimated), DataResetService.FormatSize(free)),
+            Loc["settings.compress.spaceInsufficientTitle"]);
+    }
+
+    /// <summary>资源目录所在磁盘的可用空间（字节）；读不到返回 -1。</summary>
+    private static long FreeSpaceBytes(string dir)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(dir));
+            if (string.IsNullOrEmpty(root)) return -1;
+            return new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>
+    /// 全量压缩现有库（开启压缩开关时自动触发，或点「压缩现有库」手动触发）：
+    /// 全局独占锁防并发导入，统一遮罩显示进度与取消。已压缩的 blob 跳过；单文件失败保留原样、下次重试。
+    /// </summary>
+    private async Task RunRecompressAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Config.ResourceDirectory)
+            || !Directory.Exists(Config.ResourceDirectory))
+        {
+            ShowStatus(Loc["settings.gc.needResource"]);
+            return;
+        }
+
+        var resourceDir = Config.ResourceDirectory;
+        using var busy = AppBusy.Enter();
+        using var cts = new CancellationTokenSource();
+        using (var scope = BusyIndicator.Instance.Begin(Loc["settings.compress.running"], cts.Cancel))
+        {
+            var reporter = new Progress<(int done, int total, string? current)>(p =>
+            {
+                scope.Report(p.done, p.total);
+                if (p.current != null) scope.SetDetail(p.current);
+            });
+            try
+            {
+                var result = await Task.Run(
+                    () => BlobStore.RecompressAll(resourceDir, reporter, cts.Token), cts.Token);
+                if (result.compressed == 0 && result.failed == 0)
+                {
+                    ShowStatus(Loc["settings.compress.nothing"]);
+                }
+                else if (result.failed > 0)
+                {
+                    // 有文件校验/IO 失败：原文件已保留，如实回报，避免"完成"假象
+                    ShowStatus(Loc.Format("settings.compress.doneWithErrors", result.compressed,
+                        result.failed, DataResetService.FormatSize(result.savedBytes)));
+                }
+                else
+                {
+                    ShowStatus(Loc.Format("settings.compress.done", result.compressed,
+                        DataResetService.FormatSize(result.savedBytes)));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                ShowStatus(Loc["settings.compress.canceled"]);
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(BlobStore.IsDiskFullException(ex)
+                    ? Loc["settings.compress.diskFull"]
+                    : Loc.Format("settings.compress.failed", ex.Message));
+            }
+            finally
+            {
+                RefreshPendingConversion(); // 结束/取消后重算中间态（取消会留残留 → 显示续做按钮）
+                StartStorageMeasure(announce: false); // 压缩后库体积变小 → 让存储条重测占用（静默，慢到 1.5s 才补一句）
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void CompressLibrary() => _ = RunRecompressAsync();
+
+    /// <summary>
+    /// 全库解压还原（关闭压缩开关时自动触发，或点「还原为未压缩」手动触发，含取消后接着完成）：
+    /// 全局独占锁防并发导入，统一遮罩显示进度与取消。只处理压缩形态；单文件失败保留原样、下次重试。
+    /// </summary>
+    private async Task RunDecompressAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Config.ResourceDirectory)
+            || !Directory.Exists(Config.ResourceDirectory))
+        {
+            ShowStatus(Loc["settings.gc.needResource"]);
+            return;
+        }
+
+        var resourceDir = Config.ResourceDirectory;
+        using var busy = AppBusy.Enter();
+        using var cts = new CancellationTokenSource();
+        using (var scope = BusyIndicator.Instance.Begin(Loc["settings.compress.decompressing"], cts.Cancel))
+        {
+            var reporter = new Progress<(int done, int total, string? current)>(p =>
+            {
+                scope.Report(p.done, p.total);
+                if (p.current != null) scope.SetDetail(p.current);
+            });
+            try
+            {
+                var result = await Task.Run(
+                    () => BlobStore.DecompressAll(resourceDir, reporter, cts.Token), cts.Token);
+                if (result.decompressed == 0 && result.failed == 0)
+                {
+                    ShowStatus(Loc["settings.compress.decompressNothing"]);
+                }
+                else if (result.failed > 0)
+                {
+                    // 失败的原压缩文件已保留，如实回报，可重试
+                    ShowStatus(Loc.Format("settings.compress.decompressDoneWithErrors",
+                        result.decompressed, result.failed));
+                }
+                else
+                {
+                    ShowStatus(Loc.Format("settings.compress.decompressDone", result.decompressed));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                ShowStatus(Loc["settings.compress.decompressCanceled"]);
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(BlobStore.IsDiskFullException(ex)
+                    ? Loc["settings.compress.diskFull"]
+                    : Loc.Format("settings.compress.decompressFailed", ex.Message));
+            }
+            finally
+            {
+                RefreshPendingConversion(); // 结束/取消后重算中间态（取消会留残留 → 显示续做按钮）
+                StartStorageMeasure(announce: false); // 还原后库体积变大 → 让存储条重测占用（静默，慢到 1.5s 才补一句）
+            }
+        }
+    }
+
+    /// <summary>手动「还原为未压缩」：多层确认 → 关闭压缩开关 → 全库解压还原（也可用于取消后接着完成）。</summary>
+    [RelayCommand]
+    private void DecompressLibrary()
+    {
+        if (!ConfirmDisableCompression())
+            return; // 取消：保持当前开关状态
+
+        RevertCompressToggle(false);
+        BlobStore.CompressionEnabled = false;
+        _ = RunDecompressAsync();
     }
 
     // ---------- 左侧导航折叠（界面设计规范 §5.13）----------
@@ -1521,6 +1909,7 @@ public partial class MainViewModel : ObservableObject
                         //（见 StartStorageMeasure）——否则又是一次整窗冻结。
                         // 顺带重测不弹气泡：条本身是反馈，每次都弹会把气泡刷成噪音
                         StartStorageMeasure(announce: false);
+                        RefreshPendingConversion(syncToggle: true); // 进设置页时校正续做按钮，并把开关同步成库的实际形态
                         break;
                 }
             }));

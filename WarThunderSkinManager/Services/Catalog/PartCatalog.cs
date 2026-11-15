@@ -150,7 +150,7 @@ public static class PartCatalog
                     if (!blobs.TryGetValue(mapping.ToFile, out var blob) || string.IsNullOrWhiteSpace(blob)) continue;
 
                     var extension = Path.GetExtension(mapping.ToFile).ToLowerInvariant();
-                    if (!File.Exists(BlobStore.BlobPath(resourceDir, blob, extension))) continue;
+                    if (!BlobStore.BlobExists(resourceDir, blob, extension)) continue;
 
                     if (!table.TryGetValue(key, out var list))
                     {

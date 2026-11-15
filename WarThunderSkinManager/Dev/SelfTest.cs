@@ -57,6 +57,224 @@ internal static class SelfTest
             log.AppendLine($"blobs       : {BlobStore.EnumerateBlobs(resourceDir).Length}");
             log.AppendLine($"warnings    : {result.Warnings.Count}");
 
+            // ---- 压缩 blob 无损闭环：Store 压缩 → CopyBlobTo 解压写出 → 哈希应等于原始内容哈希 ----
+            // 合成样本无真实贴图时，造随机字节文件强制走一遍压缩 → 解压，确保闭环无损。
+            bool lossless;
+            var blobPaths = BlobStore.EnumerateBlobs(resourceDir);
+            if (blobPaths.Length > 0)
+            {
+                var b0 = blobPaths[0];
+                var losslessTmp = Path.Combine(workDir, "lossless_check.bin");
+                BlobStore.CopyBlobTo(b0, losslessTmp);
+                lossless = string.Equals(BlobStore.HashFile(losslessTmp),
+                    BlobStore.BlobHashOf(b0), StringComparison.Ordinal);
+                File.Delete(losslessTmp);
+            }
+            else
+            {
+                var probe = Path.Combine(workDir, "lossless_probe.bin");
+                var rnd = new byte[1 << 20];
+                using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                    rng.GetBytes(rnd);
+                File.WriteAllBytes(probe, rnd);
+                var hash = BlobStore.Store(resourceDir, probe, out _);
+                var restored = Path.Combine(workDir, "lossless_restored.bin");
+                BlobStore.CopyBlobTo(BlobStore.ResolveBlobPath(resourceDir, hash, ".bin"), restored);
+                lossless = string.Equals(BlobStore.HashFile(restored), hash, StringComparison.Ordinal);
+                File.Delete(probe);
+                File.Delete(restored);
+            }
+
+            log.AppendLine($"blob 压缩无损闭环 : {lossless}");
+
+            // ---- 压缩开关闭环 + 存量迁移无损 ----
+            // 开启压缩后 Store → OpenBlob 读回应逐字节一致；再对全库 RecompressAll，
+            // 逐个 OpenBlob 读回哈希应等于文件名（内容哈希），证明迁移无损。
+            // ---- 压缩开关闭环 + 存量迁移无损 ----
+            // 构造一个未压缩 blob（开关关）确保 RecompressAll 有可压缩对象，验证迁移路径；
+            // 再开启压缩，RecompressAll 将其压缩（无损），并验证全库读回一致。
+            BlobStore.CompressionEnabled = false;
+            var migrateProbe = Path.Combine(workDir, "migrate_probe.bin");
+            var mprnd = new byte[1 << 20];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                rng.GetBytes(mprnd);
+            File.WriteAllBytes(migrateProbe, mprnd);
+            var mhash = BlobStore.Store(resourceDir, migrateProbe, out _);
+            File.Delete(migrateProbe);
+            var beforeComp = BlobStore.IsCompressed(BlobStore.ResolveBlobPath(resourceDir, mhash, ".bin"));
+
+            BlobStore.CompressionEnabled = true;
+            var cprobe = Path.Combine(workDir, "compress_probe.bin");
+            var crnd = new byte[1 << 20];
+            using (var rng2 = System.Security.Cryptography.RandomNumberGenerator.Create())
+                rng2.GetBytes(crnd);
+            File.WriteAllBytes(cprobe, crnd);
+            var chash = BlobStore.Store(resourceDir, cprobe, out _);
+            bool compressLossless;
+            using (var cs = BlobStore.OpenBlob(BlobStore.ResolveBlobPath(resourceDir, chash, ".bin")))
+            {
+                using var ms = new MemoryStream();
+                cs.CopyTo(ms);
+                var ch = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ms.ToArray())).ToLowerInvariant();
+                compressLossless = string.Equals(ch, chash, StringComparison.Ordinal);
+            }
+            var cIsCompressed = BlobStore.IsCompressed(BlobStore.ResolveBlobPath(resourceDir, chash, ".bin"));
+            File.Delete(cprobe);
+            log.AppendLine($"压缩开关 Store→OpenBlob 无损 : {compressLossless}, 已压缩 : {cIsCompressed}");
+
+            var recompress = BlobStore.RecompressAll(resourceDir, null, System.Threading.CancellationToken.None);
+
+            // 诊断：RecompressAll 后每个真实 blob 的压缩状态（定位 migrateProbe 是否被压缩）
+            foreach (var b in BlobStore.EnumerateBlobs(resourceDir))
+            {
+                if (b.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+                log.AppendLine($"  post {Path.GetFileName(b)} comp={BlobStore.IsCompressed(b)}");
+            }
+            log.AppendLine($"migrateProbe 压缩后 IsCompressed={BlobStore.IsCompressed(BlobStore.ResolveBlobPath(resourceDir, mhash, ".bin"))}");
+
+            bool recompressLossless = true;
+            foreach (var b in BlobStore.EnumerateBlobs(resourceDir))
+            {
+                if (b.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue; // 跳过临时残留
+                try
+                {
+                    using var s = BlobStore.OpenBlob(b);
+                    using var ms = new MemoryStream();
+                    s.CopyTo(ms);
+                    var h = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ms.ToArray())).ToLowerInvariant();
+                    if (!string.Equals(h, BlobStore.BlobHashOf(b), StringComparison.Ordinal))
+                    {
+                        recompressLossless = false;
+                        log.AppendLine($"RecompressAll 不匹配: {Path.GetFileName(b)}");
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    recompressLossless = false;
+                    log.AppendLine($"RecompressAll 读失败: {Path.GetFileName(b)} {ex.GetType().Name}");
+                    break;
+                }
+            }
+            log.AppendLine($"RecompressAll 无损 : {recompressLossless}, 压缩 {recompress.compressed} 个, 失败 {recompress.failed} 个, 节省 {recompress.savedBytes} 字节（migrateProbe 之前未压缩={!beforeComp}）");
+            BlobStore.CompressionEnabled = false; // 复位，避免影响后续导出校验
+
+            // ---- 解压还原闭环（关闭压缩走 DecompressAll）：独立临时库，压缩 → 还原 → 回到未压缩且无损 ----
+            {
+                var ddir = Path.Combine(workDir, "decompress-probe");
+                BlobStore.CompressionEnabled = true;
+                var dfile = Path.Combine(workDir, "decompress_probe.bin");
+                var drnd = new byte[1 << 19];
+                using (var rng3 = System.Security.Cryptography.RandomNumberGenerator.Create())
+                    rng3.GetBytes(drnd);
+                File.WriteAllBytes(dfile, drnd);
+                var dhash = BlobStore.Store(ddir, dfile, out _);
+                File.Delete(dfile);
+                var dBefore = BlobStore.ResolveBlobPath(ddir, dhash, ".bin");
+                var dWasCompressed = BlobStore.IsCompressed(dBefore);
+                var (spaceComp, spaceEst) = BlobStore.EstimateDecompressSpace(ddir, 10);
+                var spaceOk = spaceComp > 0 && spaceEst == spaceComp * 10;
+                BlobStore.CompressionEnabled = false;
+                var dec = BlobStore.DecompressAll(ddir, null, System.Threading.CancellationToken.None);
+                var dAfter = BlobStore.ResolveBlobPath(ddir, dhash, ".bin");
+                var dIsUncompressed = !BlobStore.IsCompressed(dAfter);
+                bool dLossless;
+                using (var ds = BlobStore.OpenBlob(dAfter))
+                    dLossless = string.Equals(
+                        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ds)).ToLowerInvariant(),
+                        dhash, StringComparison.Ordinal);
+                log.AppendLine($"解压还原闭环 : 原已压缩={dWasCompressed}（应 True）, 空间估算 {spaceComp}×10={spaceEst} 正确={spaceOk}（应 True）, 还原 {dec.decompressed} 个 / 失败 {dec.failed} 个（应 1 / 0）, 还原后未压缩={dIsUncompressed}（应 True）, 无损={dLossless}（应 True）");
+                Directory.Delete(ddir, recursive: true);
+            }
+
+            // ---- 全库压缩→解压往返：逐文件无损 + 体积不膨胀 + 文件集合不变 + 无残留 ----
+            // 用固定/随机混合内容造 12 个 blob，证明"压缩再解压"后体积与文件集合都回到原始（排除残留文件导致的虚胖）。
+            {
+                var rdir = Path.Combine(workDir, "roundtrip-probe");
+                var rblobs = BlobStore.BlobsDirectory(rdir);
+                BlobStore.CompressionEnabled = false;
+
+                for (var i = 0; i < 12; i++)
+                {
+                    var src = Path.Combine(workDir, $"rt_src_{i}.bin");
+                    var len = 200_000 + i * 50_000;
+                    var data = new byte[len];
+                    if (i % 2 == 0)
+                        for (var k = 0; k < len; k++) data[k] = (byte)(k % 7); // 高度可压缩
+                    else
+                        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create()) rng.GetBytes(data); // 不可压缩
+                    File.WriteAllBytes(src, data);
+                    BlobStore.Store(rdir, src, out _);
+                    File.Delete(src);
+                }
+
+                long beforeBytes = 0;
+                var beforeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var f in Directory.GetFiles(rblobs))
+                {
+                    beforeNames.Add(Path.GetFileName(f));
+                    beforeBytes += new FileInfo(f).Length;
+                }
+
+                BlobStore.CompressionEnabled = true;
+                var rc = BlobStore.RecompressAll(rdir, null, System.Threading.CancellationToken.None);
+                long midBytes = 0;
+                var midUncompressed = 0;
+                foreach (var f in Directory.GetFiles(rblobs))
+                {
+                    midBytes += new FileInfo(f).Length;
+                    if (!f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) && !BlobStore.IsCompressed(f)) midUncompressed++;
+                }
+
+                BlobStore.CompressionEnabled = false;
+                var dc = BlobStore.DecompressAll(rdir, null, System.Threading.CancellationToken.None);
+                long afterBytes = 0;
+                var afterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var afterLossless = true;
+                var afterTmp = 0;
+                foreach (var f in Directory.GetFiles(rblobs))
+                {
+                    afterNames.Add(Path.GetFileName(f));
+                    afterBytes += new FileInfo(f).Length;
+                    if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) { afterTmp++; afterLossless = false; continue; }
+                    using var s = BlobStore.OpenBlob(f);
+                    var h = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(s)).ToLowerInvariant();
+                    if (!string.Equals(h, BlobStore.BlobHashOf(f), StringComparison.Ordinal)) afterLossless = false;
+                }
+
+                var sizeSame = beforeBytes == afterBytes;
+                var namesSame = beforeNames.SetEquals(afterNames);
+                log.AppendLine($"全库往返 : 压缩 {rc.compressed} 个/失败 {rc.failed} → 体积 {beforeBytes}→{midBytes}，未压缩残留 {midUncompressed}（应 0）；解压 {dc.decompressed} 个/失败 {dc.failed} → 体积 {afterBytes}，=原始={sizeSame}（应 True），文件集一致={namesSame}（应 True），逐文件无损={afterLossless}（应 True），.tmp 残留={afterTmp}（应 0）");
+                Directory.Delete(rdir, recursive: true);
+            }
+
+            // ---- 自满足：压缩态自描述 + 仅凭资源目录（配置目录全丢）即可重建 ----
+            // 模拟"C 盘配置目录被摧毁、新程序只拿资源目录"：新建空配置目录、关闭压缩开关，
+            // 仅凭库内 `.wtsc` 后缀识别压缩态，验证贴图引用与重建结果全部可解析。
+            {
+                var freshConfigDir = Path.Combine(workDir, "fresh-config");
+                Directory.CreateDirectory(freshConfigDir);
+                BlobStore.CompressionEnabled = false; // 新设备默认不压缩；读取不依赖它
+
+                var libMetas = PackageStore.LoadAll(resourceDir).ToList();
+                var libTextures = libMetas.SelectMany(m => m.Textures).ToList();
+                var libCompressed = libTextures.Count(t =>
+                    BlobStore.IsCompressed(BlobStore.ResolveBlobPath(resourceDir, t.Blob, Path.GetExtension(t.To).ToLowerInvariant())));
+                var libResolvable = libTextures.All(t =>
+                    BlobStore.BlobExists(resourceDir, t.Blob, Path.GetExtension(t.To).ToLowerInvariant()));
+
+                var rebuiltVehicles = VehicleAggregator.BuildAll(resourceDir);
+                var rebuiltRefs = rebuiltVehicles.SelectMany(v => v.SkinPackages)
+                    .SelectMany(p => p.Mappings)
+                    .Select(m => m.TextureRef)
+                    .Where(r => !string.IsNullOrEmpty(r))
+                    .ToList();
+                var rebuiltResolvable = rebuiltRefs.All(r => File.Exists(BlobStore.ResolveBlobPath(resourceDir, r)));
+
+                log.AppendLine($"自满足     : 仅凭库 包 {libMetas.Count} 个 / 贴图引用 {libTextures.Count} 条（压缩态 {libCompressed} 条），全部可解析 = {libResolvable}（应 True）；"
+                             + $"重建映射带贴图 {rebuiltRefs.Count} 条、引用全部可解析 = {rebuiltResolvable}（应 True）");
+            }
+
             var vehicles = VehicleAggregator.BuildAll(resourceDir);
 
             log.AppendLine();
@@ -1919,7 +2137,7 @@ internal static class SelfTest
             PackageStore.Delete(resourceDir, resPkgMeta.Id);
             BlobGc.Collect(resourceDir);
             PartCatalog.Invalidate();
-            var blobAPath = BlobStore.BlobPath(resourceDir, blobA, ".dds");
+            var blobAPath = BlobStore.ResolveBlobPath(resourceDir, blobA, ".dds");
             var surviveVehicle = VehicleAggregator.BuildVehicle(resourceDir, firstVehicleId);
             var survivePkg = surviveVehicle!.SkinPackages.First(
                 p => string.Equals(p.Id, mixMeta.Id, StringComparison.Ordinal));

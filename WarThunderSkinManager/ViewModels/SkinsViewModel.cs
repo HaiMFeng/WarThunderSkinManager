@@ -909,7 +909,7 @@ public partial class SkinsViewModel : ObservableObject
     /// ——右键激活是明确要输出这套包，不该还要再点一次「同步此载具」。
     /// </summary>
     [RelayCommand]
-    private void ActivatePackage(SkinPackage? package)
+    private async Task ActivatePackage(SkinPackage? package)
     {
         if (package == null || SelectedVehicle == null) return;
         if (!EnsureConfigDir()) return;
@@ -922,14 +922,23 @@ public partial class SkinsViewModel : ObservableObject
         SubVehicleService.TryAutoBind(vehicleId,
             id => _allVehicles.Any(vehicle => string.Equals(vehicle.Id, id, StringComparison.OrdinalIgnoreCase)));
 
-        // 激活 = 明确要输出这套包 → 立即落盘（游戏热重载随即生效，§3.8）
         var activated = Loc.Format("pkg.activated", package.Name);
-        var sync = SyncCurrentVehicleMessage(out var blkCreated);
 
+        // 收集 + 落盘都在闸门内：解压 + 写盘是重活（丢后台），收集在闸门内保证不会用排队期间的过期状态
+        var (report, syncError) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(vehicleId, package.Id));
+
+        if (report == null)
+        {
+            ShowStatus(Loc.Format("skins.syncFailed", syncError ?? ""));
+            GameSkinSelectionChanged?.Invoke(); // 激活状态变化 → 游戏内同步（§3.14）
+            return;
+        }
+
+        // 回 UI 线程：状态文案 + 首次生成提示 + 游戏内同步
+        var sync = FormatSyncMessage(report, null);
         ShowStatus(sync.Length > 0 ? Loc.Format("pkg.activatedSynced", package.Name, sync) : activated);
 
-        // 首次生成该载具的 blk → 提示到游戏里选中这套用户涂装
-        if (blkCreated) PromptFirstOutput(vehicleId);
+        if (report is { AnyBlkCreated: true }) PromptFirstOutput(vehicleId);
 
         GameSkinSelectionChanged?.Invoke(); // 激活状态变化 → 游戏内同步（§3.14）
     }
@@ -939,7 +948,7 @@ public partial class SkinsViewModel : ObservableObject
     /// ——不再输出就该把旧的 blk 与贴图清掉，否则游戏里还会继续显示那套已取消的涂装。
     /// </summary>
     [RelayCommand]
-    private void DeactivatePackage()
+    private async Task DeactivatePackage()
     {
         if (SelectedVehicle == null) return;
         if (!EnsureConfigDir()) return;
@@ -954,8 +963,9 @@ public partial class SkinsViewModel : ObservableObject
         var userSkins = _config.UserSkinsDirectory;
         if (!string.IsNullOrWhiteSpace(userSkins) && Directory.Exists(userSkins))
         {
-            // 整组重建：本载具留下空 blk（槽位不丢），同组其它成员照常重写
-            var (report, error) = RebuildGroupFor(vehicleId, reactivatedPackageId: "");
+            // 整组重建：本载具留下空 blk（槽位不丢），同组其它成员照常重写（解压 + 写盘丢后台；闸门内收集）
+            var (report, error) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(vehicleId, reactivatedPackageId: ""));
+
             if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
             else if (report is { BlkWritten: > 0 }) status += Loc["pkg.deactivatedCleared"];
         }
@@ -967,103 +977,167 @@ public partial class SkinsViewModel : ObservableObject
 
     /// <summary>
     /// 输出当前载具的激活涂装包（§3.8）并返回结果文案；无法输出时返回原因文案
-    /// （供「激活即同步」与「属性页保存后立即落盘」共用）。
+    /// （供「属性页保存后立即落盘」用；解压 + 写盘的重活在后台线程）。
     /// </summary>
-    /// <param name="blkCreated">本次是否**首次**生成该载具的 blk（需要提示用户去游戏里选一次）。</param>
-    private string SyncCurrentVehicleMessage(out bool blkCreated)
+    /// <returns>（状态文案, 本次是否**首次**生成该载具的 blk 需要提示用户去游戏里选一次）。</returns>
+    private async Task<(string Message, bool BlkCreated)> SyncCurrentVehicleMessageAsync()
     {
-        blkCreated = false;
-
-        if (SelectedVehicle == null) return "";
+        if (SelectedVehicle == null) return ("", false);
 
         var active = Packages.FirstOrDefault(p => p.IsActive);
-        if (active == null) return Loc["skins.needActive"];
+        if (active == null) return (Loc["skins.needActive"], false);
 
-        var (report, error) = RebuildGroupFor(SelectedVehicle.Id, active.Id);
+        var (report, syncError) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(SelectedVehicle.Id, active.Id));
+        if (report == null) return (Loc.Format("skins.syncFailed", syncError ?? ""), false);
+
+        return (FormatSyncMessage(report, null), report.AnyBlkCreated);
+    }
+
+    /// <summary>
+    /// 绑定 / 解绑附属载具后重建输出。<paramref name="outputParent"/> 指定「应重建哪个输出目录」——
+    /// 解绑后 <c>ParentOf(child)</c> 已为空，必须由调用方把原父载具传进来，否则会去重建子载具自己的目录
+    /// （父目录里它的 blk/贴图就永远清不掉）；同时解绑后还要重建子载具**自己的目录**，恢复它的独立输出。
+    /// </summary>
+    public async Task SyncSubVehicleGroupAsync(string vehicleId, bool silent = false, string? outputParent = null)
+    {
+        try
+        {
+            // 静默（自动绑定触发）：目录没配好直接跳过，不弹任何提示
+            if (silent)
+            {
+                if (!EnsureOutputDirs(out _, out _, out _)) return;
+            }
+            else if (!EnsureConfigDir())
+            {
+                return;
+            }
+
+            // 要重建的输出目录：父组（清掉已解绑成员）+ 自己已不再是子载具时它的独立目录。
+            // outputParent 为空（自动绑定 / 普通调用）时按当前父子关系推导父目录。
+            var parent = outputParent ?? SubVehicleService.OutputParentOf(vehicleId);
+            var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(parent)) targets.Add(parent);
+            if (!SubVehicleService.IsChild(vehicleId)) targets.Add(vehicleId);
+
+            GroupSyncReport? report = null;
+            string? error = null;
+            foreach (var target in targets)
+            {
+                var (r, e) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(target));
+                if (e != null) error = e;
+                if (r == null) continue;
+
+                if (report == null)
+                {
+                    report = r;
+                }
+                else
+                {
+                    report.Mappings += r.Mappings;
+                    report.WrittenTextures += r.WrittenTextures;
+                    report.BlkWritten += r.BlkWritten;
+                    report.AnyBlkCreated |= r.AnyBlkCreated;
+                    report.Warnings.AddRange(r.Warnings);
+                }
+            }
+
+            // 变成子载具后，它自己原来的目录（WTSM/<子载具>/）必须清掉，否则游戏里还留着一份旧输出
+            if (SubVehicleService.IsChild(vehicleId) && !string.IsNullOrWhiteSpace(_config.UserSkinsDirectory))
+                OutputService.RemoveVehicleOutput(_config.UserSkinsDirectory, vehicleId);
+
+            if (silent) return;
+
+            if (error != null) ShowStatus(Loc.Format("skins.syncFailed", error));
+            else if (report != null) ShowStatus(Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures));
+        }
+        catch (Exception ex)
+        {
+            // 调用点多为 fire-and-forget（事件 / 自动绑定）：必须自带兜底，避免静默失败
+            if (!silent) ShowStatus(Loc.Format("skins.syncFailed", ex.Message));
+        }
+    }
+
+    /// <summary>输出重建的串行闸门：同一父目录的并发重建会互相踩（后写先删），排队执行即可。</summary>
+    private readonly SemaphoreSlim _outputRebuildGate = new(1, 1);
+
+    /// <summary>
+    /// 在**后台线程**执行一次复合组输出重建（§3.19：父载具 + 全部子载具共用一个目录；先写后删、整组重算）。
+    /// 「收集请求」放在闸门**之内**（仍在 UI 线程，因为 <c>await</c> 续体回到 UI 上下文）：排队期间被删除的包 /
+    /// 被取消的激活都不会被写回磁盘。
+    /// 返回（报告, 错误文案）；异常转成文案，不抛给调用方。
+    /// </summary>
+    private async Task<(GroupSyncReport? Report, string? Error)> RunGroupRebuildAsync(
+        Func<(GroupSyncRequest? Request, string? Error)> build)
+    {
+        await _outputRebuildGate.WaitAsync();
+        try
+        {
+            var (request, buildError) = build(); // 排队结束后才收集 → 读到的是最新状态
+            if (request == null) return (null, buildError);
+
+            GroupSyncReport? report = null;
+            string? error = null;
+            await Task.Run(() =>
+            {
+                try { report = OutputService.RebuildGroup(request.UserSkins, request.ResourceDir, request.Parent, request.Members); }
+                catch (Exception ex) { error = ex.Message; }
+            });
+            return (report, error);
+        }
+        finally
+        {
+            _outputRebuildGate.Release();
+        }
+    }
+
+    /// <summary>「重建某载具所属复合组输出」的纯数据请求（收集阶段在 UI 线程，落盘才是重活）。</summary>
+    private sealed record GroupSyncRequest(string UserSkins, string ResourceDir, string Parent, List<GroupMember> Members);
+
+    /// <summary>
+    /// 收集重建输出所需的一切（载具 / 激活包 / 成员 / 输出目录）——都在 UI 线程读，产出一份纯数据请求；
+    /// 真正的贴图落盘（压缩后需解压）由调用方丢到后台线程，避免卡 UI。
+    /// </summary>
+    private (GroupSyncRequest? Request, string? Error) BuildGroupSyncRequest(string vehicleId, string? reactivatedPackageId = null)
+    {
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return (null, error);
+
+        var parent = SubVehicleService.OutputParentOf(vehicleId);
+        var outputDir = OutputService.VehicleOutputDir(userSkins, parent);
+        var members = new List<GroupMember>();
+
+        foreach (var memberId in SubVehicleService.GroupOf(parent))
+        {
+            var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, memberId);
+
+            // null = 用各成员自己的激活状态；非 null（含 ""）= 用调用方指定的包 Id（"" 表示留空槽）
+            var packageId = string.Equals(memberId, vehicleId, StringComparison.OrdinalIgnoreCase)
+                            && reactivatedPackageId != null
+                ? reactivatedPackageId
+                : activation.ActivePackageId;
+
+            var package = packageId.Length == 0 ? null : FindPackage(resourceDir, memberId, packageId);
+
+            members.Add(new GroupMember
+            {
+                VehicleId = memberId,
+                Package = package,
+                // 没激活但目录里本来就有它的 blk → 保留槽位（与"取消激活留空 blk"的既有语义一致）
+                KeepSlot = package == null && File.Exists(Path.Combine(outputDir, memberId + ".blk"))
+            });
+        }
+
+        return (new GroupSyncRequest(userSkins, resourceDir, parent, members), null);
+    }
+
+    /// <summary>把输出重建结果格式化成状态栏文案（与「激活即同步」原口径一致）。</summary>
+    private static string FormatSyncMessage(GroupSyncReport? report, string? error)
+    {
         if (report == null) return Loc.Format("skins.syncFailed", error ?? "");
-
-        blkCreated = report.AnyBlkCreated;
 
         var message = Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures);
         if (report.Warnings.Count > 0)
             message += Loc.Format("skins.syncWarnings", report.Warnings.Count);
-
         return message;
-    }
-
-    /// <summary>
-    /// 父子关系变化后重建输出（由载具管理页通知）：子载具已激活的包会被迁到父目录；
-    /// 移除子载具则把它在父目录里的文件清掉。
-    /// </summary>
-    public void SyncSubVehicleGroup(string vehicleId, bool silent = false)
-    {
-        // 静默（自动绑定触发）：目录没配好直接跳过，不弹任何提示
-        if (silent)
-        {
-            if (!EnsureOutputDirs(out _, out _, out _)) return;
-        }
-        else if (!EnsureConfigDir())
-        {
-            return;
-        }
-
-        var (report, error) = RebuildGroupFor(vehicleId);
-
-        // 变成子载具后，它自己原来的目录（WTSM/<子载具>/）必须清掉，否则游戏里还留着一份旧输出
-        if (SubVehicleService.IsChild(vehicleId) && !string.IsNullOrWhiteSpace(_config.UserSkinsDirectory))
-            OutputService.RemoveVehicleOutput(_config.UserSkinsDirectory, vehicleId);
-
-        if (silent) return;
-
-        if (error != null) ShowStatus(Loc.Format("skins.syncFailed", error));
-        else if (report != null) ShowStatus(Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures));
-    }
-
-    /// <summary>
-    /// 重建某载具所在的「复合载具组」输出（§3.19：父载具 + 全部子载具共用一个目录）。
-    /// </summary>
-    /// <remarks>
-    /// 任何成员变化都**整组重算**（<see cref="OutputService.RebuildGroup"/> 先写后删），
-    /// 因此父/子谁变了都不需要单独记"删哪些文件"，也不会留残留。
-    /// </remarks>
-    /// <param name="vehicleId">发生变化的载具（父或子都可以）</param>
-    /// <param name="reactivatedPackageId">刚被激活的包 Id（缺省 = 按各成员自己的激活状态取）</param>
-    private (GroupSyncReport? Report, string? Error) RebuildGroupFor(string vehicleId, string? reactivatedPackageId = null)
-    {
-        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return (null, error);
-
-        try
-        {
-            var parent = SubVehicleService.OutputParentOf(vehicleId);
-            var outputDir = OutputService.VehicleOutputDir(userSkins, parent);
-            var members = new List<GroupMember>();
-
-            foreach (var memberId in SubVehicleService.GroupOf(parent))
-            {
-                var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, memberId);
-
-                var packageId = string.Equals(memberId, vehicleId, StringComparison.OrdinalIgnoreCase)
-                                && !string.IsNullOrWhiteSpace(reactivatedPackageId)
-                    ? reactivatedPackageId!
-                    : activation.ActivePackageId;
-
-                var package = packageId.Length == 0 ? null : FindPackage(resourceDir, memberId, packageId);
-
-                members.Add(new GroupMember
-                {
-                    VehicleId = memberId,
-                    Package = package,
-                    // 没激活但目录里本来就有它的 blk → 保留槽位（与"取消激活留空 blk"的既有语义一致）
-                    KeepSlot = package == null && File.Exists(Path.Combine(outputDir, memberId + ".blk"))
-                });
-            }
-
-            return (OutputService.RebuildGroup(userSkins, resourceDir, parent, members), null);
-        }
-        catch (Exception ex)
-        {
-            return (null, ex.Message);
-        }
     }
 
     /// <summary>
@@ -1099,8 +1173,13 @@ public partial class SkinsViewModel : ObservableObject
         // 游戏运行中 → 本次无法自动写入，须手动选择（文案说明原因）
         var bodyKey = syncReady ? "skins.firstOutput.gameRunning" : "skins.firstOutput";
 
+        // 用"实际被同步的载具"的名字，而不是当前选中项——重建期间用户可能切换了载具
+        var display = _allVehicles
+            .FirstOrDefault(v => string.Equals(v.Id, vehicleId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+            ?? vehicleId;
+
         var noMore = MessageDialog.InfoWithCheck(
-            Loc.Format(bodyKey, SelectedVehicle?.DisplayName ?? vehicleId, vehicleId + ".blk"),
+            Loc.Format(bodyKey, display, vehicleId + ".blk"),
             Loc["skins.firstOutput.noMore"],
             Loc["skins.firstOutput.title"],
             Application.Current?.MainWindow);
@@ -1195,7 +1274,7 @@ public partial class SkinsViewModel : ObservableObject
         {
             LoadActivation(); // RefreshLibrary 重建了包集合，先刷新激活标记
 
-            var sync = SyncCurrentVehicleMessage(out var blkCreated);
+            var (sync, blkCreated) = await SyncCurrentVehicleMessageAsync();
             if (sync.Length > 0) ShowStatus(sync);
             if (blkCreated && SelectedVehicle != null) PromptFirstOutput(SelectedVehicle.Id);
         }
@@ -1518,7 +1597,7 @@ public partial class SkinsViewModel : ObservableObject
                 foreach (var vehicleId in deactivated)
                 {
                     // 同上：整组重建（被删包已不在磁盘上，FindPackage 会按"存在性"过滤掉它）
-                    var (report, failure) = RebuildGroupFor(vehicleId, reactivatedPackageId: "");
+                    var (report, failure) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(vehicleId, reactivatedPackageId: ""));
 
                     if (failure != null) error = failure;
                     else if (report is { BlkWritten: > 0 }) cleared++;
@@ -1722,7 +1801,7 @@ public partial class SkinsViewModel : ObservableObject
 
             // 真的新建了绑定 → 静默迁移：把子载具之前已激活的包从子目录迁到父目录
             // （否则要手动激活一次才会搬过去）
-            if (bound) SyncSubVehicleGroup(child, silent: true);
+            if (bound) _ = SyncSubVehicleGroupAsync(child, silent: true);
         }
     }
 
