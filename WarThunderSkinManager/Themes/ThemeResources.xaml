@@ -1395,7 +1395,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TabPanel Grid.Row="0" IsItemsHost="True" Margin="0,0,0,12" Background="Transparent"/>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" IsItemsHost="True"
+                                    Margin="0,0,0,12" Background="Transparent"/>
                         <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
                     </Grid>
                 </ControlTemplate>
@@ -1418,10 +1419,12 @@
                     <Border x:Name="bd" Background="{StaticResource BrushSurface}" CornerRadius="15"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter x:Name="header" ContentSource="Header"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center"
-                                          TextElement.Foreground="{StaticResource BrushTextSecondary}"/>
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="False">
+                            <Setter TargetName="header" Property="TextElement.Foreground" Value="{StaticResource BrushTextSecondary}"/>
+                        </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
                             <Setter TargetName="header" Property="TextElement.Foreground" Value="{StaticResource BrushOnAccent}"/>
