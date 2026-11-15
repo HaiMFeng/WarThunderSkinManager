@@ -15,7 +15,8 @@ internal static class AtomicFile
         var dir = Path.GetDirectoryName(path) ?? ".";
         Directory.CreateDirectory(dir);
 
-        var tmp = Path.Combine(dir, Path.GetFileName(path) + ".tmp");
+        // 临时名带 Guid：同一文件被不同线程并发写时不会共用一个 .tmp（否则后写者的 Move 可能把别人的内容顶上目标）
+        var tmp = Path.Combine(dir, Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N") + ".tmp");
         File.WriteAllText(tmp, contents, new UTF8Encoding(false));
         File.Move(tmp, path, overwrite: true);
     }
@@ -25,7 +26,7 @@ internal static class AtomicFile
         var dir = Path.GetDirectoryName(path) ?? ".";
         Directory.CreateDirectory(dir);
 
-        var tmp = Path.Combine(dir, Path.GetFileName(path) + ".tmp");
+        var tmp = Path.Combine(dir, Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N") + ".tmp");
         File.WriteAllBytes(tmp, contents);
         File.Move(tmp, path, overwrite: true);
     }

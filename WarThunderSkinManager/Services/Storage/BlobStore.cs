@@ -42,65 +42,61 @@ public static class BlobStore
         var tmp = Path.Combine(BlobsDirectory(resourceDir), Guid.NewGuid().ToString("N") + ".tmp");
         string hash;
 
-        using (var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
-        {
-            using (var source = File.OpenRead(sourceFile))
-            using (var target = File.Create(tmp))
-            {
-                // 压缩形态：纯 Brotli 流（格式靠文件名后缀 .wtsc 区分，无头部魔数）。
-                // blob 文件名仍是原始内容哈希 → 内容寻址 / 去重 / 落盘往返不受影响，读取方经 OpenBlob 透明解压。
-                Stream? compressor = CompressionEnabled
-                    ? new BrotliStream(target, CompressionLevel.Optimal)
-                    : null;
-
-                var outStream = compressor ?? (Stream)target;
-                var buffer = new byte[1024 * 1024];
-                int read;
-                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    sha.AppendData(buffer, 0, read);
-                    outStream.Write(buffer, 0, read);
-                }
-
-                // BrotliStream 先 flush 压缩数据到 target 并关闭它；原样模式无需额外 flush
-                compressor?.Dispose();
-            }
-
-            hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
-        }
-
-        // 目标形态由当前开关决定；同一内容可能以**任一形态**已存在（形态与内容寻址无关）
-        var compressedPath = CompressedBlobPath(resourceDir, hash, extension);
-        var uncompressedPath = BlobPath(resourceDir, hash, extension);
-        var dest = CompressionEnabled ? compressedPath : uncompressedPath;
-
-        // 去重：任一形态命中即"同内容已存在"（零字节增量）。先落"刚被使用"的时间戳再丢本份——
-        // 两行之间回收可能正好把命中文件删掉，那时若 Touch 失败就改用 tmp 重新落定。
-        if (File.Exists(compressedPath) && Touch(compressedPath))
-        {
-            File.Delete(tmp);
-            return hash;
-        }
-        if (File.Exists(uncompressedPath) && Touch(uncompressedPath))
-        {
-            File.Delete(tmp);
-            return hash;
-        }
-
         try
         {
-            File.Move(tmp, dest, overwrite: true); // 改名落定：中途失败只留 .tmp
-        }
-        catch (IOException) when (File.Exists(dest))
-        {
-            // 并行导入同一内容：另一 worker 已落定同一 blob → 丢弃本份即可
+            using (var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+            {
+                using (var source = File.OpenRead(sourceFile))
+                using (var target = File.Create(tmp))
+                {
+                    // 压缩形态：纯 Brotli 流（格式靠文件名后缀 .wtsc 区分，无头部魔数）。
+                    // blob 文件名仍是原始内容哈希 → 内容寻址 / 去重 / 落盘往返不受影响，读取方经 OpenBlob 透明解压。
+                    Stream? compressor = CompressionEnabled
+                        ? new BrotliStream(target, CompressionLevel.Optimal)
+                        : null;
+
+                    var outStream = compressor ?? (Stream)target;
+                    var buffer = new byte[1024 * 1024];
+                    int read;
+                    while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        sha.AppendData(buffer, 0, read);
+                        outStream.Write(buffer, 0, read);
+                    }
+
+                    // BrotliStream 先 flush 压缩数据到 target 并关闭它；原样模式无需额外 flush
+                    compressor?.Dispose();
+                }
+
+                hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+            }
+
+            // 目标形态由当前开关决定；同一内容可能以**任一形态**已存在（形态与内容寻址无关）
+            var compressedPath = CompressedBlobPath(resourceDir, hash, extension);
+            var uncompressedPath = BlobPath(resourceDir, hash, extension);
+            var dest = CompressionEnabled ? compressedPath : uncompressedPath;
+
+            // 去重：任一形态命中即"同内容已存在"（零字节增量）。先落"刚被使用"的时间戳再丢本份——
+            // 两行之间回收可能正好把命中文件删掉，那时若 Touch 失败就改用 tmp 重新落定。
+            if (File.Exists(compressedPath) && Touch(compressedPath)) return hash;
+            if (File.Exists(uncompressedPath) && Touch(uncompressedPath)) return hash;
+
+            try
+            {
+                File.Move(tmp, dest, overwrite: true); // 改名落定：失败只留 .tmp（由 finally 清）
+            }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && File.Exists(dest))
+            {
+                // 并行导入同一内容：另一 worker 已落定同一 blob → 丢弃本份即可
+            }
+
+            return hash;
         }
         finally
         {
-            if (File.Exists(tmp)) File.Delete(tmp);
+            // 去重命中 / Move 已消费 tmp / 写盘异常：任何情况下都不留半截临时文件
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (IOException) { } }
         }
-
-        return hash;
     }
 
     /// <summary>

@@ -552,7 +552,8 @@ public partial class MainViewModel : ObservableObject
 
         // 附属载具（§3.19）：绑上/解绑后立刻重建该组输出 —— 子载具已激活的包迁到父目录，
         // 解绑则把它的文件从父目录清掉（"先写后删"由 RebuildGroup 保证不残留）
-        Vehicles.SubVehiclesChanged += (parent, childId) => _ = Skins.SyncSubVehicleGroupAsync(childId);
+        // 解绑后 ParentOf(child) 已为空，必须把事件里的 parent 传下去，否则会去重建子载具自己的目录
+        Vehicles.SubVehiclesChanged += (parent, childId) => _ = Skins.SyncSubVehicleGroupAsync(childId, outputParent: parent);
 
         // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
         if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
@@ -1306,7 +1307,9 @@ public partial class MainViewModel : ObservableObject
 
         if (!accepted)
         {
-            RevertCompressToggle(false); // 回滚（保持关闭；不重入）
+            // 关键：取消启用 → 运行标志也要回滚，否则"开关显示关、实际新导入仍在压缩"
+            BlobStore.CompressionEnabled = false;
+            RevertCompressToggle(false);
             return;
         }
 
