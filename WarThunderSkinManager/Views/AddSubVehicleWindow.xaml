@@ -39,7 +39,7 @@
                      PreviewKeyDown="SearchInput_PreviewKeyDown"/>
 
             <ListBox x:Name="CandidateList" Grid.Row="3" Margin="20,10,20,0"
-                     Background="{StaticResource BrushSurface1}" BorderBrush="{StaticResource BrushBorder}"
+                     Background="{StaticResource BrushSurface2}" BorderBrush="{StaticResource BrushBorder}"
                      BorderThickness="1" Foreground="{StaticResource BrushText}"
                      MouseDoubleClick="CandidateList_MouseDoubleClick"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
