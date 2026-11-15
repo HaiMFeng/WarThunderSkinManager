@@ -294,6 +294,27 @@ public static class BlobStore
     }
 
     /// <summary>
+    /// 删除「另一种形态」的源文件（压缩后删原样版 / 解压后删压缩版）：被占用 / 杀软短暂锁住时重试几次，
+    /// 仍失败就放弃——内容已无害地落到目标形态，留下的重复文件由 <see cref="BlobGc"/> 当冗余清掉（不丢数据）。
+    /// </summary>
+    private static void TryDeleteSource(string path)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                File.Delete(path); // 不存在也不抛
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == 2) return; // 仍失败：留给 GC 清冗余
+                Thread.Sleep(50);
+            }
+        }
+    }
+
+    /// <summary>
     /// 判断异常是否为「磁盘空间不足」。解压 / 还原会让库变大，写满磁盘是最可能的失败 ——
     /// 这类错误应**整批中止并给明确提示**（而不是逐文件计失败、继续白写临时文件把盘挤得更满）。
     /// Windows：ERROR_DISK_FULL = 0x70、ERROR_HANDLE_DISK_FULL = 0x27（在 <see cref="Exception.HResult"/> 低 16 位）。
@@ -414,7 +435,7 @@ public static class BlobStore
             // 落定压缩版，再删原样版。两步非严格原子：崩溃时可能两形态并存，读取以压缩版优先，
             // 迁移重跑会收敛（overwrite 压缩版 + 删原样版）。
             File.Move(tmp, compressedPath, overwrite: true);
-            try { File.Delete(blobPath); } catch (IOException) { }
+            TryDeleteSource(blobPath); // 删原样版；被占用/杀软锁住时重试，仍失败留给 GC 清冗余
             return before - new FileInfo(compressedPath).Length;
         }
         catch
@@ -491,7 +512,7 @@ public static class BlobStore
                 throw new InvalidDataException($"blob 解压校验失败: {name}");
 
             File.Move(tmp, uncompressedPath, overwrite: true);
-            try { File.Delete(compressedBlobPath); } catch (IOException) { }
+            TryDeleteSource(compressedBlobPath); // 删压缩版；被占用/杀软锁住时重试，仍失败留给 GC 清冗余
         }
         catch
         {

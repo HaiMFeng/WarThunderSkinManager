@@ -95,17 +95,38 @@ public static class BlobGc
 
         // 2) 逐个核对 blobs/ 下的文件：没被引用（或写坏残留的 .tmp）→ 删除。
         //    竞态防护（§4）：刚写入的 blob 可能还没进任何 meta（导入进行中，引用快照取早了）——
-        //    只回收"早于宽限期"的文件，避免把导入半途的贴图删掉
+        //    只回收"早于宽限期"的文件，避免把导入半途的贴图删掉。
+        //    额外：**同一内容两种形态并存**（压缩版 .wtsc + 原样版，多因删除被占用/中断而残留）时，
+        //    只保留与当前模式一致的那一份，另一份是冗余（内容哈希相同，删它不丢数据）。
         foreach (var blob in BlobStore.EnumerateBlobs(resourceDir))
         {
             report.ScannedBlobs++;
 
             var isTmp = blob.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase);
+            var isCompressed = BlobStore.IsCompressed(blob);
             // 用 BlobHashOf（会剥掉压缩后缀 .wtsc）取内容哈希，压缩 blob 才能与 meta 里的纯哈希对上
             var isReferenced = referenced.Contains(BlobStore.BlobHashOf(blob));
-            if (!isTmp && isReferenced) continue;
 
-            if (File.GetLastWriteTimeUtc(blob) > cutoff) continue;
+            bool deletable;
+            if (isTmp)
+            {
+                deletable = true; // 原子写残留
+            }
+            else if (!isReferenced)
+            {
+                deletable = true; // 无引用
+            }
+            else
+            {
+                // 被引用：若同一内容的另一形态也在，且本份与当前模式不一致 → 本份是冗余，可删
+                var counterpart = isCompressed
+                    ? blob[..^BlobStore.CompressedSuffix.Length]
+                    : blob + BlobStore.CompressedSuffix;
+                deletable = isCompressed != BlobStore.CompressionEnabled && File.Exists(counterpart);
+            }
+
+            if (!deletable) continue;
+            if (File.GetLastWriteTimeUtc(blob) > cutoff) continue; // 宽限期内：可能还在写
 
             try
             {
