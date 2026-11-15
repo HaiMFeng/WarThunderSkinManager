@@ -182,15 +182,35 @@
                                             Command="{Binding Vehicles.AddSubVehicleCommand}"/>
                                 </StackPanel>
 
-                                <!-- 本载具是别人的子载具 → 只读说明（此时 + 已禁用）；空串时不占位 -->
+                                <!-- 本载具是别人的子载具 → 只读说明（此时 + 已禁用）；空串折叠不占位 -->
                                 <TextBlock Text="{Binding Vehicles.SubVehicleParentText}" FontSize="12"
                                            Margin="0,2,0,0" TextWrapping="Wrap"
-                                           Foreground="{StaticResource BrushTextMuted}"/>
+                                           Foreground="{StaticResource BrushTextMuted}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Vehicles.SubVehicleParentText}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
 
-                                <!-- 无子载具时的提示（有子载具 => 空串，不占位） -->
+                                <!-- 无子载具时的提示（有子载具 => 空串，折叠不占位） -->
                                 <TextBlock Text="{Binding Vehicles.SubVehicleEmptyHint}" FontSize="12"
                                            Margin="0,2,0,0" TextWrapping="Wrap"
-                                           Foreground="{StaticResource BrushTextMuted}"/>
+                                           Foreground="{StaticResource BrushTextMuted}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Vehicles.SubVehicleEmptyHint}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
 
                                 <!-- 已添加的附属载具：**紧凑单行**（无边框、无分割线）——
                                      这里最多一两条，用"行"而不是"表格行"，避免大片空白 -->
@@ -221,7 +241,17 @@
                                 </ItemsControl>
 
                                 <TextBlock Text="{Binding Vehicles.SubVehicleMessage}" FontSize="11" Margin="0,4,0,0"
-                                           Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
+                                           Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Vehicles.SubVehicleMessage}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
 
                             <StackPanel Grid.Row="1">
