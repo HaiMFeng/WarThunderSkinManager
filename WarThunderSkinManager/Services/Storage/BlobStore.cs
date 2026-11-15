@@ -312,6 +312,26 @@ public static class BlobStore
     }
 
     /// <summary>
+    /// 估算全库解压还原所需空间：**压缩 blob 总大小 × 倍数**（默认 10）。常见贴图压缩比约 5~6 倍，
+    /// 用 10 倍作保守上限；<c>factor</c> 留出口给调用方 / 自检。返回（压缩后总字节, 估算所需字节）。
+    /// </summary>
+    public static (long compressedBytes, long estimatedBytes) EstimateDecompressSpace(
+        string resourceDir, int factor = 10)
+    {
+        long compressed = 0;
+        var dir = BlobsDirectory(resourceDir);
+        if (Directory.Exists(dir))
+        {
+            foreach (var f in Directory.EnumerateFiles(dir))
+            {
+                if (!IsCompressed(f)) continue;
+                try { compressed += new FileInfo(f).Length; } catch (IOException) { }
+            }
+        }
+        return (compressed, compressed * Math.Max(1, factor));
+    }
+
+    /// <summary>
     /// 存量 blob 全量压缩迁移（开启压缩开关时调用）：**多线程并行**处理未压缩的 blob，逐个校验无损后
     /// 替换为压缩版（内容哈希不变，故 meta / 去重 / 引用全部不受影响）；已压缩的跳过。单文件失败会保留原样、
     /// 继续其它文件（下次迁移重试）。返回（已压缩数, 失败数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用。

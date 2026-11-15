@@ -1338,12 +1338,55 @@ public partial class MainViewModel : ObservableObject
             return false;
         }
 
-        return MessageDialog.Confirm(
-            Loc.Format("settings.compress.disableNotice.2",
-                Loc["settings.compress.disableConfirm"], Loc["common.cancel"]),
-            Loc["settings.compress.disableTitle"],
-            Loc["settings.compress.disableConfirm"], Loc["common.cancel"],
-            icon: DialogIcon.Warning);
+        if (!MessageDialog.Confirm(
+                Loc.Format("settings.compress.disableNotice.2",
+                    Loc["settings.compress.disableConfirm"], Loc["common.cancel"]),
+                Loc["settings.compress.disableTitle"],
+                Loc["settings.compress.disableConfirm"], Loc["common.cancel"],
+                icon: DialogIcon.Warning))
+        {
+            return false;
+        }
+
+        // 第 3 层（仅当磁盘可能不够时）：估算所需空间，不足则**提醒但不阻止**
+        WarnIfDecompressSpaceInsufficient();
+        return true;
+    }
+
+    /// <summary>
+    /// 解压前的空间估算：按「压缩 blob 总大小 × 10」估算所需空间，若磁盘可用空间更少则弹一轮
+    /// <see cref="MessageDialog.Warn"/>（单按钮）——**只提醒、不阻止**，用户清空间或坚持继续都行。
+    /// </summary>
+    private void WarnIfDecompressSpaceInsufficient()
+    {
+        var dir = Config.ResourceDirectory;
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return;
+
+        var (compressed, estimated) = BlobStore.EstimateDecompressSpace(dir);
+        if (compressed <= 0) return; // 没有压缩 blob，无需估算
+
+        var free = FreeSpaceBytes(dir);
+        if (free < 0 || free >= estimated) return; // 读不到磁盘信息 → 不打扰
+
+        MessageDialog.Warn(
+            Loc.Format("settings.compress.spaceInsufficient",
+                DataResetService.FormatSize(estimated), DataResetService.FormatSize(free)),
+            Loc["settings.compress.spaceInsufficientTitle"]);
+    }
+
+    /// <summary>资源目录所在磁盘的可用空间（字节）；读不到返回 -1。</summary>
+    private static long FreeSpaceBytes(string dir)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(dir));
+            if (string.IsNullOrEmpty(root)) return -1;
+            return new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     /// <summary>

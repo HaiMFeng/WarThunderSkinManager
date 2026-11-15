@@ -199,6 +199,8 @@
   "settings.compress.decompressCanceled": "还原已取消",
   "settings.compress.decompressFailed": "还原失败：{0}",
   "settings.compress.diskFull": "磁盘空间不足，请先清理磁盘后重试",
+  "settings.compress.spaceInsufficientTitle": "磁盘空间可能不足",
+  "settings.compress.spaceInsufficient": "把资源库还原为未压缩后，占用会明显变大。预计需要约 {0} 空间，而该磁盘当前可用 {1}。\n\n仍可以继续，但可能会在还原到一半时因空间不足中止。建议先清理磁盘，或等空间充足时再操作。",
   "settings.gc.failed": "回收失败：{0}",
   "settings.gc.storage.disk": "所在磁盘 {0} · 总容量 {1}",
   "settings.gc.storage.own": "本程序资源目录",

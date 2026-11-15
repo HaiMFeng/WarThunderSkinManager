@@ -172,6 +172,8 @@ internal static class SelfTest
                 File.Delete(dfile);
                 var dBefore = BlobStore.ResolveBlobPath(ddir, dhash, ".bin");
                 var dWasCompressed = BlobStore.IsCompressed(dBefore);
+                var (spaceComp, spaceEst) = BlobStore.EstimateDecompressSpace(ddir, 10);
+                var spaceOk = spaceComp > 0 && spaceEst == spaceComp * 10;
                 BlobStore.CompressionEnabled = false;
                 var dec = BlobStore.DecompressAll(ddir, null, System.Threading.CancellationToken.None);
                 var dAfter = BlobStore.ResolveBlobPath(ddir, dhash, ".bin");
@@ -181,7 +183,7 @@ internal static class SelfTest
                     dLossless = string.Equals(
                         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ds)).ToLowerInvariant(),
                         dhash, StringComparison.Ordinal);
-                log.AppendLine($"解压还原闭环 : 原已压缩={dWasCompressed}（应 True）, 还原 {dec.decompressed} 个 / 失败 {dec.failed} 个（应 1 / 0）, 还原后未压缩={dIsUncompressed}（应 True）, 无损={dLossless}（应 True）");
+                log.AppendLine($"解压还原闭环 : 原已压缩={dWasCompressed}（应 True）, 空间估算 {spaceComp}×10={spaceEst} 正确={spaceOk}（应 True）, 还原 {dec.decompressed} 个 / 失败 {dec.failed} 个（应 1 / 0）, 还原后未压缩={dIsUncompressed}（应 True）, 无损={dLossless}（应 True）");
                 Directory.Delete(ddir, recursive: true);
             }
 

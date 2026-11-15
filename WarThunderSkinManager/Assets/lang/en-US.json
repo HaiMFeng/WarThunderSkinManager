@@ -199,6 +199,8 @@
   "settings.compress.decompressCanceled": "Decompression canceled",
   "settings.compress.decompressFailed": "Decompression failed: {0}",
   "settings.compress.diskFull": "Not enough disk space; free up space and try again",
+  "settings.compress.spaceInsufficientTitle": "Disk space may be insufficient",
+  "settings.compress.spaceInsufficient": "After decompressing, the library will take up considerably more space. About {0} is expected to be needed, but only {1} is currently available on this disk.\n\nYou can still continue, but the operation may stop halfway if space runs out. Consider freeing up space or waiting until there is enough.",
   "settings.gc.failed": "Reclamation failed: {0}",
   "settings.gc.storage.disk": "Drive {0} · total capacity {1}",
   "settings.gc.storage.own": "This program's resource directory",
