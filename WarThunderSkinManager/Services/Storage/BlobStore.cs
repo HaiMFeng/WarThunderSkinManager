@@ -267,56 +267,74 @@ public static class BlobStore
     /// </summary>
     public static bool CompressionEnabled { get; set; }
 
+    /// <summary>并行度上限：再多也不会更快（Brotli 是 CPU 密集、另有磁盘带宽），也不至于把机器占满。</summary>
+    private const int MaxDegree = 8;
+
+    /// <summary>进度节流：每处理完这么多文件上报一次（外加最后一个），避免每完成一个就刷一发 UI。</summary>
+    private const int ProgressStride = 64;
+
+    private static int ResolveDegree() => Math.Clamp(Environment.ProcessorCount, 2, MaxDegree);
+
+    /// <summary>清理 blobs/ 下超过宽限期（10 分钟）的 .tmp 残留（宽限期内的可能还在写，留着）。</summary>
+    private static void CleanupStaleTmp(string resourceDir)
+    {
+        var blobDir = BlobsDirectory(resourceDir);
+        if (!Directory.Exists(blobDir)) return;
+
+        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+        foreach (var t in Directory.GetFiles(blobDir, "*.tmp"))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(t) > cutoff) continue; // 宽限期内：可能还在写
+                File.Delete(t);
+            }
+            catch (IOException) { }
+        }
+    }
+
     /// <summary>
-    /// 存量 blob 全量压缩迁移（开启压缩开关时调用）：遍历所有 blob，对未压缩的逐个原子替换为压缩版
-    /// （内容哈希不变，故 meta / 去重 / 引用全部不受影响）；已压缩的跳过。单文件失败会保留原样、
-    /// 继续后续（下次迁移重试）。返回（已压缩数, 失败数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用，避免与导入并发。
+    /// 存量 blob 全量压缩迁移（开启压缩开关时调用）：**多线程并行**处理未压缩的 blob，逐个校验无损后
+    /// 替换为压缩版（内容哈希不变，故 meta / 去重 / 引用全部不受影响）；已压缩的跳过。单文件失败会保留原样、
+    /// 继续其它文件（下次迁移重试）。返回（已压缩数, 失败数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用。
     /// </summary>
+    /// <remarks>
+    /// 每个 blob 相互独立（独立文件、独立临时名），Brotli 压缩 + 读回校验都是 CPU 密集 → 交给
+    /// <see cref="DedicatedWorkers.Run"/> 用专用线程并行跑满多核（不占线程池）；取消在「文件与文件之间」生效。
+    /// </remarks>
     public static (int compressed, int failed, long savedBytes) RecompressAll(
         string resourceDir, IProgress<(int done, int total, string? current)>? progress, CancellationToken ct)
     {
-        // 清理历史遗留的压缩临时文件（RecompressOne 异常中断时可能产生）；它们不是 blob。
-        // **带宽限期**：与导入并发时（导入路径不进入 AppBusy），另一线程的 Store 可能正在写
-        // blobs/<guid>.tmp —— 只看 mtime 早于宽限期的才删，避免把别人正在写的临时文件删掉。
-        var blobDir = BlobsDirectory(resourceDir);
-        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
-        if (Directory.Exists(blobDir))
-        {
-            foreach (var t in Directory.GetFiles(blobDir, "*.tmp"))
-            {
-                try
-                {
-                    if (File.GetLastWriteTimeUtc(t) > cutoff) continue; // 宽限期内：可能还在写
-                    File.Delete(t);
-                }
-                catch (IOException) { }
-            }
-        }
+        CleanupStaleTmp(resourceDir);
 
         var blobs = EnumerateBlobs(resourceDir)
             .Where(f => !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) // 不把临时文件当待压缩 blob
             .ToArray();
+
         int done = 0, compressed = 0, failed = 0;
         long saved = 0;
-        foreach (var b in blobs)
+
+        DedicatedWorkers.Run(blobs, ResolveDegree(), b =>
         {
-            ct.ThrowIfCancellationRequested();
-            if (IsCompressed(b)) { done++; continue; }
-
-            try
+            if (!IsCompressed(b))
             {
-                saved += RecompressOne(resourceDir, b);
-                compressed++;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-            {
-                // 单文件失败（含压缩后校验不通过）：原文件已保留，继续下一个（下次迁移重试）
-                failed++;
+                try
+                {
+                    Interlocked.Add(ref saved, RecompressOne(resourceDir, b));
+                    Interlocked.Increment(ref compressed);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    // 单文件失败（含压缩后校验不通过）：原文件已保留，继续其它文件（下次迁移重试）
+                    Interlocked.Increment(ref failed);
+                }
             }
 
-            done++;
-            progress?.Report((done, blobs.Length, Path.GetFileName(b)));
-        }
+            var d = Interlocked.Increment(ref done);
+            if (d % ProgressStride == 0 || d == blobs.Length)
+                progress?.Report((d, blobs.Length, Path.GetFileName(b)));
+        }, ct);
+
         return (compressed, failed, saved);
     }
 
@@ -338,7 +356,7 @@ public static class BlobStore
             using (var cs = new BrotliStream(target, CompressionLevel.Optimal, leaveOpen: true))
             {
                 using var src = File.OpenRead(blobPath); // 未压缩 → 原样
-                src.CopyTo(cs);
+                src.CopyTo(cs, 1024 * 1024); // 大缓冲：减少小块读，配合并行跑满带宽
             }
 
             target.Flush(true); // 落盘屏障：落定前先把内容刷到磁盘，防断电留下"名字对、内容坏"
@@ -360,48 +378,39 @@ public static class BlobStore
     }
 
     /// <summary>
-    /// 存量 blob 全量解压还原（关闭压缩开关时调用）：遍历所有**压缩形态**的 blob，逐个校验无损后
+    /// 存量 blob 全量解压还原（关闭压缩开关时调用）：**多线程并行**处理所有**压缩形态**的 blob，逐个校验无损后
     /// 还原为未压缩原样文件（内容哈希不变，文件名去掉 <see cref="CompressedSuffix"/>）；未压缩的跳过。
-    /// 单文件失败会保留原样、继续后续。返回（已还原数, 失败数）。应在 <c>AppBusy</c> 锁内调用。
+    /// 单文件失败会保留原样、继续其它文件。返回（已还原数, 失败数）。应在 <c>AppBusy</c> 锁内调用。
     /// </summary>
+    /// <remarks>同 <see cref="RecompressAll"/>：逐文件独立、解压 + 校验是 CPU 密集，交给专用线程并行跑满多核。</remarks>
     public static (int decompressed, int failed) DecompressAll(
         string resourceDir, IProgress<(int done, int total, string? current)>? progress, CancellationToken ct)
     {
-        var blobDir = BlobsDirectory(resourceDir);
-        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
-        if (Directory.Exists(blobDir))
-        {
-            foreach (var t in Directory.GetFiles(blobDir, "*.tmp"))
-            {
-                try
-                {
-                    if (File.GetLastWriteTimeUtc(t) > cutoff) continue; // 宽限期内：可能还在写
-                    File.Delete(t);
-                }
-                catch (IOException) { }
-            }
-        }
+        CleanupStaleTmp(resourceDir);
 
         var blobs = EnumerateBlobs(resourceDir)
             .Where(f => IsCompressed(f)) // 只处理压缩形态（.tmp 不是 .wtsc，自然被排除）
             .ToArray();
+
         int done = 0, decompressed = 0, failed = 0;
-        foreach (var b in blobs)
+
+        DedicatedWorkers.Run(blobs, ResolveDegree(), b =>
         {
-            ct.ThrowIfCancellationRequested();
             try
             {
                 DecompressOne(b);
-                decompressed++;
+                Interlocked.Increment(ref decompressed);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
-                failed++; // 原压缩文件已保留，下次再试
+                Interlocked.Increment(ref failed); // 原压缩文件已保留，下次再试
             }
 
-            done++;
-            progress?.Report((done, blobs.Length, Path.GetFileName(b)));
-        }
+            var d = Interlocked.Increment(ref done);
+            if (d % ProgressStride == 0 || d == blobs.Length)
+                progress?.Report((d, blobs.Length, Path.GetFileName(b)));
+        }, ct);
+
         return (decompressed, failed);
     }
 
@@ -419,7 +428,7 @@ public static class BlobStore
         using (var target = File.Create(tmp))
         {
             using (var src = OpenBlob(compressedBlobPath)) // BrotliStream 解压
-                src.CopyTo(target);
+                src.CopyTo(target, 1024 * 1024);
             target.Flush(true);
         }
 
