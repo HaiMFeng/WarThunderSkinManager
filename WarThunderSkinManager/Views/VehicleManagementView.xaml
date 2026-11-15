@@ -192,31 +192,30 @@
                                            Margin="0,2,0,0" TextWrapping="Wrap"
                                            Foreground="{StaticResource BrushTextMuted}"/>
 
-                                <!-- 已添加的附属载具：与「部件结构」同样的行（下边框 + 0,9 内边距） -->
-                                <ItemsControl ItemsSource="{Binding Vehicles.SubVehicles}" Margin="0,2,0,0">
+                                <!-- 已添加的附属载具：**紧凑单行**（无边框、无分割线）——
+                                     这里最多一两条，用"行"而不是"表格行"，避免大片空白 -->
+                                <ItemsControl ItemsSource="{Binding Vehicles.SubVehicles}" Margin="0,4,0,0"
+                                              VerticalAlignment="Top">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border BorderBrush="{StaticResource BrushBorder}"
-                                                    BorderThickness="0,0,0,1" Padding="0,9">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="{Binding Display}"
-                                                               FontSize="12" TextTrimming="CharacterEllipsis"
-                                                               VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                                    <Button Grid.Column="1" Content="&#xF00D;"
-                                                            Style="{StaticResource IconButton}"
-                                                            Width="22" Height="22" FontSize="10"
-                                                            Focusable="False" Background="Transparent"
-                                                            Foreground="{StaticResource BrushTextMuted}"
-                                                            ToolTip="{loc:Loc common.close}"
-                                                            CommandParameter="{Binding}"
-                                                            Command="{Binding DataContext.Vehicles.RemoveSubVehicleCommand,
-                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
-                                                </Grid>
-                                            </Border>
+                                            <Grid Margin="0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Display}"
+                                                           FontSize="12" TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <Button Grid.Column="1" Content="&#xF00D;"
+                                                        Style="{StaticResource IconButton}"
+                                                        Width="20" Height="20" MinWidth="0" MinHeight="0"
+                                                        FontSize="10" Focusable="False" Background="Transparent"
+                                                        Foreground="{StaticResource BrushTextMuted}"
+                                                        ToolTip="{loc:Loc common.close}"
+                                                        CommandParameter="{Binding}"
+                                                        Command="{Binding DataContext.Vehicles.RemoveSubVehicleCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
