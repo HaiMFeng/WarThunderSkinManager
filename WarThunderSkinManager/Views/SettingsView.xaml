@@ -319,10 +319,18 @@
                     </StackPanel>
                     <TextBlock Text="{loc:Loc settings.compress.hint}" Style="{StaticResource PageSubtitle}"
                                TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <!-- 只显示与当前模式一致的那个按钮：开启压缩=「压缩现有库」、关闭压缩=「还原为未压缩」。
-                         它们与开关动作重合，唯一作用是「取消/失败后接着处理」——开关已处于目标状态时再点不会
-                         重新触发，只能靠这里重新发起；按模式二选一显示，避免两个常驻按钮看起来冗余。 -->
+                    <!-- 只有存在「与当前模式不符」的中间态（取消/崩溃残留）时才显示这一行；
+                         方向由开关决定：开=压缩现有库、关=还原为未压缩。全库已是当前模式时这两个动作没有意义。 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasPendingConversion}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
                         <Button Content="{loc:Loc settings.compress.recompress}" Command="{Binding CompressLibraryCommand}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">

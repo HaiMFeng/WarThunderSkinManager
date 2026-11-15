@@ -530,6 +530,9 @@ public partial class MainViewModel : ObservableObject
         // 所以启动只恢复标志、不弹知会、不重跑全量压缩（库早已压缩好，重跑只会徒增扫描）。
         BlobStore.CompressionEnabled = Config.CompressBlobs;
 
+        // 启动即判定一次是否存在「与当前模式不符」的 blob（上次取消 / 崩溃留下的中间态）→ 决定是否显示续做按钮
+        RefreshPendingConversion();
+
         // Saves 目录自动探测（§3.14）：默认路径存在即静默采用；失败不阻塞（设置页可手选，不参与迁移）
         if (string.IsNullOrWhiteSpace(Config.SavesDirectory))
         {
@@ -1149,6 +1152,7 @@ public partial class MainViewModel : ObservableObject
             case nameof(AppConfig.ResourceDirectory):
                 // 存储条画的是"资源目录所在磁盘" → 换了目录就是换了一块盘，必须重测（顺带重测，不弹气泡）
                 StartStorageMeasure(announce: false);
+                RefreshPendingConversion(); // 换了库 → 中间态重新判定
                 break;
 
             case nameof(AppConfig.PartReuseEnabled):
@@ -1167,6 +1171,7 @@ public partial class MainViewModel : ObservableObject
 
             case nameof(AppConfig.CompressBlobs):
                 OnCompressBlobsToggled();
+                RefreshPendingConversion(); // 开关变了 → 目标形态变了，重算是否还存在中间态
                 break;
         }
 
@@ -1214,6 +1219,44 @@ public partial class MainViewModel : ObservableObject
         Config.PartReuseNoticeSeen = true; // 落盘由 OnConfigChanged 收尾统一做
 
         OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
+    }
+
+    /// <summary>
+    /// 是否存在「与当前模式不符」的 blob（中间态：压缩 / 还原被取消或崩溃后残留的反向格式）。
+    /// 只有它为真时才显示「压缩现有库 / 还原为未压缩」按钮——一切正常（全库已是当前模式）时按钮无意义，
+    /// 转换方向由 <see cref="AppConfig.CompressBlobs"/> 决定（开 → 压成 .wtsc，关 → 还原原始文件）。
+    /// </summary>
+    [ObservableProperty] private bool _hasPendingConversion;
+
+    /// <summary>
+    /// 刷新 <see cref="HasPendingConversion"/>：只看文件名后缀、不读内容，遇到第一个与目标形态不符的即短路。
+    /// 调用时机：启动、开关 / 资源目录变化、进出设置页、压缩 / 还原结束时（其余场景不会产生中间态）。
+    /// </summary>
+    private void RefreshPendingConversion()
+    {
+        try
+        {
+            var dir = Config.ResourceDirectory;
+            var blobsDir = string.IsNullOrWhiteSpace(dir) ? null : BlobStore.BlobsDirectory(dir);
+            if (blobsDir == null || !Directory.Exists(blobsDir))
+            {
+                HasPendingConversion = false;
+                return;
+            }
+
+            var wantCompressed = Config.CompressBlobs;
+            var pending = false;
+            foreach (var f in Directory.EnumerateFiles(blobsDir))
+            {
+                if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+                if (BlobStore.IsCompressed(f) != wantCompressed) { pending = true; break; }
+            }
+            HasPendingConversion = pending;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            HasPendingConversion = false; // 读不到就当没有，不误显示按钮
+        }
     }
 
     /// <summary>
@@ -1354,6 +1397,10 @@ public partial class MainViewModel : ObservableObject
             {
                 ShowStatus(Loc.Format("settings.compress.failed", ex.Message));
             }
+            finally
+            {
+                RefreshPendingConversion(); // 结束/取消后重算中间态（取消会留残留 → 显示续做按钮）
+            }
         }
     }
 
@@ -1409,6 +1456,10 @@ public partial class MainViewModel : ObservableObject
             catch (Exception ex)
             {
                 ShowStatus(Loc.Format("settings.compress.decompressFailed", ex.Message));
+            }
+            finally
+            {
+                RefreshPendingConversion(); // 结束/取消后重算中间态（取消会留残留 → 显示续做按钮）
             }
         }
     }
@@ -1740,6 +1791,7 @@ public partial class MainViewModel : ObservableObject
                         //（见 StartStorageMeasure）——否则又是一次整窗冻结。
                         // 顺带重测不弹气泡：条本身是反馈，每次都弹会把气泡刷成噪音
                         StartStorageMeasure(announce: false);
+                        RefreshPendingConversion(); // 进设置页时校正续做按钮（导入 / 回收等也可能改变中间态）
                         break;
                 }
             }));
