@@ -1231,33 +1231,54 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// 刷新 <see cref="HasPendingConversion"/>：只看文件名后缀、不读内容，遇到第一个与目标形态不符的即短路。
+    /// **在后台线程枚举**（几十万文件时不会卡 UI），算完回 UI 线程赋标志。
     /// 调用时机：启动、开关 / 资源目录变化、进出设置页、压缩 / 还原结束时（其余场景不会产生中间态）。
     /// </summary>
     private void RefreshPendingConversion()
     {
-        try
+        var dir = Config.ResourceDirectory;
+        var wantCompressed = Config.CompressBlobs;
+        if (string.IsNullOrWhiteSpace(dir))
         {
-            var dir = Config.ResourceDirectory;
-            var blobsDir = string.IsNullOrWhiteSpace(dir) ? null : BlobStore.BlobsDirectory(dir);
-            if (blobsDir == null || !Directory.Exists(blobsDir))
+            HasPendingConversion = false;
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            var pending = false;
+            try
             {
-                HasPendingConversion = false;
+                var blobsDir = BlobStore.BlobsDirectory(dir);
+                if (Directory.Exists(blobsDir))
+                {
+                    foreach (var f in Directory.EnumerateFiles(blobsDir))
+                    {
+                        if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (BlobStore.IsCompressed(f) != wantCompressed) { pending = true; break; }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                pending = false; // 读不到就当没有，不误显示按钮
+            }
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null)
+            {
+                HasPendingConversion = pending; // 无 UI 线程（自检 / 退出中）→ 直接赋值
                 return;
             }
 
-            var wantCompressed = Config.CompressBlobs;
-            var pending = false;
-            foreach (var f in Directory.EnumerateFiles(blobsDir))
+            dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
             {
-                if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
-                if (BlobStore.IsCompressed(f) != wantCompressed) { pending = true; break; }
-            }
-            HasPendingConversion = pending;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            HasPendingConversion = false; // 读不到就当没有，不误显示按钮
-        }
+                // 扫描期间目录 / 开关已变 → 这一趟结果作废（会由更新的那次刷新覆盖）
+                if (!string.Equals(Config.ResourceDirectory, dir, StringComparison.OrdinalIgnoreCase)) return;
+                if (Config.CompressBlobs != wantCompressed) return;
+                HasPendingConversion = pending;
+            }));
+        });
     }
 
     /// <summary>
