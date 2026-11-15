@@ -552,7 +552,7 @@ public partial class MainViewModel : ObservableObject
 
         // 附属载具（§3.19）：绑上/解绑后立刻重建该组输出 —— 子载具已激活的包迁到父目录，
         // 解绑则把它的文件从父目录清掉（"先写后删"由 RebuildGroup 保证不残留）
-        Vehicles.SubVehiclesChanged += (_, childId) => Skins.SyncSubVehicleGroup(childId);
+        Vehicles.SubVehiclesChanged += (parent, childId) => _ = Skins.SyncSubVehicleGroupAsync(childId);
 
         // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
         if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
