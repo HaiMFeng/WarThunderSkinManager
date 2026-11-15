@@ -484,8 +484,8 @@ internal static class SelfTest
                          + $"，载具再选即替换 = {vehicleReplaced}（应 True）"
                          + $"，标签查询串 = [{chipVm.TagQuery}]（应 [#anime #skin]）"
                          + $"，摘要 = [{chipVm.ActiveFilterText}]");
-            log.AppendLine($"胶囊文案   : {chipVm.Chips[0].Label}（应 标签:anime）"
-                         + $"，{chipVm.Chips[^1].Label}（应 载具:Su-30MKK）"
+            log.AppendLine($"胶囊文案   : {chipVm.Chips[0].Label}（应 anime：胶囊不带类型前缀）"
+                         + $"，{chipVm.Chips[^1].Label}（应 Su-30MKK）"
                          + $"，一次退格删一个 = {chipVm.RemoveLastChip(refresh: false)}（应 True）"
                          + $"，删后剩 = {chipVm.Chips.Count}（应 2）"
                          + $"，空框退格 = {new WtLiveViewModel().RemoveLastChip(refresh: false)}（应 False）");
@@ -548,7 +548,7 @@ internal static class SelfTest
             log.AppendLine($"作者端点   : user=132424191 → …{authorEndpoint[(authorEndpoint.LastIndexOf("/api", StringComparison.Ordinal))..]}（应 …/api/feed/get_user/）"
                          + $"，无作者 = {regularEndpoint.EndsWith("/api/feed/get_regular/", StringComparison.Ordinal)}（应 True）"
                          + $"，空白作者 = {blankEndpoint.EndsWith("/api/feed/get_regular/", StringComparison.Ordinal)}（应 True）");
-            log.AppendLine($"作者胶囊   : {authorVm.Chips[0].Label}（应 用户:锅盖头）"
+            log.AppendLine($"作者胶囊   : {authorVm.Chips[0].Label}（应 锅盖头）"
                          + $"，摘要 = [{authorVm.ActiveFilterText}]（应 按作者筛选：锅盖头）"
                          + $"，@0 不是作者 = {WtLiveUser.NormalizeId("0").Length == 0}（应 True：0 是接口的「不限作者」哨兵）"
                          + $"，多写的 @ 也认 = {WtLiveUser.NormalizeId("@147560834") == "147560834"}（应 True）");

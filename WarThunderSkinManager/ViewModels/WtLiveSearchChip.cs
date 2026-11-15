@@ -62,17 +62,14 @@ public partial class WtLiveSearchChip : ObservableObject
     public string Text { get; }
 
     /// <summary>
-    /// 胶囊上的文案：<c>载具:F-15E</c> / <c>标签:anime</c> / <c>用户:锅盖头</c>
-    /// ——与下拉候选**同一套文案**（<c>wtlive.chip.*</c>），切换语言时由
-    /// <see cref="WtLiveViewModel.ApplyLanguageChange"/> 重建。
+    /// 胶囊上的文案 = **图标 + 纯文本**（<c>F-15E</c> / <c>anime</c> / <c>锅盖头</c>），
+    /// **不带「载具:」「标签:」这类前缀** —— 一行要放得下更多胶囊，类型已由左侧图标表达。
+    /// <para>
+    /// 下拉**候选**仍带前缀（<c>载具:F-15E</c>，见 <see cref="WtLiveSearchChipCatalog"/>），
+    /// 因为候选里图标与文字并排、需要文字说清楚"选中后变成什么"。
+    /// </para>
     /// </summary>
-    public string Label => Kind switch
-    {
-        WtLiveChipKind.Vehicle => WtLiveSearchChipCatalog.VehicleLabel(Text),
-        WtLiveChipKind.User => WtLiveSearchChipCatalog.UserLabel(Text),
-        WtLiveChipKind.Local => WtLiveSearchChipCatalog.LocalLabel(Text),
-        _ => WtLiveSearchChipCatalog.TagLabel(Text)
-    };
+    public string Label => Text.Length > 0 ? Text : Value;
 
     /// <summary>左侧图标字形（与下拉候选用同一批字形）。</summary>
     public string Icon => Kind switch
