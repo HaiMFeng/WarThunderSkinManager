@@ -1400,6 +1400,7 @@ public partial class MainViewModel : ObservableObject
             finally
             {
                 RefreshPendingConversion(); // 结束/取消后重算中间态（取消会留残留 → 显示续做按钮）
+                StartStorageMeasure(announce: false); // 压缩后库体积变小 → 让存储条重测占用（静默，慢到 1.5s 才补一句）
             }
         }
     }
@@ -1460,6 +1461,7 @@ public partial class MainViewModel : ObservableObject
             finally
             {
                 RefreshPendingConversion(); // 结束/取消后重算中间态（取消会留残留 → 显示续做按钮）
+                StartStorageMeasure(announce: false); // 还原后库体积变大 → 让存储条重测占用（静默，慢到 1.5s 才补一句）
             }
         }
     }
