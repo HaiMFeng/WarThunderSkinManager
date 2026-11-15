@@ -144,7 +144,7 @@
                         <TabControl Style="{StaticResource SegmentedTabControl}">
                             <TabItem Style="{StaticResource SegmentedTabItem}">
                                 <TabItem.Header>
-                                    <TextBlock Text="{loc:Loc vehicles.tab.info}" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{loc:Loc vehicles.tab.info}" Style="{StaticResource SegmentedTabHeader}"/>
                                 </TabItem.Header>
                             <StackPanel>
                                 <!-- 显示名（自动保存） -->
@@ -255,7 +255,7 @@
 
                             <TabItem Style="{StaticResource SegmentedTabItem}">
                                 <TabItem.Header>
-                                    <TextBlock Text="{loc:Loc vehicles.tab.parts}" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{loc:Loc vehicles.tab.parts}" Style="{StaticResource SegmentedTabHeader}"/>
                                 </TabItem.Header>
                             <Grid>
                                 <Grid.RowDefinitions>

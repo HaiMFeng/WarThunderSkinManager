@@ -1407,7 +1407,7 @@
     <Style x:Key="SegmentedTabItem" TargetType="TabItem">
         <!-- 不在 TabItem 上设 Foreground：否则前景色会沿逻辑树传给内容区，
              选中态的白字（OnAccent）会把子载具名等文字染白导致“消失”。
-             前景色只在 Header 的 ContentPresenter 上按选中态切换。 -->
+             Header 文字颜色由 SegmentedTabHeader 样式按选中态切换。 -->
         <Setter Property="Background" Value="{StaticResource BrushSurface}"/>
         <Setter Property="Height" Value="30"/>
         <Setter Property="Padding" Value="14,0"/>
@@ -1419,16 +1419,12 @@
                 <ControlTemplate TargetType="TabItem">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="15"
                             Padding="{TemplateBinding Padding}">
-                        <ContentPresenter x:Name="header" ContentSource="Header"
+                        <ContentPresenter ContentSource="Header"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsSelected" Value="False">
-                            <Setter TargetName="header" Property="TextElement.Foreground" Value="{StaticResource BrushTextSecondary}"/>
-                        </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
-                            <Setter TargetName="header" Property="TextElement.Foreground" Value="{StaticResource BrushOnAccent}"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Opacity" Value="0.86"/>
@@ -1453,6 +1449,20 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- 选项卡头部文字：字号/字重与前景色在此统一切换（未选中灰、选中白）。
+         前景色不能设在 TabItem 上（会漏到内容区），故用 DataTrigger 绑定
+         所属 TabItem 的 IsSelected 来切换，不依赖 ContentPresenter 的附加属性。 -->
+    <Style x:Key="SegmentedTabHeader" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TabItem}}" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource BrushOnAccent}"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>
