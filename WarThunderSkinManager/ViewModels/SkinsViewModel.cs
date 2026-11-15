@@ -995,15 +995,25 @@ public partial class SkinsViewModel : ObservableObject
     /// 父子关系变化后重建输出（由载具管理页通知）：子载具已激活的包会被迁到父目录；
     /// 移除子载具则把它在父目录里的文件清掉。
     /// </summary>
-    public void SyncSubVehicleGroup(string vehicleId)
+    public void SyncSubVehicleGroup(string vehicleId, bool silent = false)
     {
-        if (!EnsureConfigDir()) return;
+        // 静默（自动绑定触发）：目录没配好直接跳过，不弹任何提示
+        if (silent)
+        {
+            if (!EnsureOutputDirs(out _, out _, out _)) return;
+        }
+        else if (!EnsureConfigDir())
+        {
+            return;
+        }
 
         var (report, error) = RebuildGroupFor(vehicleId);
 
         // 变成子载具后，它自己原来的目录（WTSM/<子载具>/）必须清掉，否则游戏里还留着一份旧输出
         if (SubVehicleService.IsChild(vehicleId) && !string.IsNullOrWhiteSpace(_config.UserSkinsDirectory))
             OutputService.RemoveVehicleOutput(_config.UserSkinsDirectory, vehicleId);
+
+        if (silent) return;
 
         if (error != null) ShowStatus(Loc.Format("skins.syncFailed", error));
         else if (report != null) ShowStatus(Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures));
@@ -1707,8 +1717,12 @@ public partial class SkinsViewModel : ObservableObject
             if (parentVehicle == null || childVehicle == null) continue;               // 父子都在载具表
             if (parentVehicle.SkinPackages.Count == 0 && childVehicle.SkinPackages.Count == 0) continue; // 没有相关包
 
-            SubVehicleService.TryAutoBind(child, id => string.Equals(id, parent, StringComparison.OrdinalIgnoreCase)
-                                                        || string.Equals(id, child, StringComparison.OrdinalIgnoreCase));
+            var bound = SubVehicleService.TryAutoBind(child, id => string.Equals(id, parent, StringComparison.OrdinalIgnoreCase)
+                                                            || string.Equals(id, child, StringComparison.OrdinalIgnoreCase));
+
+            // 真的新建了绑定 → 静默迁移：把子载具之前已激活的包从子目录迁到父目录
+            // （否则要手动激活一次才会搬过去）
+            if (bound) SyncSubVehicleGroup(child, silent: true);
         }
     }
 
