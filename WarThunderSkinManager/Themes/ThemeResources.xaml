@@ -1380,9 +1380,9 @@
     </Style>
 
     <!-- ============ 选项卡（载具管理页：基本信息 / 部件结构） ============
-         胶囊分段风格，对齐导航选中态（§5.x）：未选中透明底 + 次级灰字（Regular），
-         选中 Surface2 底 + Primary 文字 + SemiBold；悬停只对未选中项生效并带平滑过渡，
-         避免选中 tab 悬停时底色在 Surface2 / Hover 间来回跳（闪烁）。
+         视觉对齐首页「国家横条」的 ChipButton 胶囊：未选中 Surface 浅灰底 + 次级灰字，
+         选中 PrimaryFill 实心主色底 + OnAccent 白字，圆角 15 胶囊、高 30、间距 8。
+         悬停只降透明度（Opacity 0.86），不再切底色，避免闪烁。
          TabControl 去掉默认外框，内容区直接铺开（部件列表独占一页拿满高度）。 -->
     <Style x:Key="SegmentedTabControl" TargetType="TabControl">
         <Setter Property="Background" Value="Transparent"/>
@@ -1405,14 +1405,17 @@
 
     <Style x:Key="SegmentedTabItem" TargetType="TabItem">
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
-        <Setter Property="FontSize" Value="14"/>
-        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="Margin" Value="0,0,8,0"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
-                    <Border x:Name="bd" Background="Transparent" CornerRadius="8"
+                    <Border x:Name="bd" Background="{StaticResource BrushSurface}" CornerRadius="15"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter ContentSource="Header"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1422,36 +1425,28 @@
                                           TextElement.FontWeight="{TemplateBinding FontWeight}"/>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <!-- 悬停仅对未选中项生效：选中项悬停保持 Surface2，不来回跳 -->
-                        <MultiTrigger>
-                            <MultiTrigger.Conditions>
-                                <Condition Property="IsMouseOver" Value="True"/>
-                                <Condition Property="IsSelected" Value="False"/>
-                            </MultiTrigger.Conditions>
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushHover}"/>
-                            <MultiTrigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="bd"
-                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="{StaticResource ColorHover}" Duration="0:0:0.12"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </MultiTrigger.EnterActions>
-                            <MultiTrigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="bd"
-                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="{StaticResource ColorTransparent}" Duration="0:0:0.15"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </MultiTrigger.ExitActions>
-                        </MultiTrigger>
-                        <!-- 选中：Surface2 底 + Primary 文字（字重保持 Regular，不加粗） -->
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushSurface2}"/>
-                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
+                            <Setter Property="Foreground" Value="{StaticResource BrushOnAccent}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="0.86"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         To="0.86" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.15"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
