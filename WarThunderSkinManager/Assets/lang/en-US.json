@@ -182,6 +182,7 @@
   "settings.compress.running": "Compressing the library…",
   "settings.compress.progress": "Compressed {0} / {1}: {2}",
   "settings.compress.done": "Library compression done: {0} files, saved {1}",
+  "settings.compress.doneWithErrors": "Library compression done: {0} files, saved {2}; {1} files could not be compressed (originals kept, you can retry)",
   "settings.compress.nothing": "Nothing to compress",
   "settings.compress.failed": "Compression failed: {0}",
   "settings.compress.canceled": "Compression canceled",

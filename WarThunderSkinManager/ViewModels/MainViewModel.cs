@@ -1281,10 +1281,21 @@ public partial class MainViewModel : ObservableObject
             {
                 var result = await Task.Run(
                     () => BlobStore.RecompressAll(resourceDir, reporter, cts.Token), cts.Token);
-                ShowStatus(result.compressed == 0
-                    ? Loc["settings.compress.nothing"]
-                    : Loc.Format("settings.compress.done", result.compressed,
+                if (result.compressed == 0 && result.failed == 0)
+                {
+                    ShowStatus(Loc["settings.compress.nothing"]);
+                }
+                else if (result.failed > 0)
+                {
+                    // 有文件校验/IO 失败：原文件已保留，如实回报，避免"完成"假象
+                    ShowStatus(Loc.Format("settings.compress.doneWithErrors", result.compressed,
+                        result.failed, DataResetService.FormatSize(result.savedBytes)));
+                }
+                else
+                {
+                    ShowStatus(Loc.Format("settings.compress.done", result.compressed,
                         DataResetService.FormatSize(result.savedBytes)));
+                }
             }
             catch (OperationCanceledException)
             {

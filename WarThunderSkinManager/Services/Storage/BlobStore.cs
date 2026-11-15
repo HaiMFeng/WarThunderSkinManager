@@ -212,25 +212,33 @@ public static class BlobStore
     /// <summary>
     /// 存量 blob 全量压缩迁移（开启压缩开关时调用）：遍历所有 blob，对未压缩的逐个原子替换为压缩版
     /// （内容哈希不变，故 meta / 去重 / 引用全部不受影响）；已压缩的跳过。单文件失败会保留原样、
-    /// 继续后续（下次迁移重试）。返回（已压缩数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用，避免与导入并发。
+    /// 继续后续（下次迁移重试）。返回（已压缩数, 失败数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用，避免与导入并发。
     /// </summary>
-    public static (int compressed, long savedBytes) RecompressAll(
+    public static (int compressed, int failed, long savedBytes) RecompressAll(
         string resourceDir, IProgress<(int done, int total, string? current)>? progress, CancellationToken ct)
     {
-        // 清理历史遗留的压缩临时文件（RecompressOne 异常中断时可能产生）；它们不是 blob
+        // 清理历史遗留的压缩临时文件（RecompressOne 异常中断时可能产生）；它们不是 blob。
+        // **带宽限期**：与导入并发时（导入路径不进入 AppBusy），另一线程的 Store 可能正在写
+        // blobs/<guid>.tmp —— 只看 mtime 早于宽限期的才删，避免把别人正在写的临时文件删掉。
         var blobDir = BlobsDirectory(resourceDir);
+        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
         if (Directory.Exists(blobDir))
         {
             foreach (var t in Directory.GetFiles(blobDir, "*.tmp"))
             {
-                try { File.Delete(t); } catch (IOException) { }
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(t) > cutoff) continue; // 宽限期内：可能还在写
+                    File.Delete(t);
+                }
+                catch (IOException) { }
             }
         }
 
         var blobs = EnumerateBlobs(resourceDir)
             .Where(f => !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) // 不把临时文件当待压缩 blob
             .ToArray();
-        int done = 0, compressed = 0;
+        int done = 0, compressed = 0, failed = 0;
         long saved = 0;
         foreach (var b in blobs)
         {
@@ -244,15 +252,16 @@ public static class BlobStore
                 saved += before - new FileInfo(b).Length;
                 compressed++;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
-                // 单文件失败：保留原样，继续下一个（下次迁移重试）
+                // 单文件失败（含压缩后校验不通过）：原文件已保留，继续下一个（下次迁移重试）
+                failed++;
             }
 
             done++;
             progress?.Report((done, blobs.Length, Path.GetFileName(b)));
         }
-        return (compressed, saved);
+        return (compressed, failed, saved);
     }
 
     /// <summary>把单个未压缩 blob 原子替换为压缩版（内容哈希不变）。</summary>
@@ -265,17 +274,47 @@ public static class BlobStore
         using (var target = File.Create(tmp))
         {
             target.Write(CompressedHeader, 0, CompressedHeader.Length);
-            using (var cs = new BrotliStream(target, CompressionLevel.Optimal))
+            // leaveOpen：让 target 保持打开，压缩层关掉后再统一 fsync 落盘
+            using (var cs = new BrotliStream(target, CompressionLevel.Optimal, leaveOpen: true))
             {
                 // src 必须在 File.Replace 之前释放：OpenBlob 以 FileShare.Read 打开 dest，
                 // 而 File.Replace 需对 dest 重命名/删除（写+删访问权），句柄未关会触发共享冲突 IOException。
                 using var src = OpenBlob(blobPath); // 未压缩 → 原样返回
                 src.CopyTo(cs); // 流式压缩；结束自动 flush 到 target
             }
+
+            target.Flush(true); // 落盘屏障：替换前先把内容刷到磁盘，防断电留下"名字对、内容坏"
+        }
+
+        // **校验通过才替换原文件**：把 tmp 解压读回求 SHA-256，须等于原始内容哈希。
+        // 原始 blob 在此刻仍完好——校验失败就丢弃 tmp、保留原文件并抛错（上层计入失败数），
+        // 绝不拿一个可能损坏的压缩结果覆盖仅存的原件。
+        if (!VerifyLossless(tmp, hash))
+        {
+            try { File.Delete(tmp); } catch (IOException) { }
+            throw new InvalidDataException($"blob 压缩校验失败: {Path.GetFileName(blobPath)}");
         }
 
         // 原子替换：dest 当前是未压缩版，替换为压缩版（内容哈希不变）。File.Replace 在 Windows 上原子。
         // 失败时 tmp 残留（GC 清理）、原 dest 保留，下次重试。
         File.Replace(tmp, BlobPath(resourceDir, hash, ext), null);
+    }
+
+    /// <summary>
+    /// 校验压缩 blob 无损：解压读回求 SHA-256，与期望的内容哈希比对（大小写不敏感）。
+    /// 读失败 / 解压失败的都返回 <c>false</c>（交由调用方保留原文件）。
+    /// </summary>
+    private static bool VerifyLossless(string blobPath, string expectedHash)
+    {
+        try
+        {
+            using var s = OpenBlob(blobPath);
+            var actual = Convert.ToHexString(SHA256.HashData(s));
+            return string.Equals(actual, expectedHash, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }

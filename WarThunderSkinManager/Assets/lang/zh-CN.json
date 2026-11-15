@@ -182,6 +182,7 @@
   "settings.compress.running": "正在压缩资源库…",
   "settings.compress.progress": "已压缩 {0} / {1}：{2}",
   "settings.compress.done": "资源库压缩完成：{0} 个文件，节省 {1}",
+  "settings.compress.doneWithErrors": "资源库压缩完成：{0} 个文件，节省 {2}；另有 {1} 个文件未能压缩（原文件已保留，可再次尝试）",
   "settings.compress.nothing": "没有需要压缩的文件",
   "settings.compress.failed": "压缩失败：{0}",
   "settings.compress.canceled": "压缩已取消",

@@ -156,7 +156,7 @@ internal static class SelfTest
                     break;
                 }
             }
-            log.AppendLine($"RecompressAll 无损 : {recompressLossless}, 压缩 {recompress.compressed} 个, 节省 {recompress.savedBytes} 字节（migrateProbe 之前未压缩={!beforeComp}）");
+            log.AppendLine($"RecompressAll 无损 : {recompressLossless}, 压缩 {recompress.compressed} 个, 失败 {recompress.failed} 个, 节省 {recompress.savedBytes} 字节（migrateProbe 之前未压缩={!beforeComp}）");
             BlobStore.CompressionEnabled = false; // 复位，避免影响后续导出校验
 
             var vehicles = VehicleAggregator.BuildAll(resourceDir);
