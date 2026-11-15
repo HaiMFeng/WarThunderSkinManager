@@ -227,11 +227,11 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>还能不能继续加载（页面首次可见 / 滚动到底时据此请求）。</summary>
     public bool CanLoadMore => !IsLoading && !IsExhausted && !HasError;
 
-    /// <summary>能否后退（标题旁的「←」按钮据此启用 / 置灰）。</summary>
-    public bool CanGoBack => _history.CanGoBack;
+    /// <summary>能否后退（标题旁的「←」按钮据此启用 / 置灰）。收藏模式下禁用，避免把普通历史与收藏列表混排。</summary>
+    public bool CanGoBack => _history.CanGoBack && !IsFavoriteAuthorsMode;
 
-    /// <summary>能否前进。</summary>
-    public bool CanGoForward => _history.CanGoForward;
+    /// <summary>能否前进（收藏模式下同样禁用）。</summary>
+    public bool CanGoForward => _history.CanGoForward && !IsFavoriteAuthorsMode;
 
     /// <summary>
     /// 恢复历史条目时，视图据此把列表滚回当时的位置（参数 = 垂直偏移 DIP）。
@@ -585,7 +585,11 @@ public partial class WtLiveViewModel : ObservableObject
     /// <summary>模式下只能按时间排序：作者页的时间序最直观，也与"最新"语义一致。</summary>
     public bool IsSortEnabled => !IsFavoriteAuthorsMode;
 
-    partial void OnIsFavoriteAuthorsModeChanged(bool value) => OnPropertyChanged(nameof(IsSortEnabled));
+    partial void OnIsFavoriteAuthorsModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsSortEnabled));
+        NotifyHistoryChanged(); // 收藏模式切换 → 前进/后退可用性随之变化
+    }
 
     private readonly HashSet<long> _favoriteAuthorIds = new();       // 数值 id（条目匹配用）
     private readonly HashSet<string> _favoriteAuthorNames = new(StringComparer.OrdinalIgnoreCase);
@@ -598,6 +602,8 @@ public partial class WtLiveViewModel : ObservableObject
     private bool _favoriteBusy;
     /// <summary>这一轮跑着的时候又有人要一批（滚动 / 刷新）→ 结束后补跑一次，否则会"卡住不动"。</summary>
     private bool _favoritePending;
+    /// <summary>被丢弃的那次补跑是否带了"强制同步"（点刷新被挡时不能降级成普通滚动）。</summary>
+    private bool _favoritePendingForce;
 
     /// <summary>
     /// 进入「收藏作者的涂装」：清空筛选、排序回时间序，然后按作者同步 + 本地归并。
@@ -664,6 +670,7 @@ public partial class WtLiveViewModel : ObservableObject
         _favoriteAuthorRawIds.Clear();
         _favoriteServed.Clear();
         _favoritePending = false;
+        _favoritePendingForce = false;
         _favoriteFirstSyncDone = false;
         FavoriteModeText = "";
 
@@ -679,12 +686,14 @@ public partial class WtLiveViewModel : ObservableObject
     {
         if (_favoriteBusy)
         {
-            _favoritePending = true; // 正在跑：结束后补跑，别把这次请求丢掉
+            _favoritePending = true;              // 正在跑：结束后补跑，别把这次请求丢掉
+            _favoritePendingForce |= forceSync;   // 且记住"这次是刷新"——补跑时不能降级成普通滚动
             return;
         }
 
         _favoriteBusy = true;
         _favoritePending = false;
+        _favoritePendingForce = false;
         IsLoading = true;
 
         var session = _session;
@@ -732,7 +741,9 @@ public partial class WtLiveViewModel : ObservableObject
             if (_favoritePending && IsFavoriteAuthorsMode)
             {
                 _favoritePending = false;
-                _ = LoadMoreFavoritesAsync(); // 期间被丢弃的那次请求在这里补上
+                var pendingForce = _favoritePendingForce;
+                _favoritePendingForce = false;
+                _ = LoadMoreFavoritesAsync(pendingForce); // 期间被丢弃的那次请求在这里补上（保留"是否强制同步"）
             }
         }
     }
@@ -760,6 +771,8 @@ public partial class WtLiveViewModel : ObservableObject
 
             var previousMax = WtLiveAuthorFeedCache.MaxPostId(authorId);
             var pageIndex = 0;
+            var seenMax = previousMax;
+            var marked = false;
 
             while (pageIndex < FavoriteAuthorMaxPages)
             {
@@ -776,23 +789,38 @@ public partial class WtLiveViewModel : ObservableObject
                 }
 
                 if (session != _session) return;
-                if (page.Items.Count == 0) { WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, previousMax, -1); break; }
+
+                if (page.Items.Count == 0)
+                {
+                    // 空页未必等于"到底"（风控 / 接口偶发空列表）：只记"下次从本页继续"，
+                    // 别写死 -1 把该作者永久屏蔽（否则只有手动刷新才可能纠正）
+                    WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, seenMax, pageIndex);
+                    marked = true;
+                    break;
+                }
 
                 WtLiveAuthorFeedCache.Upsert(page.Items);
+                seenMax = Math.Max(seenMax, page.Items.Max(item => item.LangGroup));
 
                 var full = page.Items.Count >= WTLiveService.FeedPageSize;
                 var overlapped = previousMax > 0 && page.Items.Any(item => item.LangGroup <= previousMax);
 
                 if (overlapped || !full)
                 {
-                    var max = page.Items.Max(item => item.LangGroup);
-                    WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, Math.Max(max, previousMax), full ? pageIndex + 1 : -1);
+                    WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, seenMax, full ? pageIndex + 1 : -1);
+                    marked = true;
                     break;
                 }
 
                 pageIndex++;
 
                 if (pageIndex < FavoriteAuthorMaxPages) await Task.Delay(FavoriteRequestGap);
+            }
+
+            if (!marked)
+            {
+                // 翻满上限仍全是新帖：必须推进游标，否则 previousMax 永远为 0 → 之后每次刷新都固定拉满上限页
+                WtLiveAuthorFeedCache.MarkAuthorSynced(authorId, seenMax, pageIndex);
             }
         }
 

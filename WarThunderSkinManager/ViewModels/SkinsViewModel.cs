@@ -1502,9 +1502,12 @@ public partial class SkinsViewModel : ObservableObject
                 var userSkins = _config.UserSkinsDirectory;
                 if (!string.IsNullOrWhiteSpace(userSkins) && Directory.Exists(userSkins))
                 {
-                    var (cleared, error) = OutputService.ClearVehicle(userSkins, vehicleId);
+                    // 子载具的真实输出在**父目录**里：必须整组重建（ClearVehicle 只清 WTSM/<vehicleId>，
+                    // 会漏掉父目录里该子载具的 blk/贴图 → 游戏继续显示已删除的涂装）
+                    var (report, error) = await RunGroupRebuildAsync(
+                        () => BuildGroupSyncRequest(vehicleId, reactivatedPackageId: ""));
                     if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
-                    else if (cleared) status += Loc["pkg.deletedClearedOutput"];
+                    else if (report is { BlkWritten: > 0 }) status += Loc["pkg.deletedClearedOutput"];
                 }
             }
 

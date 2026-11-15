@@ -658,7 +658,7 @@ public partial class MainViewModel : ObservableObject
                             // loadouts（各载具的激活状态）、wtlive（收藏作者）、countries.json（国家归类覆盖）
                             // 原先漏在清单外 —— 换配置目录后它们会被静默丢下（发布前审查发现）。
                             "config" => (IReadOnlyList<string>)new[]
-                                { "config.json", "lang", "mappings", "index", "ref", "loadouts", "wtlive", "countries.json" },
+                                { "config.json", "lang", "mappings", "index", "ref", "loadouts", "wtlive", "countries.json", "subvehicles.json" },
                             "userSkins" => new[] { "WTSM" },
                             _ => Directory.GetFileSystemEntries(oldDir)
                                 .Select(entry => Path.GetFileName(entry)!)

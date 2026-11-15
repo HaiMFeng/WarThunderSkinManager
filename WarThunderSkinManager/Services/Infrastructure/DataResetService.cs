@@ -127,6 +127,8 @@ public static class DataResetService
                 // 不删 previews/：预览图属于涂装库（§3.6）。这里若还残留旧位置的图，
                 // 说明迁移没跑完 —— 留给迁移器下次启动继续搬，不能当"配置数据"清掉
                 DeleteDirectory(Path.Combine(configDir, "wtlive-cache"), errors); // 预览图缓存（§5.7.1）
+                DeleteFile(Path.Combine(configDir, "subvehicles.json"), errors);    // 附属载具映射（§3.19）
+                WarThunderSkinManager.Services.SubVehicleService.Reset();           // 清内存缓存，避免继续用陈旧映射
             }
 
             if (options.ClearSettings)
