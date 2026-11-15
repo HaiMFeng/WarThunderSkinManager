@@ -1405,8 +1405,7 @@
 
     <Style x:Key="SegmentedTabItem" TargetType="TabItem">
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}"/>
-        <Setter Property="FontSize" Value="15"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="14"/>
         <Setter Property="Padding" Value="12,6"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -1449,7 +1448,7 @@
                                 </BeginStoryboard>
                             </MultiTrigger.ExitActions>
                         </MultiTrigger>
-                        <!-- 选中：Surface2 底 + Primary 文字（字重已由样式 SemiBold 统一，不另设） -->
+                        <!-- 选中：Surface2 底 + Primary 文字（字重保持 Regular，不加粗） -->
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushSurface2}"/>
                             <Setter Property="Foreground" Value="{StaticResource BrushPrimary}"/>
