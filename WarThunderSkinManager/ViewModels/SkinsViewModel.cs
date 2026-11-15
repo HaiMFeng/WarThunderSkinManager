@@ -918,6 +918,10 @@ public partial class SkinsViewModel : ObservableObject
         LoadoutService.Activate(_config.ConfigDirectory, vehicleId, package.Id);
         LoadActivation();
 
+        // 内置父子组合（fcs/launcher 等）：父子都在载具表里就自动建立（用户手动解绑过的不再重建）
+        SubVehicleService.TryAutoBind(vehicleId,
+            id => _allVehicles.Any(vehicle => string.Equals(vehicle.Id, id, StringComparison.OrdinalIgnoreCase)));
+
         // 激活 = 明确要输出这套包 → 立即落盘（游戏热重载随即生效，§3.8）
         var activated = Loc.Format("pkg.activated", package.Name);
         var sync = SyncCurrentVehicleMessage(out var blkCreated);
@@ -950,9 +954,10 @@ public partial class SkinsViewModel : ObservableObject
         var userSkins = _config.UserSkinsDirectory;
         if (!string.IsNullOrWhiteSpace(userSkins) && Directory.Exists(userSkins))
         {
-            var (cleared, error) = OutputService.ClearVehicle(userSkins, vehicleId);
+            // 整组重建：本载具留下空 blk（槽位不丢），同组其它成员照常重写
+            var (report, error) = RebuildGroupFor(vehicleId, reactivatedPackageId: "");
             if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
-            else if (cleared) status += Loc["pkg.deactivatedCleared"];
+            else if (report is { BlkWritten: > 0 }) status += Loc["pkg.deactivatedCleared"];
         }
 
         ShowStatus(status);
@@ -974,24 +979,94 @@ public partial class SkinsViewModel : ObservableObject
         var active = Packages.FirstOrDefault(p => p.IsActive);
         if (active == null) return Loc["skins.needActive"];
 
-        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return error;
+        var (report, error) = RebuildGroupFor(SelectedVehicle.Id, active.Id);
+        if (report == null) return Loc.Format("skins.syncFailed", error ?? "");
+
+        blkCreated = report.AnyBlkCreated;
+
+        var message = Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures);
+        if (report.Warnings.Count > 0)
+            message += Loc.Format("skins.syncWarnings", report.Warnings.Count);
+
+        return message;
+    }
+
+    /// <summary>
+    /// 父子关系变化后重建输出（由载具管理页通知）：子载具已激活的包会被迁到父目录；
+    /// 移除子载具则把它在父目录里的文件清掉。
+    /// </summary>
+    public void SyncSubVehicleGroup(string vehicleId)
+    {
+        if (!EnsureConfigDir()) return;
+
+        var (report, error) = RebuildGroupFor(vehicleId);
+
+        // 变成子载具后，它自己原来的目录（WTSM/<子载具>/）必须清掉，否则游戏里还留着一份旧输出
+        if (SubVehicleService.IsChild(vehicleId) && !string.IsNullOrWhiteSpace(_config.UserSkinsDirectory))
+            OutputService.RemoveVehicleOutput(_config.UserSkinsDirectory, vehicleId);
+
+        if (error != null) ShowStatus(Loc.Format("skins.syncFailed", error));
+        else if (report != null) ShowStatus(Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures));
+    }
+
+    /// <summary>
+    /// 重建某载具所在的「复合载具组」输出（§3.19：父载具 + 全部子载具共用一个目录）。
+    /// </summary>
+    /// <remarks>
+    /// 任何成员变化都**整组重算**（<see cref="OutputService.RebuildGroup"/> 先写后删），
+    /// 因此父/子谁变了都不需要单独记"删哪些文件"，也不会留残留。
+    /// </remarks>
+    /// <param name="vehicleId">发生变化的载具（父或子都可以）</param>
+    /// <param name="reactivatedPackageId">刚被激活的包 Id（缺省 = 按各成员自己的激活状态取）</param>
+    private (GroupSyncReport? Report, string? Error) RebuildGroupFor(string vehicleId, string? reactivatedPackageId = null)
+    {
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return (null, error);
 
         try
         {
-            var report = OutputService.SyncVehicle(userSkins, resourceDir, SelectedVehicle.Id,
-                LoadoutService.BuildLoadout(active));
+            var parent = SubVehicleService.OutputParentOf(vehicleId);
+            var outputDir = OutputService.VehicleOutputDir(userSkins, parent);
+            var members = new List<GroupMember>();
 
-            blkCreated = report.BlkCreated;
+            foreach (var memberId in SubVehicleService.GroupOf(parent))
+            {
+                var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, memberId);
 
-            var message = Loc.Format("skins.syncDone", report.BlkEntries, report.WrittenTextures);
-            if (report.Warnings.Count > 0)
-                message += Loc.Format("skins.syncWarnings", report.Warnings.Count);
-            return message;
+                var packageId = string.Equals(memberId, vehicleId, StringComparison.OrdinalIgnoreCase)
+                                && !string.IsNullOrWhiteSpace(reactivatedPackageId)
+                    ? reactivatedPackageId!
+                    : activation.ActivePackageId;
+
+                var package = packageId.Length == 0 ? null : FindPackage(resourceDir, memberId, packageId);
+
+                members.Add(new GroupMember
+                {
+                    VehicleId = memberId,
+                    Package = package,
+                    // 没激活但目录里本来就有它的 blk → 保留槽位（与"取消激活留空 blk"的既有语义一致）
+                    KeepSlot = package == null && File.Exists(Path.Combine(outputDir, memberId + ".blk"))
+                });
+            }
+
+            return (OutputService.RebuildGroup(userSkins, resourceDir, parent, members), null);
         }
         catch (Exception ex)
         {
-            return Loc.Format("skins.syncFailed", ex.Message);
+            return (null, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 从当前库投影里找"某载具的某个包"。包必须**仍在磁盘上**（批量删包后投影可能还没刷新，
+    /// 用它去重建输出会把已删的包写回去）。
+    /// </summary>
+    private SkinPackage? FindPackage(string resourceDir, string vehicleId, string packageId)
+    {
+        if (!Directory.Exists(PackageStore.PackageDirectory(resourceDir, packageId))) return null;
+
+        return _allVehicles
+            .FirstOrDefault(vehicle => string.Equals(vehicle.Id, vehicleId, StringComparison.OrdinalIgnoreCase))?
+            .SkinPackages.FirstOrDefault(package => string.Equals(package.Id, packageId, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -1432,9 +1507,11 @@ public partial class SkinsViewModel : ObservableObject
 
                 foreach (var vehicleId in deactivated)
                 {
-                    var (done, failure) = OutputService.ClearVehicle(userSkins, vehicleId);
+                    // 同上：整组重建（被删包已不在磁盘上，FindPackage 会按"存在性"过滤掉它）
+                    var (report, failure) = RebuildGroupFor(vehicleId, reactivatedPackageId: "");
+
                     if (failure != null) error = failure;
-                    else if (done) cleared++;
+                    else if (report is { BlkWritten: > 0 }) cleared++;
                 }
 
                 if (error != null) status += Loc.Format("pkg.deactivateRemoveFailed", error);
@@ -1606,10 +1683,33 @@ public partial class SkinsViewModel : ObservableObject
 
         _allVehicles = projected ?? LibraryService.ToVehicles(snapshot, LoadCountryOverrides());
         ApplyVehicleMappings(_allVehicles);
+
+        // 内置父子组合（fcs/launcher、Mistel）：**相关包已载入**且父子两条记录都在 → 自动建立关系
+        AutoBindBuiltInSubVehicles();
+
         RebuildCountries();
         ApplyCountryFilter(); // 选中载具若已不存在会自动回退；变化会触发预览图加载
 
         SelectedPackage = Packages.FirstOrDefault(p => p.Id == previousPackageId) ?? Packages.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// 内置父子组合的自动绑定（§3.19）：**相关包已载入**（父或子任一方有包）且两条载具记录都存在时才绑。
+    /// 用户手动解绑过的（<c>dismissed</c>）不会被重建。
+    /// </summary>
+    private void AutoBindBuiltInSubVehicles()
+    {
+        foreach (var (parent, child) in BuiltInSubVehicles.All)
+        {
+            var parentVehicle = _allVehicles.FirstOrDefault(v => string.Equals(v.Id, parent, StringComparison.OrdinalIgnoreCase));
+            var childVehicle = _allVehicles.FirstOrDefault(v => string.Equals(v.Id, child, StringComparison.OrdinalIgnoreCase));
+
+            if (parentVehicle == null || childVehicle == null) continue;               // 父子都在载具表
+            if (parentVehicle.SkinPackages.Count == 0 && childVehicle.SkinPackages.Count == 0) continue; // 没有相关包
+
+            SubVehicleService.TryAutoBind(child, id => string.Equals(id, parent, StringComparison.OrdinalIgnoreCase)
+                                                        || string.Equals(id, child, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     /// <summary>

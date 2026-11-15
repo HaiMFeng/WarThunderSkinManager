@@ -37,6 +37,15 @@ public sealed class CountryOption
 /// 国家归类（<c>mappings/vehicle_countries.json</c>），并只读展示内部标识、涂装包数量与
 /// 各 <c>from</c> 结构；**部件贴图适配与同步输出在涂装管理页**（§3.5 / §3.8）。
 /// </summary>
+/// <summary>「附属载具」列表 / 候选里的一行（不参与数据绑定以外的逻辑）。</summary>
+public sealed class SubVehicleItem
+{
+    public string Id { get; init; } = "";
+
+    /// <summary>显示文案：<c>显示名 · 内部标识</c>。</summary>
+    public string Display { get; init; } = "";
+}
+
 public partial class VehiclesViewModel : ObservableObject
 {
     private readonly AppConfig _config;
@@ -112,6 +121,143 @@ public partial class VehiclesViewModel : ObservableObject
     public string PartCountText => Loc.Format("vehicles.partCount",
         SelectedVehicle?.Parts.Count(p => !p.IsExcluded) ?? 0);
 
+    // ---------- 附属载具（§3.19）----------
+
+    /// <summary>选中载具的附属载具（子载具）。</summary>
+    [ObservableProperty] private ObservableCollection<SubVehicleItem> _subVehicles = new();
+
+    /// <summary>添加子载具的搜索词（匹配内部标识或显示名）。</summary>
+    [ObservableProperty] private string _subVehicleSearchText = "";
+
+    /// <summary>添加子载具的候选（输入即筛）。</summary>
+    [ObservableProperty] private ObservableCollection<SubVehicleItem> _subVehicleCandidates = new();
+
+    /// <summary>刚做完的操作结果 / 失败原因（显示在标题右侧的说明行）。</summary>
+    [ObservableProperty] private string _subVehicleMessage = "";
+
+    /// <summary>父子关系发生变化（父 id, 子 id）→ 由 <c>MainViewModel</c> 触发输出重建。</summary>
+    public event Action<string, string>? SubVehiclesChanged;
+
+    public bool HasSubVehicles => SubVehicles.Count > 0;
+
+    /// <summary>当前选中的载具本身是别人的子载具 → 只能只读查看，不能再加子。</summary>
+    public bool IsSelectedChild => SelectedVehicle != null && SubVehicleService.IsChild(SelectedVehicle.Id);
+
+    /// <summary>只有非子载具才能加子（禁止链式）。</summary>
+    public bool CanAddSubVehicle => SelectedVehicle != null && !IsSelectedChild;
+
+    /// <summary>「属于 X 的附属载具」；不是子载具时为空串（界面上自然不占位）。</summary>
+    public string SubVehicleParentText
+    {
+        get
+        {
+            var parent = SelectedVehicle == null ? null : SubVehicleService.ParentOf(SelectedVehicle.Id);
+            return parent == null ? "" : Loc.Format("vehicles.subVehicleParent", DisplayOf(parent));
+        }
+    }
+
+    partial void OnSubVehicleSearchTextChanged(string value) => RefreshSubVehicleCandidates();
+
+    /// <summary>
+    /// 加一个附属载具：<c>Bind</c> 成功后通知外部重建输出（子载具已激活的包会被迁到父目录）。
+    /// </summary>
+    [RelayCommand]
+    private void AddSubVehicle(SubVehicleItem? candidate)
+    {
+        if (candidate == null || SelectedVehicle == null) return;
+
+        var parent = SelectedVehicle.Id;
+        var (ok, _) = SubVehicleService.Bind(parent, candidate.Id);
+
+        if (!ok)
+        {
+            // 已有父 / 会造成链式 / 自己绑自己：说明原因，不改动
+            SubVehicleMessage = Loc["vehicles.subVehicleFailed"];
+            return;
+        }
+
+        SubVehicleMessage = Loc.Format("vehicles.subVehicleAdded", candidate.Display);
+        RefreshSubVehicles();
+        SubVehiclesChanged?.Invoke(parent, candidate.Id);
+    }
+
+    /// <summary>移除附属载具：解绑后通知外部重建输出（父目录里它的文件会被清掉）。</summary>
+    [RelayCommand]
+    private void RemoveSubVehicle(SubVehicleItem? item)
+    {
+        if (item == null) return;
+
+        var parent = SubVehicleService.ParentOf(item.Id) ?? SelectedVehicle?.Id;
+        if (!SubVehicleService.Unbind(item.Id)) return;
+
+        SubVehicleMessage = Loc.Format("vehicles.subVehicleRemoved", item.Display);
+        RefreshSubVehicles();
+
+        if (parent != null) SubVehiclesChanged?.Invoke(parent, item.Id);
+    }
+
+    /// <summary>重建"附属载具"区块（切换选中载具 / 绑定变化后调用）。</summary>
+    private void RefreshSubVehicles()
+    {
+        var items = new List<SubVehicleItem>();
+
+        if (SelectedVehicle != null)
+        {
+            foreach (var childId in SubVehicleService.ChildrenOf(SelectedVehicle.Id))
+                items.Add(new SubVehicleItem { Id = childId, Display = DisplayOf(childId) });
+        }
+
+        SubVehicles = new ObservableCollection<SubVehicleItem>(items);
+        SubVehicleCandidates = new ObservableCollection<SubVehicleItem>();
+        SubVehicleSearchText = "";
+        SubVehicleMessage = "";
+
+        OnPropertyChanged(nameof(HasSubVehicles));
+        OnPropertyChanged(nameof(IsSelectedChild));
+        OnPropertyChanged(nameof(CanAddSubVehicle));
+        OnPropertyChanged(nameof(SubVehicleParentText));
+    }
+
+    private void RefreshSubVehicleCandidates()
+    {
+        var query = SubVehicleSearchText.Trim();
+        var selected = SelectedVehicle;
+
+        if (selected == null || query.Length == 0)
+        {
+            SubVehicleCandidates = new ObservableCollection<SubVehicleItem>();
+            return;
+        }
+
+        var existing = SubVehicleService.ChildrenOf(selected.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var matches = _sortedVehicles
+            .Where(v => !string.Equals(v.Id, selected.Id, StringComparison.OrdinalIgnoreCase)
+                        && !existing.Contains(v.Id)
+                        && (v.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || v.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .Take(6)
+            .Select(v => new SubVehicleItem { Id = v.Id, Display = DisplayOf(v.Id) })
+            .ToList();
+
+        SubVehicleCandidates = new ObservableCollection<SubVehicleItem>(matches);
+    }
+
+    /// <summary>载具的可读标识：<c>显示名 · 内部标识</c>（显示名与 id 同名时只显示一次）。</summary>
+    private string DisplayOf(string vehicleId)
+    {
+        var vehicle = _sortedVehicles.FirstOrDefault(v => string.Equals(v.Id, vehicleId, StringComparison.OrdinalIgnoreCase));
+
+        if (vehicle == null) return vehicleId;
+        if (string.IsNullOrWhiteSpace(vehicle.DisplayName)
+            || string.Equals(vehicle.DisplayName, vehicle.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return vehicleId;
+        }
+
+        return $"{vehicle.DisplayName} · {vehicle.Id}";
+    }
+
     // ---------- 状态联动 ----------
 
     partial void OnVehiclesChanged(ObservableCollection<Vehicle> value)
@@ -123,6 +269,7 @@ public partial class VehiclesViewModel : ObservableObject
     partial void OnSelectedVehicleChanged(Vehicle? value)
     {
         SyncFromVehicle();
+        RefreshSubVehicles(); // 换载具 → 附属载具区块跟着换
 
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasParts));
@@ -317,6 +464,10 @@ public partial class VehiclesViewModel : ObservableObject
         OnPropertyChanged(nameof(VehicleCountText));
         OnPropertyChanged(nameof(PackageCountText));
         OnPropertyChanged(nameof(PartCountText));
+
+        // 附属载具的显示名与国家名一样来自语言文件 → 重建一次（父名 / 子项 / 说明行）
+        RefreshSubVehicles();
+        OnPropertyChanged(nameof(SubVehicleParentText));
     }
 
     /// <summary>

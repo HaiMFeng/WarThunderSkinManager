@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 namespace WarThunderSkinManager.Services;
 
 /// <summary>
-/// **附属载具（子载具）** 映射（功能设计 §3.18）：<c>&lt;配置目录&gt;/subvehicles.json</c>。
+/// **附属载具（子载具）** 映射（功能设计 §3.19）：<c>&lt;配置目录&gt;/subvehicles.json</c>。
 /// </summary>
 /// <remarks>
 /// <para>

@@ -31,6 +31,9 @@ public sealed class GroupSyncReport
 
     public int BlkWritten { get; set; }
 
+    /// <summary>写出的 blk 条目总数（= 各成员映射数之和，界面上"已输出 N 条映射"用它）。</summary>
+    public int Mappings { get; set; }
+
     public int WrittenTextures { get; set; }
 
     public int SkippedTextures { get; set; }
@@ -111,6 +114,37 @@ public static class OutputService
             AtomicFile.WriteAllText(Path.Combine(outDir, vehicleId + ".blk"),
                 BlkWriter.Write(Array.Empty<BlkWriter.Entry>()));
 
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// **整目录删除**某载具的输出（<c>WTSM/&lt;载具Id&gt;/</c>）。
+    /// 只用于"该载具变成别人的附属载具"：它的输出已经改写到父目录，自己那份不应再留着。
+    /// </summary>
+    /// <param name="userSkinsDir">UserSkins 根</param>
+    /// <param name="vehicleId">载具 Id</param>
+    /// <returns>是否删掉了目录 / 失败原因</returns>
+    public static (bool Removed, string? Error) RemoveVehicleOutput(string userSkinsDir, string vehicleId)
+    {
+        if (string.IsNullOrWhiteSpace(userSkinsDir) || string.IsNullOrWhiteSpace(vehicleId))
+            return (false, null);
+
+        var wtsmRoot = Path.GetFullPath(WtsmRoot(userSkinsDir));
+        var outDir = Path.GetFullPath(VehicleOutputDir(userSkinsDir, vehicleId));
+
+        if (!outDir.StartsWith(wtsmRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return (false, Loc.Format("output.warn.notInWtsm", outDir));
+
+        if (!Directory.Exists(outDir)) return (false, null);
+
+        try
+        {
+            Directory.Delete(outDir, recursive: true);
             return (true, null);
         }
         catch (Exception ex)
@@ -271,7 +305,7 @@ public static class OutputService
 
     /// <summary>
     /// **重建一个「复合载具组」的输出**：父载具 + 全部子载具共用一个目录
-    /// （功能设计 §3.18：游戏会在父载具的文件夹里找子载具的 blk）。
+    /// （功能设计 §3.19：游戏会在父载具的文件夹里找子载具的 blk）。
     /// </summary>
     /// <remarks>
     /// **先写后删**：先把所有目标文件（贴图 → blk）写好，再删掉"不属于任何成员"的残留。
@@ -320,6 +354,7 @@ public static class OutputService
 
             var loadout = LoadoutService.BuildLoadout(member.Package);
             blkWrites.Add((vehicleId, loadout.BlkText));
+            report.Mappings += loadout.Mappings.Count;
 
             foreach (var mapping in loadout.Mappings)
             {

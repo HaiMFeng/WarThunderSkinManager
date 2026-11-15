@@ -476,6 +476,9 @@ public partial class MainViewModel : ObservableObject
         // 放在缓存配置**之后**：载入时就开始取头像（走那份图片缓存），顺序反了会白白少缓存一轮
         WtLiveFavoriteAuthors.Configure(config.ConfigDirectory);
         WtLiveAuthorFeedCache.Configure(config.ConfigDirectory);
+
+        // 附属载具映射（§3.19）：配置目录里的 subvehicles.json
+        SubVehicleService.Configure(config.ConfigDirectory);
         WtLive.Favorites.Reload();
 
         // 主题下拉：当前主题直接写字段，避免 ctor 里触发切换
@@ -537,6 +540,10 @@ public partial class MainViewModel : ObservableObject
         // 不重建的话"删了部件却仍输出该块"，直到下一次重建才生效。
         // 复用设置页的「全量重建」路径（后台线程 + 进行中合并 + 状态提示）
         Vehicles.PartExclusionsChanged += RebuildLibrary;
+
+        // 附属载具（§3.19）：绑上/解绑后立刻重建该组输出 —— 子载具已激活的包迁到父目录，
+        // 解绑则把它的文件从父目录清掉（"先写后删"由 RebuildGroup 保证不残留）
+        Vehicles.SubVehiclesChanged += (_, childId) => Skins.SyncSubVehicleGroup(childId);
 
         // 启动时静默同步一次：兜底上次游戏运行中被跳过的激活变更（§3.14）
         if (GameSyncReady) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
@@ -1127,6 +1134,7 @@ public partial class MainViewModel : ObservableObject
                 // 收藏的作者也在配置目录里 → 换目录要换成新目录那份（旧目录的文件原样留着）
                 WtLiveFavoriteAuthors.Configure(Config.ConfigDirectory);
                 WtLiveAuthorFeedCache.Configure(Config.ConfigDirectory);
+                SubVehicleService.Configure(Config.ConfigDirectory); // 附属载具映射也跟着目录走
                 WtLive.Favorites.Reload();
                 OnPropertyChanged(nameof(DataTablesDirectory));
                 OnPropertyChanged(nameof(ResourceBlockEnabled)); // 「更新资源」卡随目录就绪启停（§3.15）

@@ -5,7 +5,7 @@ using System.Linq;
 namespace WarThunderSkinManager.Services;
 
 /// <summary>
-/// **游戏内置的父子载具**（功能设计 §3.18）：这些载具在游戏里共用同一个涂装文件夹
+/// **游戏内置的父子载具**（功能设计 §3.19）：这些载具在游戏里共用同一个涂装文件夹
 /// （<c>*_fcs</c> 与它的 <c>*_launcher</c>、以及 Mistel 组合），站点/数据表里却是两条独立记录。
 /// </summary>
 /// <remarks>
