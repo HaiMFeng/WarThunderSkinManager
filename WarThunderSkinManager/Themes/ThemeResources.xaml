@@ -1408,6 +1408,7 @@
         <!-- 不在 TabItem 上设 Foreground：否则前景色会沿逻辑树传给内容区，
              选中态的白字（OnAccent）会把子载具名等文字染白导致“消失”。
              前景色只在 Header 的 ContentPresenter 上按选中态切换。 -->
+        <Setter Property="Background" Value="{StaticResource BrushSurface}"/>
         <Setter Property="Height" Value="30"/>
         <Setter Property="Padding" Value="14,0"/>
         <Setter Property="Margin" Value="0,0,8,0"/>
@@ -1416,7 +1417,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
-                    <Border x:Name="bd" Background="{StaticResource BrushSurface}" CornerRadius="15"
+                    <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="15"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter x:Name="header" ContentSource="Header"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -1426,7 +1427,7 @@
                             <Setter TargetName="header" Property="TextElement.Foreground" Value="{StaticResource BrushTextSecondary}"/>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
+                            <Setter Property="Background" Value="{StaticResource BrushPrimaryFill}"/>
                             <Setter TargetName="header" Property="TextElement.Foreground" Value="{StaticResource BrushOnAccent}"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
