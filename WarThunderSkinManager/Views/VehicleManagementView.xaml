@@ -141,71 +141,6 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- 附属载具（§3.19）：游戏在父载具的文件夹里找子载具的 blk，
-                             所以子载具的涂装输出要写进这台载具的目录 -->
-                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{loc:Loc vehicles.subVehicles}" Style="{StaticResource SectionTitle}"
-                                           VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:Loc vehicles.subVehicleHint}" FontSize="11" Margin="8,0,0,0"
-                                           Foreground="{StaticResource BrushTextMuted}" VerticalAlignment="Center"/>
-                            </StackPanel>
-
-                            <!-- 本载具是别人的子载具 → 只读说明（此时不能再加子） -->
-                            <TextBlock Text="{Binding Vehicles.SubVehicleParentText}" FontSize="12" Margin="0,6,0,0"
-                                       Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
-
-                            <!-- 已添加的附属载具 -->
-                            <ItemsControl ItemsSource="{Binding Vehicles.SubVehicles}" Margin="0,6,0,0">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{StaticResource BrushSurface2}" CornerRadius="10"
-                                                Padding="8,2,4,2" Margin="0,2,4,2">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Display}" FontSize="12" VerticalAlignment="Center"/>
-                                                <Button Content="&#xF00D;" Style="{StaticResource IconButton}"
-                                                        Width="20" Height="20" FontSize="10" Margin="4,0,0,0"
-                                                        Focusable="False" Background="Transparent"
-                                                        Foreground="{StaticResource BrushTextMuted}"
-                                                        ToolTip="{loc:Loc common.close}"
-                                                        CommandParameter="{Binding}"
-                                                        Command="{Binding DataContext.Vehicles.RemoveSubVehicleCommand,
-                                                                  RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <!-- 搜索添加（子载具不能再挂子：禁止链式，整块禁用） -->
-                            <StackPanel Margin="0,8,0,0" IsEnabled="{Binding Vehicles.CanAddSubVehicle}">
-                                <TextBox Style="{StaticResource BaseTextBox}" MaxWidth="380" HorizontalAlignment="Left"
-                                         Text="{Binding Vehicles.SubVehicleSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="{loc:Loc vehicles.subVehicleSearch}"/>
-
-                                <ItemsControl ItemsSource="{Binding Vehicles.SubVehicleCandidates}" Margin="0,4,0,0">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Content="{Binding Display}" HorizontalContentAlignment="Left"
-                                                    Background="Transparent" BorderThickness="0" Padding="4,2"
-                                                    ToolTip="{loc:Loc vehicles.subVehicleAdd}"
-                                                    CommandParameter="{Binding}"
-                                                    Command="{Binding DataContext.Vehicles.AddSubVehicleCommand,
-                                                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <TextBlock Text="{Binding Vehicles.SubVehicleMessage}" FontSize="11" Margin="0,4,0,0"
-                                           Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </StackPanel>
-
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -231,6 +166,54 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
+
+                                <!-- 附属载具（§3.19）：子载具的涂装写进这台载具的文件夹。
+                                     「+」紧贴标题（与「部件结构」的 + 一致）：它是这个标题的附属动作 -->
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,6">
+                                    <TextBlock Text="{loc:Loc vehicles.subVehicles}" Style="{StaticResource FieldLabel}"
+                                               VerticalAlignment="Center" Margin="0"/>
+                                    <Button Style="{StaticResource IconButton}" Margin="2,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Content="&#xF067;" FontSize="13"
+                                            ToolTip="{loc:Loc vehicles.subVehicleAdd}"
+                                            IsEnabled="{Binding Vehicles.CanAddSubVehicle}"
+                                            Command="{Binding Vehicles.AddSubVehicleCommand}"/>
+                                </StackPanel>
+
+                                <!-- 本载具是别人的子载具 → 只读说明（此时 + 已禁用） -->
+                                <TextBlock Text="{Binding Vehicles.SubVehicleParentText}" FontSize="12"
+                                           Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
+
+                                <!-- 已添加的附属载具 -->
+                                <ItemsControl ItemsSource="{Binding Vehicles.SubVehicles}" Margin="0,2,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource BrushSurface2}" CornerRadius="10"
+                                                    Padding="8,2,4,2" Margin="0,2,4,2">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Display}" FontSize="12"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Content="&#xF00D;" Style="{StaticResource IconButton}"
+                                                            Width="20" Height="20" FontSize="10" Margin="4,0,0,0"
+                                                            Focusable="False" Background="Transparent"
+                                                            Foreground="{StaticResource BrushTextMuted}"
+                                                            ToolTip="{loc:Loc common.close}"
+                                                            CommandParameter="{Binding}"
+                                                            Command="{Binding DataContext.Vehicles.RemoveSubVehicleCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="{Binding Vehicles.SubVehicleMessage}" FontSize="11" Margin="0,2,0,0"
+                                           Foreground="{StaticResource BrushTextMuted}" TextWrapping="Wrap"/>
                             </StackPanel>
 
                             <StackPanel Grid.Row="1">

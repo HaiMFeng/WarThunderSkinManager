@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -126,11 +127,6 @@ public partial class VehiclesViewModel : ObservableObject
     /// <summary>选中载具的附属载具（子载具）。</summary>
     [ObservableProperty] private ObservableCollection<SubVehicleItem> _subVehicles = new();
 
-    /// <summary>添加子载具的搜索词（匹配内部标识或显示名）。</summary>
-    [ObservableProperty] private string _subVehicleSearchText = "";
-
-    /// <summary>添加子载具的候选（输入即筛）。</summary>
-    [ObservableProperty] private ObservableCollection<SubVehicleItem> _subVehicleCandidates = new();
 
     /// <summary>刚做完的操作结果 / 失败原因（显示在标题右侧的说明行）。</summary>
     [ObservableProperty] private string _subVehicleMessage = "";
@@ -156,29 +152,44 @@ public partial class VehiclesViewModel : ObservableObject
         }
     }
 
-    partial void OnSubVehicleSearchTextChanged(string value) => RefreshSubVehicleCandidates();
-
     /// <summary>
-    /// 加一个附属载具：<c>Bind</c> 成功后通知外部重建输出（子载具已激活的包会被迁到父目录）。
+    /// 加一个附属载具：先弹选择窗（与「部件结构」的 + 同一套做法），
+    /// 绑定成功后通知外部重建输出（子载具已激活的包会被迁到父目录）。
     /// </summary>
     [RelayCommand]
-    private void AddSubVehicle(SubVehicleItem? candidate)
+    private void AddSubVehicle()
     {
-        if (candidate == null || SelectedVehicle == null) return;
+        if (SelectedVehicle == null) return;
 
         var parent = SelectedVehicle.Id;
-        var (ok, _) = SubVehicleService.Bind(parent, candidate.Id);
+        var existing = SubVehicleService.ChildrenOf(parent).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var candidates = _sortedVehicles
+            .Where(v => !string.Equals(v.Id, parent, StringComparison.OrdinalIgnoreCase)
+                        && !existing.Contains(v.Id))
+            .Select(v => new SubVehicleItem { Id = v.Id, Display = DisplayOf(v.Id) })
+            .ToList();
+
+        var picked = WarThunderSkinManager.Views.AddSubVehicleWindow.Prompt(
+            Application.Current?.MainWindow,
+            candidates,
+            Loc["vehicles.subVehicleAddTitle"],
+            Loc["vehicles.subVehicleAddHint"],
+            Loc["vehicles.subVehicleAddEmpty"]);
+
+        if (string.IsNullOrWhiteSpace(picked)) return;
+
+        var (ok, _) = SubVehicleService.Bind(parent, picked);
 
         if (!ok)
         {
-            // 已有父 / 会造成链式 / 自己绑自己：说明原因，不改动
             SubVehicleMessage = Loc["vehicles.subVehicleFailed"];
             return;
         }
 
-        SubVehicleMessage = Loc.Format("vehicles.subVehicleAdded", candidate.Display);
+        SubVehicleMessage = Loc.Format("vehicles.subVehicleAdded", DisplayOf(picked));
         RefreshSubVehicles();
-        SubVehiclesChanged?.Invoke(parent, candidate.Id);
+        SubVehiclesChanged?.Invoke(parent, picked);
     }
 
     /// <summary>移除附属载具：解绑后通知外部重建输出（父目录里它的文件会被清掉）。</summary>
@@ -208,39 +219,12 @@ public partial class VehiclesViewModel : ObservableObject
         }
 
         SubVehicles = new ObservableCollection<SubVehicleItem>(items);
-        SubVehicleCandidates = new ObservableCollection<SubVehicleItem>();
-        SubVehicleSearchText = "";
         SubVehicleMessage = "";
 
         OnPropertyChanged(nameof(HasSubVehicles));
         OnPropertyChanged(nameof(IsSelectedChild));
         OnPropertyChanged(nameof(CanAddSubVehicle));
         OnPropertyChanged(nameof(SubVehicleParentText));
-    }
-
-    private void RefreshSubVehicleCandidates()
-    {
-        var query = SubVehicleSearchText.Trim();
-        var selected = SelectedVehicle;
-
-        if (selected == null || query.Length == 0)
-        {
-            SubVehicleCandidates = new ObservableCollection<SubVehicleItem>();
-            return;
-        }
-
-        var existing = SubVehicleService.ChildrenOf(selected.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var matches = _sortedVehicles
-            .Where(v => !string.Equals(v.Id, selected.Id, StringComparison.OrdinalIgnoreCase)
-                        && !existing.Contains(v.Id)
-                        && (v.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
-                            || v.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)))
-            .Take(6)
-            .Select(v => new SubVehicleItem { Id = v.Id, Display = DisplayOf(v.Id) })
-            .ToList();
-
-        SubVehicleCandidates = new ObservableCollection<SubVehicleItem>(matches);
     }
 
     /// <summary>载具的可读标识：<c>显示名 · 内部标识</c>（显示名与 id 同名时只显示一次）。</summary>
