@@ -3355,6 +3355,76 @@ internal static class SelfTest
             log.AppendLine($"占位预创建: 首次 = {phCreated}（应 True），重复 = {phAgain}（应 False，不覆盖），"
                          + $"空 blk = {!phBlk.Contains("replace_tex")}（应 True）");
 
+            // ---- 附属载具（§3.18）：映射校验 / 输出重定向 / 内置组合自动绑定 ----
+            var subDir = Path.Combine(workDir, "subvehicles-cfg");
+            Directory.CreateDirectory(subDir);
+
+            SubVehicleService.Configure(subDir);
+            SubVehicleService.Reset();
+
+            var bindOk = SubVehicleService.Bind("p_fcs", "p_launcher").Ok
+                         && SubVehicleService.ParentOf("p_launcher") is "p_fcs"
+                         && SubVehicleService.IsChild("p_launcher")
+                         && SubVehicleService.IsParent("p_fcs")
+                         && SubVehicleService.OutputParentOf("p_launcher") == "p_fcs"
+                         && SubVehicleService.OutputParentOf("p_fcs") == "p_fcs";
+
+            var subRulesOk = !SubVehicleService.Bind("x", "x").Ok                       // 自引用
+                             && !SubVehicleService.Bind("q", "p_launcher").Ok            // 子已有父
+                             && !SubVehicleService.Bind("p_launcher", "z").Ok            // 父是别人的子（链式）
+                             && !SubVehicleService.Bind("p_fcs", "p_fcs").Ok;
+
+            // 内置组合：父子都存在才自动绑；解绑后不再自动重建
+            var builtInOk = BuiltInSubVehicles.All.Count == 11
+                            && BuiltInSubVehicles.FindPair("us_sl_amraam_fcs")?.Child == "us_sl_amraam_launcher"
+                            && BuiltInSubVehicles.FindPair("ju_88g_1_mistel")?.Parent == "fw_190a_8_mistel";
+
+            var autoBindMissing = !SubVehicleService.TryAutoBind("us_sl_amraam_launcher",
+                id => id == "us_sl_amraam_launcher"); // 缺 fcs → 不绑
+
+            var autoBindOk = SubVehicleService.TryAutoBind("us_sl_amraam_launcher", _ => true)
+                             && SubVehicleService.ParentOf("us_sl_amraam_launcher") is "us_sl_amraam_fcs";
+
+            SubVehicleService.Unbind("us_sl_amraam_launcher"); // 用户解绑
+            var noRebind = !SubVehicleService.TryAutoBind("us_sl_amraam_fcs", _ => true)
+                           && SubVehicleService.ParentOf("us_sl_amraam_launcher") == null;
+
+            // 落盘往返：作者映射要活下来
+            SubVehicleService.Configure(subDir);
+            var subReloaded = SubVehicleService.ParentOf("p_launcher");
+            var subFileOk = File.Exists(SubVehicleService.FilePath(subDir)) && subReloaded == "p_fcs";
+
+            // 输出重定向 + "先写后删"：残留文件被清、父子 blk 都在
+            var groupSkins = Path.Combine(workDir, "UserSkins-group");
+            var groupDir = OutputService.VehicleOutputDir(groupSkins, "p_fcs");
+            Directory.CreateDirectory(groupDir);
+            File.WriteAllText(Path.Combine(groupDir, "stale.dds"), "old");
+            File.WriteAllText(Path.Combine(groupDir, "gone.blk"), "");
+
+            var groupReport = OutputService.RebuildGroup(groupSkins, Path.Combine(workDir, "ResGroup"), "p_fcs",
+                new[]
+                {
+                    new GroupMember { VehicleId = "p_fcs", KeepSlot = true },
+                    new GroupMember { VehicleId = "p_launcher", KeepSlot = true }
+                });
+
+            var groupOk = File.Exists(Path.Combine(groupDir, "p_fcs.blk"))
+                          && File.Exists(Path.Combine(groupDir, "p_launcher.blk"))
+                          && !File.Exists(Path.Combine(groupDir, "stale.dds"))
+                          && !File.Exists(Path.Combine(groupDir, "gone.blk"))
+                          && groupReport.RemovedFiles >= 2;
+
+            log.AppendLine($"附属载具   : 绑定/反查 = {bindOk}（应 True）、非法映射拒绝（自引用/已有父/链式）= {subRulesOk}（应 True）、"
+                         + $"内置组合 = {builtInOk}（应 True）、缺一则不自动绑 = {autoBindMissing}（应 True）、"
+                         + $"自动绑定 = {autoBindOk}（应 True）、解绑后不再自动重建 = {noRebind}（应 True）、"
+                         + $"落盘往返 = {subFileOk}（应 True）、组重建（父子 blk + 无残留）= {groupOk}（应 True）");
+
+            if (!(bindOk && subRulesOk && builtInOk && autoBindMissing && autoBindOk && noRebind && subFileOk && groupOk))
+                log.AppendLine("自检异常：附属载具映射 / 内置组合 / 组重建不对（会出现输出不重定向或父目录残留）");
+
+            SubVehicleService.Reset();
+            SubVehicleService.Configure("");
+
             // ---- 更新资源落盘不被启动机制回滚（§3.15：只写用户表，绝不动基线）----
             var tablesDir = Path.Combine(workDir, "cfg-tables");
             DataTables.EnsureUserTables(tablesDir); // 首次启动：导出内置表 + 写基线

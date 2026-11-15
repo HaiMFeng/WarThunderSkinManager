@@ -9,6 +9,41 @@ using WarThunderSkinManager.Models;
 
 namespace WarThunderSkinManager.Services;
 
+/// <summary>
+/// 「复合载具组」重建时的一个成员：父载具或某个子载具。
+/// </summary>
+public sealed class GroupMember
+{
+    /// <summary>载具 Id（blk 文件名就用它，**子载具也用自己**的）。</summary>
+    public string VehicleId { get; init; } = "";
+
+    /// <summary>该载具当前激活的包；<c>null</c> = 没激活。</summary>
+    public SkinPackage? Package { get; init; }
+
+    /// <summary>没激活但**要保留槽位**（写一个空 blk，游戏里仍认这套涂装）。</summary>
+    public bool KeepSlot { get; init; }
+}
+
+/// <summary>一次「复合载具组」重建的结果。</summary>
+public sealed class GroupSyncReport
+{
+    public string OutputDir { get; set; } = "";
+
+    public int BlkWritten { get; set; }
+
+    public int WrittenTextures { get; set; }
+
+    public int SkippedTextures { get; set; }
+
+    /// <summary>清掉的残留文件数（重建后不属于任何成员的东西）。</summary>
+    public int RemovedFiles { get; set; }
+
+    /// <summary>本次是否**首次**生成某个成员的 blk（需要提示去游戏里选一次）。</summary>
+    public bool AnyBlkCreated { get; set; }
+
+    public List<string> Warnings { get; } = new();
+}
+
 /// <summary>激活输出报告。</summary>
 public sealed class SyncReport
 {
@@ -232,6 +267,186 @@ public static class OutputService
         report.BlkEntries = loadout.Mappings.Count;
 
         return report;
+    }
+
+    /// <summary>
+    /// **重建一个「复合载具组」的输出**：父载具 + 全部子载具共用一个目录
+    /// （功能设计 §3.18：游戏会在父载具的文件夹里找子载具的 blk）。
+    /// </summary>
+    /// <remarks>
+    /// **先写后删**：先把所有目标文件（贴图 → blk）写好，再删掉"不属于任何成员"的残留。
+    /// 相比"先清后写"，任何时刻目录里都是一套可用文件，中途失败也不会把父与子一起毁掉。
+    /// 同名贴图冲突（两个载具的 blk 引用同一个 <c>to</c> 但内容不同）→ 保留先写的、告警、跳过该文件。
+    /// </remarks>
+    public static GroupSyncReport RebuildGroup(string userSkinsDir, string resourceDir,
+        string parentId, IReadOnlyList<GroupMember> members)
+    {
+        var report = new GroupSyncReport();
+        if (string.IsNullOrWhiteSpace(userSkinsDir) || string.IsNullOrWhiteSpace(parentId)) return report;
+
+        var outDir = VehicleOutputDir(userSkinsDir, parentId);
+        report.OutputDir = outDir;
+
+        // 与 ClearVehicle / SyncVehicle 同一安全边界：只能写在 WTSM 目录内
+        var wtsmRoot = Path.GetFullPath(WtsmRoot(userSkinsDir));
+        var fullOutDir = Path.GetFullPath(outDir);
+        if (!fullOutDir.StartsWith(wtsmRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(Loc.Format("output.warn.rejectWrite", fullOutDir));
+
+        Directory.CreateDirectory(outDir);
+
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);                     // 目标文件（相对路径）
+        var textureOwner = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // to → 载具
+        var textureBlob = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);  // to → blob
+        var scheduled = new List<(string To, string Blob)>();
+        var emptySlots = new List<string>();
+        var blkWrites = new List<(string VehicleId, string BlkText)>();
+
+        foreach (var member in members)
+        {
+            var vehicleId = (member.VehicleId ?? "").Trim();
+            if (vehicleId.Length == 0) continue;
+
+            var blkName = vehicleId + ".blk";
+            keep.Add(blkName);
+
+            if (member.Package == null)
+            {
+                if (member.KeepSlot) emptySlots.Add(vehicleId);
+                else keep.Remove(blkName);
+
+                continue;
+            }
+
+            var loadout = LoadoutService.BuildLoadout(member.Package);
+            blkWrites.Add((vehicleId, loadout.BlkText));
+
+            foreach (var mapping in loadout.Mappings)
+            {
+                if (string.IsNullOrWhiteSpace(mapping.ToFile)) continue;
+
+                // to 来自第三方 blk，可能携带恶意路径 → 不调度（§3.8 安全）
+                if (!IsSafeRelativeTexturePath(mapping.ToFile))
+                {
+                    report.Warnings.Add(Loc.Format("output.warn.illegalPath", mapping.FromModule, mapping.ToFile));
+                    continue;
+                }
+
+                // 指向游戏本体资源（无本地贴图）→ 条目照写，无需调度
+                if (string.IsNullOrWhiteSpace(mapping.TextureRef)) continue;
+
+                var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
+                if (!File.Exists(blobPath))
+                {
+                    report.Warnings.Add(Loc.Format("output.warn.textureMissing", mapping.FromModule, mapping.ToFile));
+                    continue;
+                }
+
+                var to = mapping.ToFile.Replace('\\', '/');
+
+                if (textureOwner.TryGetValue(to, out var owner))
+                {
+                    if (string.Equals(owner, vehicleId, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // 同一个 to 被另一个载具占用：内容相同就共用；不同则**不覆盖**，告警
+                    if (textureBlob.TryGetValue(to, out var blob)
+                        && string.Equals(blob, mapping.TextureRef, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    report.Warnings.Add(Loc.Format("output.warn.textureConflict", to, owner, vehicleId));
+                    continue;
+                }
+
+                textureOwner[to] = vehicleId;
+                textureBlob[to] = mapping.TextureRef;
+                keep.Add(to);
+                scheduled.Add((to, mapping.TextureRef));
+            }
+        }
+
+        // ① 贴图（blk 是"生效点"，最后写）
+        foreach (var (to, blob) in scheduled)
+        {
+            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blob);
+            var dst = Path.Combine(outDir, to);
+            var dstDir = Path.GetDirectoryName(dst);
+            if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
+
+            try
+            {
+                if (File.Exists(dst) && SameContent(dst, src))
+                {
+                    report.SkippedTextures++;
+                    continue;
+                }
+
+                if (File.Exists(dst)) File.Delete(dst);
+                if (!TryCreateHardLink(dst, src)) File.Copy(src, dst, overwrite: true);
+
+                report.WrittenTextures++;
+            }
+            catch (Exception ex)
+            {
+                report.Warnings.Add(Loc.Format("output.warn.writeFailed", to, ex.Message));
+            }
+        }
+
+        // ② blk：有包的写包内容；没包但要保槽位的写空 blk
+        foreach (var (vehicleId, blkText) in blkWrites)
+            WriteBlk(outDir, vehicleId, blkText, report);
+
+        foreach (var vehicleId in emptySlots)
+            WriteBlk(outDir, vehicleId, BlkWriter.Write(Array.Empty<BlkWriter.Entry>()), report);
+
+        // ③ 删残留（**写完之后**才删）：目录是程序独占的，不属于任何成员的文件一律清掉
+        foreach (var file in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(outDir, file).Replace('\\', '/');
+            if (keep.Contains(relative)) continue;
+
+            try
+            {
+                File.Delete(file);
+                report.RemovedFiles++;
+            }
+            catch (Exception ex)
+            {
+                report.Warnings.Add(Loc.Format("output.warn.deleteFailed", relative, ex.Message));
+            }
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(outDir, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(path => path.Length))
+        {
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+            }
+            catch
+            {
+                // 空目录清理失败无关紧要
+            }
+        }
+
+        return report;
+    }
+
+    private static void WriteBlk(string outDir, string vehicleId, string blkText, GroupSyncReport report)
+    {
+        var blkPath = Path.Combine(outDir, vehicleId + ".blk");
+        if (!File.Exists(blkPath)) report.AnyBlkCreated = true;
+
+        try
+        {
+            AtomicFile.WriteAllText(blkPath, blkText);
+            report.BlkWritten++;
+        }
+        catch (Exception ex)
+        {
+            report.Warnings.Add(Loc.Format("output.warn.writeFailed", vehicleId + ".blk", ex.Message));
+        }
     }
 
     private static bool SameContent(string a, string b)
