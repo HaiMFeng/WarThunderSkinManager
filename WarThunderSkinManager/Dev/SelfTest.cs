@@ -87,6 +87,78 @@ internal static class SelfTest
 
             log.AppendLine($"blob 压缩无损闭环 : {lossless}");
 
+            // ---- 压缩开关闭环 + 存量迁移无损 ----
+            // 开启压缩后 Store → OpenBlob 读回应逐字节一致；再对全库 RecompressAll，
+            // 逐个 OpenBlob 读回哈希应等于文件名（内容哈希），证明迁移无损。
+            // ---- 压缩开关闭环 + 存量迁移无损 ----
+            // 构造一个未压缩 blob（开关关）确保 RecompressAll 有可压缩对象，验证迁移路径；
+            // 再开启压缩，RecompressAll 将其压缩（无损），并验证全库读回一致。
+            BlobStore.CompressionEnabled = false;
+            var migrateProbe = Path.Combine(workDir, "migrate_probe.bin");
+            var mprnd = new byte[1 << 20];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                rng.GetBytes(mprnd);
+            File.WriteAllBytes(migrateProbe, mprnd);
+            var mhash = BlobStore.Store(resourceDir, migrateProbe, out _);
+            File.Delete(migrateProbe);
+            var beforeComp = BlobStore.IsCompressed(BlobStore.BlobPath(resourceDir, mhash, ".bin"));
+
+            BlobStore.CompressionEnabled = true;
+            var cprobe = Path.Combine(workDir, "compress_probe.bin");
+            var crnd = new byte[1 << 20];
+            using (var rng2 = System.Security.Cryptography.RandomNumberGenerator.Create())
+                rng2.GetBytes(crnd);
+            File.WriteAllBytes(cprobe, crnd);
+            var chash = BlobStore.Store(resourceDir, cprobe, out _);
+            bool compressLossless;
+            using (var cs = BlobStore.OpenBlob(BlobStore.BlobPath(resourceDir, chash, ".bin")))
+            {
+                using var ms = new MemoryStream();
+                cs.CopyTo(ms);
+                var ch = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ms.ToArray())).ToLowerInvariant();
+                compressLossless = string.Equals(ch, chash, StringComparison.Ordinal);
+            }
+            var cIsCompressed = BlobStore.IsCompressed(BlobStore.BlobPath(resourceDir, chash, ".bin"));
+            File.Delete(cprobe);
+            log.AppendLine($"压缩开关 Store→OpenBlob 无损 : {compressLossless}, 已压缩 : {cIsCompressed}");
+
+            var recompress = BlobStore.RecompressAll(resourceDir, null, System.Threading.CancellationToken.None);
+
+            // 诊断：RecompressAll 后每个真实 blob 的压缩状态（定位 migrateProbe 是否被压缩）
+            foreach (var b in BlobStore.EnumerateBlobs(resourceDir))
+            {
+                if (b.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+                log.AppendLine($"  post {Path.GetFileName(b)} comp={BlobStore.IsCompressed(b)}");
+            }
+            log.AppendLine($"migrateProbe 压缩后 IsCompressed={BlobStore.IsCompressed(BlobStore.BlobPath(resourceDir, mhash, ".bin"))}");
+
+            bool recompressLossless = true;
+            foreach (var b in BlobStore.EnumerateBlobs(resourceDir))
+            {
+                if (b.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue; // 跳过临时残留
+                try
+                {
+                    using var s = BlobStore.OpenBlob(b);
+                    using var ms = new MemoryStream();
+                    s.CopyTo(ms);
+                    var h = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ms.ToArray())).ToLowerInvariant();
+                    if (!string.Equals(h, BlobStore.BlobHashOf(b), StringComparison.Ordinal))
+                    {
+                        recompressLossless = false;
+                        log.AppendLine($"RecompressAll 不匹配: {Path.GetFileName(b)}");
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    recompressLossless = false;
+                    log.AppendLine($"RecompressAll 读失败: {Path.GetFileName(b)} {ex.GetType().Name}");
+                    break;
+                }
+            }
+            log.AppendLine($"RecompressAll 无损 : {recompressLossless}, 压缩 {recompress.compressed} 个, 节省 {recompress.savedBytes} 字节（migrateProbe 之前未压缩={!beforeComp}）");
+            BlobStore.CompressionEnabled = false; // 复位，避免影响后续导出校验
+
             var vehicles = VehicleAggregator.BuildAll(resourceDir);
 
             log.AppendLine();

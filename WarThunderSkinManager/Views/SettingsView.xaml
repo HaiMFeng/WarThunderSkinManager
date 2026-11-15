@@ -303,12 +303,24 @@
                 </StackPanel>
             </Border>
 
-            <!-- 存储维护（blob 回收，功能设计 §6.5）＋ 横向存储条（§4 存储管理） -->
+            <!-- 存储管理（blob 回收，功能设计 §6.5）＋ 横向存储条（§4 存储管理） -->
             <Border Style="{StaticResource Card}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc settings.gc.title}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8"/>
                     <TextBlock Text="{loc:Loc settings.gc.hint}" Style="{StaticResource PageSubtitle}"
                                TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+                    <!-- 存储压缩（blob 层无损压缩，§6.5 扩展）：开启后导入的贴图压缩入库，导出自解压；
+                         首次开启弹知会并压缩现有库（耗时，遮罩等待）。关闭只停用，已压缩保留 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="{loc:Loc settings.compress.toggle}" VerticalAlignment="Center"/>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" Margin="10,0,0,0"
+                                  IsChecked="{Binding Config.CompressBlobs, Mode=TwoWay}"/>
+                    </StackPanel>
+                    <TextBlock Text="{loc:Loc settings.compress.hint}" Style="{StaticResource PageSubtitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <Button Content="{loc:Loc settings.compress.recompress}" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Left" Margin="0,0,0,16" Command="{Binding CompressLibraryCommand}"/>
 
                     <!-- 横向存储条：**全长 = 资源目录所在磁盘的总容量**，三段 = 本程序资源目录占用 /
                          该磁盘其他内容占用 / 剩余可用（同一比例尺；数据见 Services/Storage/StorageUsageService）。

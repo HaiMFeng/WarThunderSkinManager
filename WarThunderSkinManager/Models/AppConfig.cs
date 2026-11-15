@@ -131,4 +131,14 @@ public partial class AppConfig : ObservableObject
     /// 它**只管用户的选择**——窗口太窄时的自动紧凑是派生状态，不写回这里。
     /// </summary>
     [ObservableProperty] private bool _navCollapsed;
+
+    /// <summary>
+    /// 是否启用**存储压缩**（blob 层无损压缩，功能设计 §6.5 扩展）：开启后导入的贴图压缩入库，
+    /// 导出时自动解压，对游戏与导出结果零影响。关闭只停用——已压缩的 blob 保留（读取兼容），
+    /// 新导入不再压缩。**默认关闭**：保证存量库与旧版客户端不被动（向后兼容）。
+    /// </summary>
+    [ObservableProperty] private bool _compressBlobs;
+
+    /// <summary>用户是否已确认了解启用存储压缩的知会（首次开启弹窗，确认后不再提示）。</summary>
+    [ObservableProperty] private bool _compressBlobsNoticeSeen;
 }

@@ -3,6 +3,8 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.IO.Compression;
+using System.Threading;
+using System.Linq;
 
 namespace WarThunderSkinManager.Services;
 
@@ -45,21 +47,26 @@ public static class BlobStore
             using (var source = File.OpenRead(sourceFile))
             using (var target = File.Create(tmp))
             {
-                // 压缩头：魔数 WTSC + 算法标识（1 = Brotli）。blob 文件名仍是原始内容哈希，
-                // 因此内容寻址 / 去重 / 落盘往返都不受影响；读取方经 OpenBlob 透明解压。
-                var header = new byte[] { 0x57, 0x54, 0x53, 0x43, 1 };
-                target.Write(header, 0, header.Length);
-
-                using (var cs = new BrotliStream(target, CompressionLevel.Optimal))
+                Stream? compressor = null;
+                if (CompressionEnabled)
                 {
-                    var buffer = new byte[1024 * 1024];
-                    int read;
-                    while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
-                    {
-                        sha.AppendData(buffer, 0, read);
-                        cs.Write(buffer, 0, read);
-                    }
-                } // BrotliStream 先 flush 压缩数据到 target 并关闭它
+                    // 压缩头：魔数 WTSC + 算法标识（1 = Brotli）。blob 文件名仍是原始内容哈希，
+                    // 因此内容寻址 / 去重 / 落盘往返都不受影响；读取方经 OpenBlob 透明解压。
+                    target.Write(CompressedHeader, 0, CompressedHeader.Length);
+                    compressor = new BrotliStream(target, CompressionLevel.Optimal);
+                }
+
+                var outStream = compressor ?? (Stream)target;
+                var buffer = new byte[1024 * 1024];
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    sha.AppendData(buffer, 0, read);
+                    outStream.Write(buffer, 0, read);
+                }
+
+                // BrotliStream 先 flush 压缩数据到 target 并关闭它；原样模式无需额外 flush
+                compressor?.Dispose();
             }
 
             hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
@@ -132,6 +139,7 @@ public static class BlobStore
     /// <summary>压缩 blob 文件头魔数（WTSC = WTSM Compressed）+ 算法标识。</summary>
     private static readonly byte[] CompressedMagic = { 0x57, 0x54, 0x53, 0x43 }; // "WTSC"
     private const byte CompressedAlgBrotli = 1;
+    private static readonly byte[] CompressedHeader = { 0x57, 0x54, 0x53, 0x43, CompressedAlgBrotli };
 
     /// <summary>从 blob 文件名（<c>&lt;hash&gt;&lt;ext&gt;</c>）取出内容哈希（小写 hex，不含扩展名）。</summary>
     public static string BlobHashOf(string blobFile)
@@ -192,5 +200,82 @@ public static class BlobStore
         using var src = OpenBlob(blobPath);
         using var outStream = File.Create(dst);
         src.CopyTo(outStream);
+    }
+
+    /// <summary>
+    /// 全局压缩开关（由设置页控制，§6.5 扩展）。<c>true</c> 时 <see cref="Store"/> 压缩写入；
+    /// <c>false</c>（默认）原样写入——保证存量库与旧版客户端不被动（向后兼容）。
+    /// 读取方 <see cref="OpenBlob"/> 对两种格式都透明，无需关心此开关。
+    /// </summary>
+    public static bool CompressionEnabled { get; set; }
+
+    /// <summary>
+    /// 存量 blob 全量压缩迁移（开启压缩开关时调用）：遍历所有 blob，对未压缩的逐个原子替换为压缩版
+    /// （内容哈希不变，故 meta / 去重 / 引用全部不受影响）；已压缩的跳过。单文件失败会保留原样、
+    /// 继续后续（下次迁移重试）。返回（已压缩数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用，避免与导入并发。
+    /// </summary>
+    public static (int compressed, long savedBytes) RecompressAll(
+        string resourceDir, IProgress<(int done, int total, string? current)>? progress, CancellationToken ct)
+    {
+        // 清理历史遗留的压缩临时文件（RecompressOne 异常中断时可能产生）；它们不是 blob
+        var blobDir = BlobsDirectory(resourceDir);
+        if (Directory.Exists(blobDir))
+        {
+            foreach (var t in Directory.GetFiles(blobDir, "*.tmp"))
+            {
+                try { File.Delete(t); } catch (IOException) { }
+            }
+        }
+
+        var blobs = EnumerateBlobs(resourceDir)
+            .Where(f => !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) // 不把临时文件当待压缩 blob
+            .ToArray();
+        int done = 0, compressed = 0;
+        long saved = 0;
+        foreach (var b in blobs)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (IsCompressed(b)) { done++; continue; }
+
+            try
+            {
+                var before = new FileInfo(b).Length;
+                RecompressOne(resourceDir, b);
+                saved += before - new FileInfo(b).Length;
+                compressed++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 单文件失败：保留原样，继续下一个（下次迁移重试）
+            }
+
+            done++;
+            progress?.Report((done, blobs.Length, Path.GetFileName(b)));
+        }
+        return (compressed, saved);
+    }
+
+    /// <summary>把单个未压缩 blob 原子替换为压缩版（内容哈希不变）。</summary>
+    private static void RecompressOne(string resourceDir, string blobPath)
+    {
+        var hash = BlobHashOf(blobPath);
+        var ext = Path.GetExtension(blobPath).ToLowerInvariant();
+
+        var tmp = Path.Combine(BlobsDirectory(resourceDir), Guid.NewGuid().ToString("N") + ".tmp");
+        using (var target = File.Create(tmp))
+        {
+            target.Write(CompressedHeader, 0, CompressedHeader.Length);
+            using (var cs = new BrotliStream(target, CompressionLevel.Optimal))
+            {
+                // src 必须在 File.Replace 之前释放：OpenBlob 以 FileShare.Read 打开 dest，
+                // 而 File.Replace 需对 dest 重命名/删除（写+删访问权），句柄未关会触发共享冲突 IOException。
+                using var src = OpenBlob(blobPath); // 未压缩 → 原样返回
+                src.CopyTo(cs); // 流式压缩；结束自动 flush 到 target
+            }
+        }
+
+        // 原子替换：dest 当前是未压缩版，替换为压缩版（内容哈希不变）。File.Replace 在 Windows 上原子。
+        // 失败时 tmp 残留（GC 清理）、原 dest 保留，下次重试。
+        File.Replace(tmp, BlobPath(resourceDir, hash, ext), null);
     }
 }

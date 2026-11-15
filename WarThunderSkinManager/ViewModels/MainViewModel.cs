@@ -524,6 +524,12 @@ public partial class MainViewModel : ObservableObject
 
         Config.PropertyChanged += OnConfigChanged;
 
+        // 存储压缩开关重启恢复（§6.5 扩展）：<c>CompressionEnabled</c> 是 BlobStore 的静态运行标志，
+        // 只在属性变更回调里设置；反序列化发生在订阅之前，启动不会重挂——这里补一次。
+        // CompressBlobs=true 必然是在用户确认过知会之后才落盘的（noticeSeen 同步置位），
+        // 所以启动只恢复标志、不弹知会、不重跑全量压缩（库早已压缩好，重跑只会徒增扫描）。
+        BlobStore.CompressionEnabled = Config.CompressBlobs;
+
         // Saves 目录自动探测（§3.14）：默认路径存在即静默采用；失败不阻塞（设置页可手选，不参与迁移）
         if (string.IsNullOrWhiteSpace(Config.SavesDirectory))
         {
@@ -1158,6 +1164,10 @@ public partial class MainViewModel : ObservableObject
                 // 开启即尝试同步一次（游戏运行中 → 服务端报告跳过原因）
                 if (Config.GameSyncEnabled) _ = RunGameSyncAsync(overwriteForeign: false, silent: true);
                 break;
+
+            case nameof(AppConfig.CompressBlobs):
+                OnCompressBlobsToggled();
+                break;
         }
 
         // **全配置项立即落盘**（唯一落点）：AppConfig 的任何属性变化都在这里写一次 config.json
@@ -1205,6 +1215,90 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(PartReuseVisible)); // 确认后才显示导航入口
     }
+
+    /// <summary>
+    /// 存储压缩开关（§6.5 扩展）：首次开启弹知会（与多源复用同款，可取消回滚）；
+    /// 确认后记住，并立即压缩现有库（遮罩 + 全局锁）。关闭只停用——已压缩 blob 保留、新导入不压缩。
+    /// </summary>
+    private void OnCompressBlobsToggled()
+    {
+        if (!Config.CompressBlobs)
+        {
+            BlobStore.CompressionEnabled = false;
+            return;
+        }
+
+        // 新导入立即压缩（迁移进行中入库的新文件也压）
+        BlobStore.CompressionEnabled = true;
+
+        if (Config.CompressBlobsNoticeSeen)
+        {
+            _ = RunRecompressAsync();
+            return;
+        }
+
+        var accepted = MessageDialog.Confirm(
+            Loc.Format("settings.compress.notice",
+                Loc["settings.compress.noticeOk"], Loc["common.cancel"]),
+            Loc["settings.compress.noticeTitle"],
+            Loc["settings.compress.noticeOk"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
+
+        if (!accepted)
+        {
+            Config.CompressBlobs = false; // 回滚（再次触发走关闭分支）
+            return;
+        }
+
+        Config.CompressBlobsNoticeSeen = true;
+        _ = RunRecompressAsync();
+    }
+
+    /// <summary>
+    /// 全量压缩现有库（开启压缩开关时自动触发，或点「压缩现有库」手动触发）：
+    /// 全局独占锁防并发导入，统一遮罩显示进度与取消。已压缩的 blob 跳过；单文件失败保留原样、下次重试。
+    /// </summary>
+    private async Task RunRecompressAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Config.ResourceDirectory)
+            || !Directory.Exists(Config.ResourceDirectory))
+        {
+            ShowStatus(Loc["settings.gc.needResource"]);
+            return;
+        }
+
+        var resourceDir = Config.ResourceDirectory;
+        using var busy = AppBusy.Enter();
+        using var cts = new CancellationTokenSource();
+        using (var scope = BusyIndicator.Instance.Begin(Loc["settings.compress.running"], cts.Cancel))
+        {
+            var reporter = new Progress<(int done, int total, string? current)>(p =>
+            {
+                scope.Report(p.done, p.total);
+                if (p.current != null) scope.SetDetail(p.current);
+            });
+            try
+            {
+                var result = await Task.Run(
+                    () => BlobStore.RecompressAll(resourceDir, reporter, cts.Token), cts.Token);
+                ShowStatus(result.compressed == 0
+                    ? Loc["settings.compress.nothing"]
+                    : Loc.Format("settings.compress.done", result.compressed,
+                        DataResetService.FormatSize(result.savedBytes)));
+            }
+            catch (OperationCanceledException)
+            {
+                ShowStatus(Loc["settings.compress.canceled"]);
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(Loc.Format("settings.compress.failed", ex.Message));
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void CompressLibrary() => _ = RunRecompressAsync();
 
     // ---------- 左侧导航折叠（界面设计规范 §5.13）----------
 
