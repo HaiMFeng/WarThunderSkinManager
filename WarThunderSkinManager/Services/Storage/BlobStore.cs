@@ -294,6 +294,24 @@ public static class BlobStore
     }
 
     /// <summary>
+    /// 判断异常是否为「磁盘空间不足」。解压 / 还原会让库变大，写满磁盘是最可能的失败 ——
+    /// 这类错误应**整批中止并给明确提示**（而不是逐文件计失败、继续白写临时文件把盘挤得更满）。
+    /// Windows：ERROR_DISK_FULL = 0x70、ERROR_HANDLE_DISK_FULL = 0x27（在 <see cref="Exception.HResult"/> 低 16 位）。
+    /// </summary>
+    public static bool IsDiskFullException(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+        {
+            var code = e.HResult & 0xFFFF;
+            if (code == 0x70 || code == 0x27) return true;
+            if (e.Message.Contains("not enough space", StringComparison.OrdinalIgnoreCase)
+                || e.Message.Contains("磁盘空间不足", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 存量 blob 全量压缩迁移（开启压缩开关时调用）：**多线程并行**处理未压缩的 blob，逐个校验无损后
     /// 替换为压缩版（内容哈希不变，故 meta / 去重 / 引用全部不受影响）；已压缩的跳过。单文件失败会保留原样、
     /// 继续其它文件（下次迁移重试）。返回（已压缩数, 失败数, 释放字节数）。应在 <c>AppBusy</c> 锁内调用。
@@ -323,6 +341,10 @@ public static class BlobStore
                     Interlocked.Add(ref saved, RecompressOne(resourceDir, b));
                     Interlocked.Increment(ref compressed);
                 }
+                catch (IOException ex) when (IsDiskFullException(ex))
+                {
+                    throw; // 磁盘写满：整批中止（停掉其它 worker、给清晰提示），不再逐文件重试白刷临时文件
+                }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
                 {
                     // 单文件失败（含压缩后校验不通过）：原文件已保留，继续其它文件（下次迁移重试）
@@ -350,31 +372,37 @@ public static class BlobStore
         var before = new FileInfo(blobPath).Length;
 
         var tmp = Path.Combine(BlobsDirectory(resourceDir), Guid.NewGuid().ToString("N") + ".tmp");
-        using (var target = File.Create(tmp))
+        try
         {
-            // leaveOpen：让 target 保持打开，压缩层关掉后再统一 fsync 落盘
-            using (var cs = new BrotliStream(target, CompressionLevel.Optimal, leaveOpen: true))
+            using (var target = File.Create(tmp))
             {
-                using var src = File.OpenRead(blobPath); // 未压缩 → 原样
-                src.CopyTo(cs, 1024 * 1024); // 大缓冲：减少小块读，配合并行跑满带宽
+                // leaveOpen：让 target 保持打开，压缩层关掉后再统一 fsync 落盘
+                using (var cs = new BrotliStream(target, CompressionLevel.Optimal, leaveOpen: true))
+                {
+                    using var src = File.OpenRead(blobPath); // 未压缩 → 原样
+                    src.CopyTo(cs, 1024 * 1024); // 大缓冲：减少小块读，配合并行跑满带宽
+                }
+
+                target.Flush(true); // 落盘屏障：落定前先把内容刷到磁盘，防断电留下"名字对、内容坏"
             }
 
-            target.Flush(true); // 落盘屏障：落定前先把内容刷到磁盘，防断电留下"名字对、内容坏"
-        }
+            // **校验通过才落定**：把 tmp 解压读回求 SHA-256，须等于原始内容哈希。
+            // 原始 blob 此刻仍完好——校验失败就抛错，由外层删 tmp、保留原文件。
+            if (!VerifyCompressedLossless(tmp, hash))
+                throw new InvalidDataException($"blob 压缩校验失败: {Path.GetFileName(blobPath)}");
 
-        // **校验通过才落定**：把 tmp 解压读回求 SHA-256，须等于原始内容哈希。
-        // 原始 blob 此刻仍完好——校验失败就丢弃 tmp、保留原文件并抛错（上层计入失败数）。
-        if (!VerifyCompressedLossless(tmp, hash))
+            // 落定压缩版，再删原样版。两步非严格原子：崩溃时可能两形态并存，读取以压缩版优先，
+            // 迁移重跑会收敛（overwrite 压缩版 + 删原样版）。
+            File.Move(tmp, compressedPath, overwrite: true);
+            try { File.Delete(blobPath); } catch (IOException) { }
+            return before - new FileInfo(compressedPath).Length;
+        }
+        catch
         {
-            try { File.Delete(tmp); } catch (IOException) { }
-            throw new InvalidDataException($"blob 压缩校验失败: {Path.GetFileName(blobPath)}");
+            // 任何失败（磁盘写满 / 校验不过 / 被占用）：丢掉半截临时文件，保留原文件
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { }
+            throw;
         }
-
-        // 落定压缩版，再删原样版。两步非严格原子：崩溃时可能两形态并存，读取以压缩版优先，
-        // 迁移重跑会收敛（overwrite 压缩版 + 删原样版）。
-        File.Move(tmp, compressedPath, overwrite: true);
-        try { File.Delete(blobPath); } catch (IOException) { }
-        return before - new FileInfo(compressedPath).Length;
     }
 
     /// <summary>
@@ -401,6 +429,10 @@ public static class BlobStore
                 DecompressOne(b);
                 Interlocked.Increment(ref decompressed);
             }
+            catch (IOException ex) when (IsDiskFullException(ex))
+            {
+                throw; // 磁盘写满（还原让库变大，最常见）：整批中止并给清晰提示，避免 worker 继续白写
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 Interlocked.Increment(ref failed); // 原压缩文件已保留，下次再试
@@ -425,22 +457,28 @@ public static class BlobStore
         var uncompressedPath = Path.Combine(dir, uncompressedName);
 
         var tmp = Path.Combine(dir, Guid.NewGuid().ToString("N") + ".tmp");
-        using (var target = File.Create(tmp))
+        try
         {
-            using (var src = OpenBlob(compressedBlobPath)) // BrotliStream 解压
-                src.CopyTo(target, 1024 * 1024);
-            target.Flush(true);
-        }
+            using (var target = File.Create(tmp))
+            {
+                using (var src = OpenBlob(compressedBlobPath)) // BrotliStream 解压
+                    src.CopyTo(target, 1024 * 1024);
+                target.Flush(true);
+            }
 
-        // 校验通过才落定：未压缩 tmp 的 SHA-256 须等于原始内容哈希
-        if (!string.Equals(HashFile(tmp), hash, StringComparison.OrdinalIgnoreCase))
+            // 校验通过才落定：未压缩 tmp 的 SHA-256 须等于原始内容哈希
+            if (!string.Equals(HashFile(tmp), hash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"blob 解压校验失败: {name}");
+
+            File.Move(tmp, uncompressedPath, overwrite: true);
+            try { File.Delete(compressedBlobPath); } catch (IOException) { }
+        }
+        catch
         {
-            try { File.Delete(tmp); } catch (IOException) { }
-            throw new InvalidDataException($"blob 解压校验失败: {name}");
+            // 任何失败（**磁盘写满最常见** / 校验不过 / 被占用）：丢掉半截临时文件、保留压缩原件
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { }
+            throw;
         }
-
-        File.Move(tmp, uncompressedPath, overwrite: true);
-        try { File.Delete(compressedBlobPath); } catch (IOException) { }
     }
 
     /// <summary>

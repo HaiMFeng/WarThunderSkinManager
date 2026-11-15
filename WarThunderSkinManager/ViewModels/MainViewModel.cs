@@ -1395,7 +1395,9 @@ public partial class MainViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                ShowStatus(Loc.Format("settings.compress.failed", ex.Message));
+                ShowStatus(BlobStore.IsDiskFullException(ex)
+                    ? Loc["settings.compress.diskFull"]
+                    : Loc.Format("settings.compress.failed", ex.Message));
             }
             finally
             {
@@ -1456,7 +1458,9 @@ public partial class MainViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                ShowStatus(Loc.Format("settings.compress.decompressFailed", ex.Message));
+                ShowStatus(BlobStore.IsDiskFullException(ex)
+                    ? Loc["settings.compress.diskFull"]
+                    : Loc.Format("settings.compress.decompressFailed", ex.Message));
             }
             finally
             {
