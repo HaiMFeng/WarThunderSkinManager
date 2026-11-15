@@ -1273,7 +1273,8 @@ public partial class MainViewModel : ObservableObject
             var pending = wantCompressed ? hasPlain : hasCompressed;
 
             // 数据库整库压缩、而开关是关 → 同步为开（不触发全库重压，只改开关与运行标志）
-            var shouldSync = syncToggle && hasCompressed && !hasPlain && !wantCompressed && !AppBusy.IsBusy;
+            var shouldSync = syncToggle && hasCompressed && !hasPlain && !wantCompressed
+                             && !AppBusy.IsBusy && _compressionConfirmDepth == 0;
 
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher == null)
@@ -1297,7 +1298,7 @@ public partial class MainViewModel : ObservableObject
                 if (!string.Equals(Config.ResourceDirectory, dir, StringComparison.OrdinalIgnoreCase)) return;
                 if (Config.CompressBlobs != wantCompressed) return;
 
-                if (shouldSync && !AppBusy.IsBusy)
+                if (shouldSync && !AppBusy.IsBusy && _compressionConfirmDepth == 0)
                 {
                     BlobStore.CompressionEnabled = true;
                     RevertCompressToggle(true); // 程序化置开：不触发 OnCompressBlobsToggled 的批处理
@@ -1315,6 +1316,12 @@ public partial class MainViewModel : ObservableObject
     /// <see cref="OnCompressBlobsToggled"/>，用它跳过重入（否则回滚会误触发另一方向的分支）。
     /// </summary>
     private bool _compressToggleGuard;
+
+    /// <summary>
+    /// 正在显示"关闭 / 还原"多层确认框的深度（&gt;0 表示确认中）。模态框会跑嵌套消息泵，
+    /// 期间到达的自动同步回调必须被挡掉，否则会把开关翻成开启、与用户正在确认的"关闭 / 还原"打架。
+    /// </summary>
+    private int _compressionConfirmDepth;
 
     /// <summary>
     /// 存储压缩开关（§6.5 扩展）：开启 → 首次弹知会，确认后记住并立即压缩现有库（遮罩 + 全局锁）；
@@ -1381,29 +1388,38 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private bool ConfirmDisableCompression()
     {
-        if (!MessageDialog.Confirm(
-                Loc.Format("settings.compress.disableNotice.1",
-                    Loc["settings.compress.continue"], Loc["common.cancel"]),
-                Loc["settings.compress.disableTitle"],
-                Loc["settings.compress.continue"], Loc["common.cancel"],
-                icon: DialogIcon.Warning))
+        // 确认期间标记深度：模态框的嵌套消息泵里若跑到自动同步回调，会因 depth>0 被挡掉
+        _compressionConfirmDepth++;
+        try
         {
-            return false;
-        }
+            if (!MessageDialog.Confirm(
+                    Loc.Format("settings.compress.disableNotice.1",
+                        Loc["settings.compress.continue"], Loc["common.cancel"]),
+                    Loc["settings.compress.disableTitle"],
+                    Loc["settings.compress.continue"], Loc["common.cancel"],
+                    icon: DialogIcon.Warning))
+            {
+                return false;
+            }
 
-        if (!MessageDialog.Confirm(
-                Loc.Format("settings.compress.disableNotice.2",
-                    Loc["settings.compress.disableConfirm"], Loc["common.cancel"]),
-                Loc["settings.compress.disableTitle"],
-                Loc["settings.compress.disableConfirm"], Loc["common.cancel"],
-                icon: DialogIcon.Warning))
+            if (!MessageDialog.Confirm(
+                    Loc.Format("settings.compress.disableNotice.2",
+                        Loc["settings.compress.disableConfirm"], Loc["common.cancel"]),
+                    Loc["settings.compress.disableTitle"],
+                    Loc["settings.compress.disableConfirm"], Loc["common.cancel"],
+                    icon: DialogIcon.Warning))
+            {
+                return false;
+            }
+
+            // 第 3 层（仅当磁盘可能不够时）：估算所需空间，不足则**提醒但不阻止**
+            WarnIfDecompressSpaceInsufficient();
+            return true;
+        }
+        finally
         {
-            return false;
+            _compressionConfirmDepth--;
         }
-
-        // 第 3 层（仅当磁盘可能不够时）：估算所需空间，不足则**提醒但不阻止**
-        WarnIfDecompressSpaceInsufficient();
-        return true;
     }
 
     /// <summary>

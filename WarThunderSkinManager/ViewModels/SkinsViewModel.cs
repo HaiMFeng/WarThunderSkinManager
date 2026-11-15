@@ -994,13 +994,9 @@ public partial class SkinsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 父子关系变化后重建输出（由载具管理页通知）：子载具已激活的包会被迁到父目录；
-    /// 移除子载具则把它在父目录里的文件清掉。
-    /// </summary>
-    /// <summary>
     /// 绑定 / 解绑附属载具后重建输出。<paramref name="outputParent"/> 指定「应重建哪个输出目录」——
     /// 解绑后 <c>ParentOf(child)</c> 已为空，必须由调用方把原父载具传进来，否则会去重建子载具自己的目录
-    /// （父目录里它的 blk/贴图就永远清不掉）。
+    /// （父目录里它的 blk/贴图就永远清不掉）；同时解绑后还要重建子载具**自己的目录**，恢复它的独立输出。
     /// </summary>
     public async Task SyncSubVehicleGroupAsync(string vehicleId, bool silent = false, string? outputParent = null)
     {
@@ -1016,7 +1012,34 @@ public partial class SkinsViewModel : ObservableObject
                 return;
             }
 
-            var (report, error) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(outputParent ?? vehicleId));
+            // 要重建的输出目录：父组（清掉已解绑成员）+ 自己已不再是子载具时它的独立目录。
+            // outputParent 为空（自动绑定 / 普通调用）时按当前父子关系推导父目录。
+            var parent = outputParent ?? SubVehicleService.OutputParentOf(vehicleId);
+            var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(parent)) targets.Add(parent);
+            if (!SubVehicleService.IsChild(vehicleId)) targets.Add(vehicleId);
+
+            GroupSyncReport? report = null;
+            string? error = null;
+            foreach (var target in targets)
+            {
+                var (r, e) = await RunGroupRebuildAsync(() => BuildGroupSyncRequest(target));
+                if (e != null) error = e;
+                if (r == null) continue;
+
+                if (report == null)
+                {
+                    report = r;
+                }
+                else
+                {
+                    report.Mappings += r.Mappings;
+                    report.WrittenTextures += r.WrittenTextures;
+                    report.BlkWritten += r.BlkWritten;
+                    report.AnyBlkCreated |= r.AnyBlkCreated;
+                    report.Warnings.AddRange(r.Warnings);
+                }
+            }
 
             // 变成子载具后，它自己原来的目录（WTSM/<子载具>/）必须清掉，否则游戏里还留着一份旧输出
             if (SubVehicleService.IsChild(vehicleId) && !string.IsNullOrWhiteSpace(_config.UserSkinsDirectory))

@@ -95,7 +95,7 @@ public static class BlobStore
         finally
         {
             // 去重命中 / Move 已消费 tmp / 写盘异常：任何情况下都不留半截临时文件
-            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (IOException) { } }
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (Exception) { } }
         }
     }
 
@@ -111,7 +111,7 @@ public static class BlobStore
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
             return false;
         }
@@ -209,7 +209,7 @@ public static class BlobStore
         }
         finally
         {
-            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (IOException) { } }
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (Exception) { } }
         }
     }
 
@@ -241,7 +241,7 @@ public static class BlobStore
         }
         finally
         {
-            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (IOException) { } }
+            if (File.Exists(tmp)) { try { File.Delete(tmp); } catch (Exception) { } }
         }
     }
 
@@ -285,7 +285,7 @@ public static class BlobStore
                 if (File.GetLastWriteTimeUtc(t) > cutoff) continue; // 宽限期内：可能还在写
                 File.Delete(t);
             }
-            catch (IOException) { }
+            catch (Exception) { }
         }
     }
 
@@ -302,7 +302,7 @@ public static class BlobStore
                 File.Delete(path); // 不存在也不抛
                 return;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception)
             {
                 if (attempt == 2) return; // 仍失败：留给 GC 清冗余
                 Thread.Sleep(50);
@@ -437,7 +437,7 @@ public static class BlobStore
         catch
         {
             // 任何失败（磁盘写满 / 校验不过 / 被占用）：丢掉半截临时文件，保留原文件
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { }
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (Exception) { }
             throw;
         }
     }
@@ -513,7 +513,7 @@ public static class BlobStore
         catch
         {
             // 任何失败（**磁盘写满最常见** / 校验不过 / 被占用）：丢掉半截临时文件、保留压缩原件
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { }
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (Exception) { }
             throw;
         }
     }
