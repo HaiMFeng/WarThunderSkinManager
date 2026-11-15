@@ -146,7 +146,7 @@ public static class PackageExporter
         var hasBlob = (string to) =>
             blobByTo.TryGetValue(to, out var blob)
             && !string.IsNullOrWhiteSpace(blob)
-            && File.Exists(BlobStore.BlobPath(resourceDir, blob, Path.GetExtension(to).ToLowerInvariant()));
+            && BlobStore.BlobExists(resourceDir, blob, Path.GetExtension(to).ToLowerInvariant());
 
         // 「包外引用」（to 指向游戏本体资源、包内无内容）的名字先占位：
         // 本地贴图的生成名避开它们，否则会把作者的引用顶替成我们写出的文件
@@ -213,7 +213,7 @@ public static class PackageExporter
         {
             if (!blobByTo.TryGetValue(to, out var blob) || string.IsNullOrWhiteSpace(blob)) continue;
 
-            var source = BlobStore.BlobPath(resourceDir, blob, Path.GetExtension(to).ToLowerInvariant());
+            var source = BlobStore.ResolveBlobPath(resourceDir, blob, Path.GetExtension(to).ToLowerInvariant());
             if (!File.Exists(source)) continue;
 
             var dest = Path.Combine(targetDir, relative);

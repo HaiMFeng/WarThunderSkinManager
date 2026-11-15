@@ -567,7 +567,7 @@ public partial class PackageEditorViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(blob)) return false;
 
         var extension = Path.GetExtension(mapping.ToFile).ToLowerInvariant();
-        if (!File.Exists(BlobStore.BlobPath(_resourceDir, blob, extension))) return false;
+        if (!BlobStore.BlobExists(_resourceDir, blob, extension)) return false;
 
         candidate = new PartCandidate
         {

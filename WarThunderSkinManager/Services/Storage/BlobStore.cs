@@ -47,14 +47,11 @@ public static class BlobStore
             using (var source = File.OpenRead(sourceFile))
             using (var target = File.Create(tmp))
             {
-                Stream? compressor = null;
-                if (CompressionEnabled)
-                {
-                    // 压缩头：魔数 WTSC + 算法标识（1 = Brotli）。blob 文件名仍是原始内容哈希，
-                    // 因此内容寻址 / 去重 / 落盘往返都不受影响；读取方经 OpenBlob 透明解压。
-                    target.Write(CompressedHeader, 0, CompressedHeader.Length);
-                    compressor = new BrotliStream(target, CompressionLevel.Optimal);
-                }
+                // 压缩形态：纯 Brotli 流（格式靠文件名后缀 .wtsc 区分，无头部魔数）。
+                // blob 文件名仍是原始内容哈希 → 内容寻址 / 去重 / 落盘往返不受影响，读取方经 OpenBlob 透明解压。
+                Stream? compressor = CompressionEnabled
+                    ? new BrotliStream(target, CompressionLevel.Optimal)
+                    : null;
 
                 var outStream = compressor ?? (Stream)target;
                 var buffer = new byte[1024 * 1024];
@@ -72,33 +69,27 @@ public static class BlobStore
             hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
         }
 
-        var dest = BlobPath(resourceDir, hash, extension);
-        if (File.Exists(dest))
+        // 目标形态由当前开关决定；同一内容可能以**任一形态**已存在（形态与内容寻址无关）
+        var compressedPath = CompressedBlobPath(resourceDir, hash, extension);
+        var uncompressedPath = BlobPath(resourceDir, hash, extension);
+        var dest = CompressionEnabled ? compressedPath : uncompressedPath;
+
+        // 去重：任一形态命中即"同内容已存在"（零字节增量）。先落"刚被使用"的时间戳再丢本份——
+        // 两行之间回收可能正好把命中文件删掉，那时若 Touch 失败就改用 tmp 重新落定。
+        if (File.Exists(compressedPath) && Touch(compressedPath))
         {
-            // 先落"刚被使用"的时间戳、再丢本份：两行之间回收可能正好把 dest 删掉，
-            // 那时要用 tmp 重新落定（否则调用方拿着 hash 写进 meta，指向一个不存在的 blob）
-            if (Touch(dest))
-            {
-                File.Delete(tmp); // 同内容已存在 → 丢弃本份（零字节增量）
-                return hash;
-            }
-
-            try
-            {
-                File.Move(tmp, dest, overwrite: true);
-            }
-            catch (IOException) when (File.Exists(dest))
-            {
-                // 另一 worker 又落定了同一内容 → 丢弃本份即可
-                File.Delete(tmp);
-            }
-
+            File.Delete(tmp);
+            return hash;
+        }
+        if (File.Exists(uncompressedPath) && Touch(uncompressedPath))
+        {
+            File.Delete(tmp);
             return hash;
         }
 
         try
         {
-            File.Move(tmp, dest); // 改名落定：中途失败只留 .tmp
+            File.Move(tmp, dest, overwrite: true); // 改名落定：中途失败只留 .tmp
         }
         catch (IOException) when (File.Exists(dest))
         {
@@ -136,52 +127,64 @@ public static class BlobStore
             ? Directory.GetFiles(BlobsDirectory(resourceDir))
             : Array.Empty<string>();
 
-    /// <summary>压缩 blob 文件头魔数（WTSC = WTSM Compressed）+ 算法标识。</summary>
-    private static readonly byte[] CompressedMagic = { 0x57, 0x54, 0x53, 0x43 }; // "WTSC"
-    private const byte CompressedAlgBrotli = 1;
-    private static readonly byte[] CompressedHeader = { 0x57, 0x54, 0x53, 0x43, CompressedAlgBrotli };
+    /// <summary>压缩 blob 的文件名后缀（WTSM Compressed）：<c>blobs/&lt;hash&gt;&lt;ext&gt;.wtsc</c>。</summary>
+    /// <remarks>
+    /// 用**后缀**而非文件头魔数区分压缩/未压缩：后缀不会与原始贴图内容混淆（魔数理论上会被
+    /// 恰好以 <c>"WTSC..."</c> 开头的原始数据误判），判断也只查文件名、不读文件内容。压缩文件内容就是
+    /// 纯 Brotli 流（无额外头部），读取经 <see cref="OpenBlob"/> 按后缀透明解压。
+    /// </remarks>
+    public const string CompressedSuffix = ".wtsc";
 
-    /// <summary>从 blob 文件名（<c>&lt;hash&gt;&lt;ext&gt;</c>）取出内容哈希（小写 hex，不含扩展名）。</summary>
-    public static string BlobHashOf(string blobFile)
-        => Path.GetFileNameWithoutExtension(blobFile);
-
-    /// <summary>判断 blob 是否为本程序压缩格式（旧版未压缩 blob 返回 false，向后兼容）。</summary>
-    public static bool IsCompressed(string blobPath)
-    {
-        try
-        {
-            using var fs = File.OpenRead(blobPath);
-            var magic = new byte[5];
-            return fs.Read(magic, 0, 5) == 5
-                && magic[0] == CompressedMagic[0] && magic[1] == CompressedMagic[1]
-                && magic[2] == CompressedMagic[2] && magic[3] == CompressedMagic[3]
-                && magic[4] == CompressedAlgBrotli;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
+    /// <summary>压缩形态的 blob 路径：未压缩规范名 + <see cref="CompressedSuffix"/>。</summary>
+    public static string CompressedBlobPath(string resourceDir, string hash, string extension)
+        => BlobPath(resourceDir, hash, extension) + CompressedSuffix;
 
     /// <summary>
-    /// 打开 blob 供读取：压缩格式返回解压流（BrotliStream 接管底层文件，dispose 即关闭）；
-    /// 旧版未压缩 blob 返回定位到开头的原始流。调用方用 <c>using</c> 释放。
+    /// 给定规范 blob 文件名（<c>&lt;hash&gt;&lt;ext&gt;</c>，不含压缩后缀），返回磁盘上**实际存在**的路径：
+    /// 压缩版优先，其次未压缩版；都不存在时返回未压缩规范路径（便于调用方 <c>File.Exists</c> 判定为不存在）。
+    /// </summary>
+    public static string ResolveBlobPath(string resourceDir, string blobName)
+    {
+        var dir = BlobsDirectory(resourceDir);
+        var compressed = Path.Combine(dir, blobName + CompressedSuffix);
+        return File.Exists(compressed) ? compressed : Path.Combine(dir, blobName);
+    }
+
+    /// <summary><see cref="ResolveBlobPath(string, string)"/> 的 (hash, extension) 重载。</summary>
+    public static string ResolveBlobPath(string resourceDir, string hash, string extension)
+        => ResolveBlobPath(resourceDir, hash + extension);
+
+    /// <summary>blob 是否存在于库中（任一形态）。</summary>
+    public static bool BlobExists(string resourceDir, string hash, string extension)
+        => File.Exists(ResolveBlobPath(resourceDir, hash, extension));
+
+    /// <summary>
+    /// 从 blob 文件名取出内容哈希（小写 hex，不含扩展名与压缩后缀）。
+    /// 兼容未压缩 <c>&lt;hash&gt;&lt;ext&gt;</c> 与压缩 <c>&lt;hash&gt;&lt;ext&gt;.wtsc</c> 两种形态。
+    /// </summary>
+    public static string BlobHashOf(string blobFile)
+    {
+        var name = Path.GetFileName(blobFile);
+        if (name.EndsWith(CompressedSuffix, StringComparison.OrdinalIgnoreCase))
+            name = name[..^CompressedSuffix.Length];
+        return Path.GetFileNameWithoutExtension(name);
+    }
+
+    /// <summary>判断 blob 是否为压缩形态（按文件名后缀，不读内容）。</summary>
+    public static bool IsCompressed(string blobPath)
+        => blobPath.EndsWith(CompressedSuffix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 打开 blob 供读取：压缩形态（后缀 <see cref="CompressedSuffix"/>）返回 BrotliStream 解压流
+    /// （接管底层文件，dispose 即关闭）；未压缩返回原始流。调用方用 <c>using</c> 释放。
     /// </summary>
     public static Stream OpenBlob(string blobPath)
     {
         var fs = File.OpenRead(blobPath);
         try
         {
-            var magic = new byte[5];
-            if (fs.Read(magic, 0, 5) == 5
-                && magic[0] == CompressedMagic[0] && magic[1] == CompressedMagic[1]
-                && magic[2] == CompressedMagic[2] && magic[3] == CompressedMagic[3]
-                && magic[4] == CompressedAlgBrotli)
-            {
+            if (IsCompressed(blobPath))
                 return new BrotliStream(fs, CompressionMode.Decompress, leaveOpen: false);
-            }
-
-            fs.Seek(0, SeekOrigin.Begin); // 未压缩：回开头原样返回
             return fs;
         }
         catch
@@ -247,9 +250,7 @@ public static class BlobStore
 
             try
             {
-                var before = new FileInfo(b).Length;
-                RecompressOne(resourceDir, b);
-                saved += before - new FileInfo(b).Length;
+                saved += RecompressOne(resourceDir, b);
                 compressed++;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -264,52 +265,131 @@ public static class BlobStore
         return (compressed, failed, saved);
     }
 
-    /// <summary>把单个未压缩 blob 原子替换为压缩版（内容哈希不变）。</summary>
-    private static void RecompressOne(string resourceDir, string blobPath)
+    /// <summary>
+    /// 把单个未压缩 blob 替换为压缩版（内容哈希不变，文件名加 <see cref="CompressedSuffix"/>）。
+    /// 返回释放的字节数（原大小 − 压缩后大小，可为负）。
+    /// </summary>
+    private static long RecompressOne(string resourceDir, string blobPath)
     {
+        // blobPath 是未压缩文件（blobs/<hash><ext>）
         var hash = BlobHashOf(blobPath);
-        var ext = Path.GetExtension(blobPath).ToLowerInvariant();
+        var compressedPath = blobPath + CompressedSuffix;
+        var before = new FileInfo(blobPath).Length;
 
         var tmp = Path.Combine(BlobsDirectory(resourceDir), Guid.NewGuid().ToString("N") + ".tmp");
         using (var target = File.Create(tmp))
         {
-            target.Write(CompressedHeader, 0, CompressedHeader.Length);
             // leaveOpen：让 target 保持打开，压缩层关掉后再统一 fsync 落盘
             using (var cs = new BrotliStream(target, CompressionLevel.Optimal, leaveOpen: true))
             {
-                // src 必须在 File.Replace 之前释放：OpenBlob 以 FileShare.Read 打开 dest，
-                // 而 File.Replace 需对 dest 重命名/删除（写+删访问权），句柄未关会触发共享冲突 IOException。
-                using var src = OpenBlob(blobPath); // 未压缩 → 原样返回
-                src.CopyTo(cs); // 流式压缩；结束自动 flush 到 target
+                using var src = File.OpenRead(blobPath); // 未压缩 → 原样
+                src.CopyTo(cs);
             }
 
-            target.Flush(true); // 落盘屏障：替换前先把内容刷到磁盘，防断电留下"名字对、内容坏"
+            target.Flush(true); // 落盘屏障：落定前先把内容刷到磁盘，防断电留下"名字对、内容坏"
         }
 
-        // **校验通过才替换原文件**：把 tmp 解压读回求 SHA-256，须等于原始内容哈希。
-        // 原始 blob 在此刻仍完好——校验失败就丢弃 tmp、保留原文件并抛错（上层计入失败数），
-        // 绝不拿一个可能损坏的压缩结果覆盖仅存的原件。
-        if (!VerifyLossless(tmp, hash))
+        // **校验通过才落定**：把 tmp 解压读回求 SHA-256，须等于原始内容哈希。
+        // 原始 blob 此刻仍完好——校验失败就丢弃 tmp、保留原文件并抛错（上层计入失败数）。
+        if (!VerifyCompressedLossless(tmp, hash))
         {
             try { File.Delete(tmp); } catch (IOException) { }
             throw new InvalidDataException($"blob 压缩校验失败: {Path.GetFileName(blobPath)}");
         }
 
-        // 原子替换：dest 当前是未压缩版，替换为压缩版（内容哈希不变）。File.Replace 在 Windows 上原子。
-        // 失败时 tmp 残留（GC 清理）、原 dest 保留，下次重试。
-        File.Replace(tmp, BlobPath(resourceDir, hash, ext), null);
+        // 落定压缩版，再删原样版。两步非严格原子：崩溃时可能两形态并存，读取以压缩版优先，
+        // 迁移重跑会收敛（overwrite 压缩版 + 删原样版）。
+        File.Move(tmp, compressedPath, overwrite: true);
+        try { File.Delete(blobPath); } catch (IOException) { }
+        return before - new FileInfo(compressedPath).Length;
     }
 
     /// <summary>
-    /// 校验压缩 blob 无损：解压读回求 SHA-256，与期望的内容哈希比对（大小写不敏感）。
+    /// 存量 blob 全量解压还原（关闭压缩开关时调用）：遍历所有**压缩形态**的 blob，逐个校验无损后
+    /// 还原为未压缩原样文件（内容哈希不变，文件名去掉 <see cref="CompressedSuffix"/>）；未压缩的跳过。
+    /// 单文件失败会保留原样、继续后续。返回（已还原数, 失败数）。应在 <c>AppBusy</c> 锁内调用。
+    /// </summary>
+    public static (int decompressed, int failed) DecompressAll(
+        string resourceDir, IProgress<(int done, int total, string? current)>? progress, CancellationToken ct)
+    {
+        var blobDir = BlobsDirectory(resourceDir);
+        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+        if (Directory.Exists(blobDir))
+        {
+            foreach (var t in Directory.GetFiles(blobDir, "*.tmp"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(t) > cutoff) continue; // 宽限期内：可能还在写
+                    File.Delete(t);
+                }
+                catch (IOException) { }
+            }
+        }
+
+        var blobs = EnumerateBlobs(resourceDir)
+            .Where(f => IsCompressed(f)) // 只处理压缩形态（.tmp 不是 .wtsc，自然被排除）
+            .ToArray();
+        int done = 0, decompressed = 0, failed = 0;
+        foreach (var b in blobs)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                DecompressOne(b);
+                decompressed++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                failed++; // 原压缩文件已保留，下次再试
+            }
+
+            done++;
+            progress?.Report((done, blobs.Length, Path.GetFileName(b)));
+        }
+        return (decompressed, failed);
+    }
+
+    /// <summary>把单个压缩 blob 还原为未压缩原样文件（校验无损后才落定）。</summary>
+    private static void DecompressOne(string compressedBlobPath)
+    {
+        // compressedBlobPath = blobs/<hash><ext>.wtsc
+        var name = Path.GetFileName(compressedBlobPath);
+        var uncompressedName = name[..^CompressedSuffix.Length]; // <hash><ext>
+        var hash = Path.GetFileNameWithoutExtension(uncompressedName);
+        var dir = Path.GetDirectoryName(compressedBlobPath)!;
+        var uncompressedPath = Path.Combine(dir, uncompressedName);
+
+        var tmp = Path.Combine(dir, Guid.NewGuid().ToString("N") + ".tmp");
+        using (var target = File.Create(tmp))
+        {
+            using (var src = OpenBlob(compressedBlobPath)) // BrotliStream 解压
+                src.CopyTo(target);
+            target.Flush(true);
+        }
+
+        // 校验通过才落定：未压缩 tmp 的 SHA-256 须等于原始内容哈希
+        if (!string.Equals(HashFile(tmp), hash, StringComparison.OrdinalIgnoreCase))
+        {
+            try { File.Delete(tmp); } catch (IOException) { }
+            throw new InvalidDataException($"blob 解压校验失败: {name}");
+        }
+
+        File.Move(tmp, uncompressedPath, overwrite: true);
+        try { File.Delete(compressedBlobPath); } catch (IOException) { }
+    }
+
+    /// <summary>
+    /// 校验压缩结果无损：解压给定纯 Brotli 文件（不依赖后缀），求 SHA-256 与期望内容哈希比对。
     /// 读失败 / 解压失败的都返回 <c>false</c>（交由调用方保留原文件）。
     /// </summary>
-    private static bool VerifyLossless(string blobPath, string expectedHash)
+    private static bool VerifyCompressedLossless(string compressedFile, string expectedHash)
     {
         try
         {
-            using var s = OpenBlob(blobPath);
-            var actual = Convert.ToHexString(SHA256.HashData(s));
+            using var fs = File.OpenRead(compressedFile);
+            using var br = new BrotliStream(fs, CompressionMode.Decompress);
+            var actual = Convert.ToHexString(SHA256.HashData(br));
             return string.Equals(actual, expectedHash, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)

@@ -1217,14 +1217,31 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 存储压缩开关（§6.5 扩展）：首次开启弹知会（与多源复用同款，可取消回滚）；
-    /// 确认后记住，并立即压缩现有库（遮罩 + 全局锁）。关闭只停用——已压缩 blob 保留、新导入不压缩。
+    /// 压缩开关重入哨兵：程序化回滚 <see cref="AppConfig.CompressBlobs"/> 时会再次触发
+    /// <see cref="OnCompressBlobsToggled"/>，用它跳过重入（否则回滚会误触发另一方向的分支）。
+    /// </summary>
+    private bool _compressToggleGuard;
+
+    /// <summary>
+    /// 存储压缩开关（§6.5 扩展）：开启 → 首次弹知会，确认后记住并立即压缩现有库（遮罩 + 全局锁）；
+    /// 关闭 → **多层知会**逐层确认，全部确认后把整个库解压还原（遮罩 + 全局锁，可取消）。
     /// </summary>
     private void OnCompressBlobsToggled()
     {
+        // 程序化回滚开关引起的重入：直接忽略
+        if (_compressToggleGuard) return;
+
         if (!Config.CompressBlobs)
         {
-            BlobStore.CompressionEnabled = false;
+            // 关闭压缩 = 释放全库（解压还原）。关闭前多层知会，全部确认才动手
+            if (!ConfirmDisableCompression())
+            {
+                RevertCompressToggle(true); // 任一确认取消 → 保持启用
+                return;
+            }
+
+            BlobStore.CompressionEnabled = false; // 之后的新导入 / 迁移不再压缩
+            _ = RunDecompressAsync();
             return;
         }
 
@@ -1246,12 +1263,44 @@ public partial class MainViewModel : ObservableObject
 
         if (!accepted)
         {
-            Config.CompressBlobs = false; // 回滚（再次触发走关闭分支）
+            RevertCompressToggle(false); // 回滚（保持关闭；不重入）
             return;
         }
 
         Config.CompressBlobsNoticeSeen = true;
         _ = RunRecompressAsync();
+    }
+
+    /// <summary>程序化回滚压缩开关（不触发 <see cref="OnCompressBlobsToggled"/> 的重入）。</summary>
+    private void RevertCompressToggle(bool enabled)
+    {
+        _compressToggleGuard = true;
+        try { Config.CompressBlobs = enabled; }
+        finally { _compressToggleGuard = false; }
+    }
+
+    /// <summary>
+    /// 还原为未压缩前的**多层知会**：逐层 <see cref="MessageDialog.Confirm"/>，任一层取消即整体取消。
+    /// 第 1 层讲清后果（全库解压、耗时、锁定、可取消），第 2 层做最终确认（重写全库）。
+    /// </summary>
+    private bool ConfirmDisableCompression()
+    {
+        if (!MessageDialog.Confirm(
+                Loc.Format("settings.compress.disableNotice.1",
+                    Loc["settings.compress.continue"], Loc["common.cancel"]),
+                Loc["settings.compress.disableTitle"],
+                Loc["settings.compress.continue"], Loc["common.cancel"],
+                icon: DialogIcon.Warning))
+        {
+            return false;
+        }
+
+        return MessageDialog.Confirm(
+            Loc.Format("settings.compress.disableNotice.2",
+                Loc["settings.compress.disableConfirm"], Loc["common.cancel"]),
+            Loc["settings.compress.disableTitle"],
+            Loc["settings.compress.disableConfirm"], Loc["common.cancel"],
+            icon: DialogIcon.Warning);
     }
 
     /// <summary>
@@ -1310,6 +1359,71 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void CompressLibrary() => _ = RunRecompressAsync();
+
+    /// <summary>
+    /// 全库解压还原（关闭压缩开关时自动触发，或点「还原为未压缩」手动触发，含取消后接着完成）：
+    /// 全局独占锁防并发导入，统一遮罩显示进度与取消。只处理压缩形态；单文件失败保留原样、下次重试。
+    /// </summary>
+    private async Task RunDecompressAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Config.ResourceDirectory)
+            || !Directory.Exists(Config.ResourceDirectory))
+        {
+            ShowStatus(Loc["settings.gc.needResource"]);
+            return;
+        }
+
+        var resourceDir = Config.ResourceDirectory;
+        using var busy = AppBusy.Enter();
+        using var cts = new CancellationTokenSource();
+        using (var scope = BusyIndicator.Instance.Begin(Loc["settings.compress.decompressing"], cts.Cancel))
+        {
+            var reporter = new Progress<(int done, int total, string? current)>(p =>
+            {
+                scope.Report(p.done, p.total);
+                if (p.current != null) scope.SetDetail(p.current);
+            });
+            try
+            {
+                var result = await Task.Run(
+                    () => BlobStore.DecompressAll(resourceDir, reporter, cts.Token), cts.Token);
+                if (result.decompressed == 0 && result.failed == 0)
+                {
+                    ShowStatus(Loc["settings.compress.decompressNothing"]);
+                }
+                else if (result.failed > 0)
+                {
+                    // 失败的原压缩文件已保留，如实回报，可重试
+                    ShowStatus(Loc.Format("settings.compress.decompressDoneWithErrors",
+                        result.decompressed, result.failed));
+                }
+                else
+                {
+                    ShowStatus(Loc.Format("settings.compress.decompressDone", result.decompressed));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                ShowStatus(Loc["settings.compress.decompressCanceled"]);
+            }
+            catch (Exception ex)
+            {
+                ShowStatus(Loc.Format("settings.compress.decompressFailed", ex.Message));
+            }
+        }
+    }
+
+    /// <summary>手动「还原为未压缩」：多层确认 → 关闭压缩开关 → 全库解压还原（也可用于取消后接着完成）。</summary>
+    [RelayCommand]
+    private void DecompressLibrary()
+    {
+        if (!ConfirmDisableCompression())
+            return; // 取消：保持当前开关状态
+
+        RevertCompressToggle(false);
+        BlobStore.CompressionEnabled = false;
+        _ = RunDecompressAsync();
+    }
 
     // ---------- 左侧导航折叠（界面设计规范 §5.13）----------
 

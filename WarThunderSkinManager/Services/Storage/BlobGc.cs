@@ -101,7 +101,8 @@ public static class BlobGc
             report.ScannedBlobs++;
 
             var isTmp = blob.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase);
-            var isReferenced = referenced.Contains(Path.GetFileNameWithoutExtension(blob));
+            // 用 BlobHashOf（会剥掉压缩后缀 .wtsc）取内容哈希，压缩 blob 才能与 meta 里的纯哈希对上
+            var isReferenced = referenced.Contains(BlobStore.BlobHashOf(blob));
             if (!isTmp && isReferenced) continue;
 
             if (File.GetLastWriteTimeUtc(blob) > cutoff) continue;

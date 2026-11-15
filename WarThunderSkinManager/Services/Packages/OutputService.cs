@@ -238,7 +238,7 @@ public static class OutputService
             // 两种"没有本地贴图"（包外引用 / 贴图缺失）给说明性告警
             if (!string.IsNullOrWhiteSpace(mapping.TextureRef))
             {
-                var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
+                var blobPath = BlobStore.ResolveBlobPath(resourceDir, mapping.TextureRef);
                 if (File.Exists(blobPath)) scheduled.Add((mapping.ToFile, mapping.TextureRef));
                 else report.Warnings.Add(Loc.Format("output.warn.textureMissing", mapping.FromModule, mapping.ToFile));
             }
@@ -253,7 +253,7 @@ public static class OutputService
         // 同一 (to, blob) 被多条映射复用时只调度一次，避免对大贴图重复做内容比对
         foreach (var (to, blobFile) in scheduled.Distinct())
         {
-            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blobFile);
+            var src = BlobStore.ResolveBlobPath(resourceDir, blobFile);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
@@ -372,7 +372,7 @@ public static class OutputService
                 // 指向游戏本体资源（无本地贴图）→ 条目照写，无需调度
                 if (string.IsNullOrWhiteSpace(mapping.TextureRef)) continue;
 
-                var blobPath = Path.Combine(BlobStore.BlobsDirectory(resourceDir), mapping.TextureRef);
+                var blobPath = BlobStore.ResolveBlobPath(resourceDir, mapping.TextureRef);
                 if (!File.Exists(blobPath))
                 {
                     report.Warnings.Add(Loc.Format("output.warn.textureMissing", mapping.FromModule, mapping.ToFile));
@@ -406,7 +406,7 @@ public static class OutputService
         // ① 贴图（blk 是"生效点"，最后写）
         foreach (var (to, blob) in scheduled)
         {
-            var src = Path.Combine(BlobStore.BlobsDirectory(resourceDir), blob);
+            var src = BlobStore.ResolveBlobPath(resourceDir, blob);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);

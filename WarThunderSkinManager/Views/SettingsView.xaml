@@ -319,8 +319,12 @@
                     </StackPanel>
                     <TextBlock Text="{loc:Loc settings.compress.hint}" Style="{StaticResource PageSubtitle}"
                                TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <Button Content="{loc:Loc settings.compress.recompress}" Style="{StaticResource SecondaryButton}"
-                            HorizontalAlignment="Left" Margin="0,0,0,16" Command="{Binding CompressLibraryCommand}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Button Content="{loc:Loc settings.compress.recompress}" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding CompressLibraryCommand}"/>
+                        <Button Content="{loc:Loc settings.compress.decompress}" Style="{StaticResource SecondaryButton}"
+                                Margin="8,0,0,0" Command="{Binding DecompressLibraryCommand}"/>
+                    </StackPanel>
 
                     <!-- 横向存储条：**全长 = 资源目录所在磁盘的总容量**，三段 = 本程序资源目录占用 /
                          该磁盘其他内容占用 / 剩余可用（同一比例尺；数据见 Services/Storage/StorageUsageService）。
