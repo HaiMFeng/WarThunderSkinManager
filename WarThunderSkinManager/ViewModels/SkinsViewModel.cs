@@ -909,7 +909,7 @@ public partial class SkinsViewModel : ObservableObject
     /// ——右键激活是明确要输出这套包，不该还要再点一次「同步此载具」。
     /// </summary>
     [RelayCommand]
-    private void ActivatePackage(SkinPackage? package)
+    private async Task ActivatePackage(SkinPackage? package)
     {
         if (package == null || SelectedVehicle == null) return;
         if (!EnsureConfigDir()) return;
@@ -922,14 +922,30 @@ public partial class SkinsViewModel : ObservableObject
         SubVehicleService.TryAutoBind(vehicleId,
             id => _allVehicles.Any(vehicle => string.Equals(vehicle.Id, id, StringComparison.OrdinalIgnoreCase)));
 
-        // 激活 = 明确要输出这套包 → 立即落盘（游戏热重载随即生效，§3.8）
         var activated = Loc.Format("pkg.activated", package.Name);
-        var sync = SyncCurrentVehicleMessage(out var blkCreated);
 
+        // 收集输出请求（UI 线程、轻）；解压 + 写盘是重活，**丢后台**——压缩后激活要解压，放 UI 线程上会明显卡顿
+        var (request, error) = BuildGroupSyncRequest(vehicleId, package.Id);
+        if (request == null)
+        {
+            ShowStatus(Loc.Format("skins.syncFailed", error ?? ""));
+            GameSkinSelectionChanged?.Invoke(); // 激活状态变化 → 游戏内同步（§3.14）
+            return;
+        }
+
+        GroupSyncReport? report = null;
+        string? syncError = null;
+        await Task.Run(() =>
+        {
+            try { report = OutputService.RebuildGroup(request.UserSkins, request.ResourceDir, request.Parent, request.Members); }
+            catch (Exception ex) { syncError = ex.Message; }
+        });
+
+        // 回 UI 线程：状态文案 + 首次生成提示 + 游戏内同步
+        var sync = FormatSyncMessage(report, syncError);
         ShowStatus(sync.Length > 0 ? Loc.Format("pkg.activatedSynced", package.Name, sync) : activated);
 
-        // 首次生成该载具的 blk → 提示到游戏里选中这套用户涂装
-        if (blkCreated) PromptFirstOutput(vehicleId);
+        if (report is { AnyBlkCreated: true }) PromptFirstOutput(vehicleId);
 
         GameSkinSelectionChanged?.Invoke(); // 激活状态变化 → 游戏内同步（§3.14）
     }
@@ -1030,40 +1046,66 @@ public partial class SkinsViewModel : ObservableObject
     /// <param name="reactivatedPackageId">刚被激活的包 Id（缺省 = 按各成员自己的激活状态取）</param>
     private (GroupSyncReport? Report, string? Error) RebuildGroupFor(string vehicleId, string? reactivatedPackageId = null)
     {
-        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return (null, error);
+        var (request, error) = BuildGroupSyncRequest(vehicleId, reactivatedPackageId);
+        if (request == null) return (null, error);
 
         try
         {
-            var parent = SubVehicleService.OutputParentOf(vehicleId);
-            var outputDir = OutputService.VehicleOutputDir(userSkins, parent);
-            var members = new List<GroupMember>();
-
-            foreach (var memberId in SubVehicleService.GroupOf(parent))
-            {
-                var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, memberId);
-
-                var packageId = string.Equals(memberId, vehicleId, StringComparison.OrdinalIgnoreCase)
-                                && !string.IsNullOrWhiteSpace(reactivatedPackageId)
-                    ? reactivatedPackageId!
-                    : activation.ActivePackageId;
-
-                var package = packageId.Length == 0 ? null : FindPackage(resourceDir, memberId, packageId);
-
-                members.Add(new GroupMember
-                {
-                    VehicleId = memberId,
-                    Package = package,
-                    // 没激活但目录里本来就有它的 blk → 保留槽位（与"取消激活留空 blk"的既有语义一致）
-                    KeepSlot = package == null && File.Exists(Path.Combine(outputDir, memberId + ".blk"))
-                });
-            }
-
-            return (OutputService.RebuildGroup(userSkins, resourceDir, parent, members), null);
+            return (OutputService.RebuildGroup(request.UserSkins, request.ResourceDir, request.Parent, request.Members), null);
         }
         catch (Exception ex)
         {
             return (null, ex.Message);
         }
+    }
+
+    /// <summary>「重建某载具所属复合组输出」的纯数据请求（收集阶段在 UI 线程，落盘才是重活）。</summary>
+    private sealed record GroupSyncRequest(string UserSkins, string ResourceDir, string Parent, List<GroupMember> Members);
+
+    /// <summary>
+    /// 收集重建输出所需的一切（载具 / 激活包 / 成员 / 输出目录）——都在 UI 线程读，产出一份纯数据请求；
+    /// 真正的贴图落盘（压缩后需解压）由调用方丢到后台线程，避免卡 UI。
+    /// </summary>
+    private (GroupSyncRequest? Request, string? Error) BuildGroupSyncRequest(string vehicleId, string? reactivatedPackageId = null)
+    {
+        if (!EnsureOutputDirs(out var userSkins, out var resourceDir, out var error)) return (null, error);
+
+        var parent = SubVehicleService.OutputParentOf(vehicleId);
+        var outputDir = OutputService.VehicleOutputDir(userSkins, parent);
+        var members = new List<GroupMember>();
+
+        foreach (var memberId in SubVehicleService.GroupOf(parent))
+        {
+            var activation = LoadoutService.LoadActivation(_config.ConfigDirectory, memberId);
+
+            var packageId = string.Equals(memberId, vehicleId, StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrWhiteSpace(reactivatedPackageId)
+                ? reactivatedPackageId!
+                : activation.ActivePackageId;
+
+            var package = packageId.Length == 0 ? null : FindPackage(resourceDir, memberId, packageId);
+
+            members.Add(new GroupMember
+            {
+                VehicleId = memberId,
+                Package = package,
+                // 没激活但目录里本来就有它的 blk → 保留槽位（与"取消激活留空 blk"的既有语义一致）
+                KeepSlot = package == null && File.Exists(Path.Combine(outputDir, memberId + ".blk"))
+            });
+        }
+
+        return (new GroupSyncRequest(userSkins, resourceDir, parent, members), null);
+    }
+
+    /// <summary>把输出重建结果格式化成状态栏文案（与「激活即同步」原口径一致）。</summary>
+    private static string FormatSyncMessage(GroupSyncReport? report, string? error)
+    {
+        if (report == null) return Loc.Format("skins.syncFailed", error ?? "");
+
+        var message = Loc.Format("skins.syncDone", report.Mappings, report.WrittenTextures);
+        if (report.Warnings.Count > 0)
+            message += Loc.Format("skins.syncWarnings", report.Warnings.Count);
+        return message;
     }
 
     /// <summary>

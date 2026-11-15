@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using WarThunderSkinManager.Localization;
 using WarThunderSkinManager.Models;
 
@@ -249,24 +250,25 @@ public static class OutputService
 
         // 调度贴图：blob → WTSM/<载具Id>/<to 原名>
         // **先贴图后 blk**：blk 是"生效点"，调度中途失败不会留下"blk 引用不存在贴图"的矛盾输出。
-        // 同一 (to, blob) 被多条映射复用时只调度一次，避免对大贴图重复做内容比对
-        foreach (var (to, blobFile) in scheduled.Distinct())
+        // 同一 (to, blob) 被多条映射复用时只调度一次，避免对大贴图重复做内容比对。
+        // **并行**：压缩 blob 需解压（CPU + IO 双密集），逐贴图独立 → 多线程跑满多核，缩短等待。
+        var distinct = scheduled.Distinct().ToArray();
+        int written = 0, skipped = 0;
+        DedicatedWorkers.Run(distinct, TextureDegree(), item =>
         {
+            var (to, blobFile) = item;
             var src = BlobStore.ResolveBlobPath(resourceDir, blobFile);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
 
-            if (SameAsBlob(dst, blobFile))
-            {
-                report.SkippedTextures++;
-                continue;
-            }
+            if (SameAsBlob(dst, blobFile)) { Interlocked.Increment(ref skipped); return; }
 
             BlobStore.MaterializeBlob(src, dst); // 原子落定（先临时再替换，不"先删后写"）
-
-            report.WrittenTextures++;
-        }
+            Interlocked.Increment(ref written);
+        }, CancellationToken.None);
+        report.WrittenTextures += written;
+        report.SkippedTextures += skipped;
 
         // 清理不再被引用的贴图（WTSM 由程序维护）。
         // 保留集 = **真正被调度写出**的文件（相对路径，to 可能含子目录）；
@@ -398,9 +400,12 @@ public static class OutputService
             }
         }
 
-        // ① 贴图（blk 是"生效点"，最后写）
-        foreach (var (to, blob) in scheduled)
+        // ① 贴图（blk 是"生效点"，最后写）—— 逐贴图独立，压缩 blob 需解压，**并行**跑满多核
+        int writtenTex = 0, skippedTex = 0;
+        var texGate = new object();
+        DedicatedWorkers.Run(scheduled, TextureDegree(), item =>
         {
+            var (to, blob) = item;
             var src = BlobStore.ResolveBlobPath(resourceDir, blob);
             var dst = Path.Combine(outDir, to);
             var dstDir = Path.GetDirectoryName(dst);
@@ -408,21 +413,18 @@ public static class OutputService
 
             try
             {
-                if (SameAsBlob(dst, blob))
-                {
-                    report.SkippedTextures++;
-                    continue;
-                }
+                if (SameAsBlob(dst, blob)) { Interlocked.Increment(ref skippedTex); return; }
 
                 BlobStore.MaterializeBlob(src, dst); // 原子落定（先临时再替换，不"先删后写"）
-
-                report.WrittenTextures++;
+                Interlocked.Increment(ref writtenTex);
             }
             catch (Exception ex)
             {
-                report.Warnings.Add(Loc.Format("output.warn.writeFailed", to, ex.Message));
+                lock (texGate) report.Warnings.Add(Loc.Format("output.warn.writeFailed", to, ex.Message));
             }
-        }
+        }, CancellationToken.None);
+        report.WrittenTextures += writtenTex;
+        report.SkippedTextures += skippedTex;
 
         // ② blk：有包的写包内容；没包但要保槽位的写空 blk
         foreach (var (vehicleId, blkText) in blkWrites)
@@ -489,4 +491,7 @@ public static class OutputService
         if (string.IsNullOrEmpty(expected)) return false;
         return string.Equals(BlobStore.HashFile(dst), expected, StringComparison.Ordinal);
     }
+
+    /// <summary>贴图落盘的并行度：解压 + 写盘是 CPU + IO 双密集，给满核数但不超过 8。</summary>
+    private static int TextureDegree() => Math.Clamp(Environment.ProcessorCount, 2, 8);
 }
