@@ -124,7 +124,7 @@
                         </DockPanel.Style>
 
                         <!-- 内部标识 + 涂装包数量 -->
-                        <Grid DockPanel.Dock="Top" Margin="0,0,0,16">
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -281,8 +281,8 @@
                                             Command="{Binding Vehicles.AddPartCommand}"/>
                                 </StackPanel>
                                 <TextBlock Text="{loc:Loc vehicles.parts.hint}" Style="{StaticResource PageSubtitle}"
-                                           TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                <Grid Margin="0,0,0,6">
+                                           TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <!-- Auto：表头列宽随文案（英文比中文长），避免固定宽度截断 -->
