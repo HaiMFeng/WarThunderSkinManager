@@ -142,7 +142,10 @@
                         </Grid>
 
                         <TabControl Style="{StaticResource SegmentedTabControl}">
-                            <TabItem Header="{loc:Loc vehicles.tab.info}" Style="{StaticResource SegmentedTabItem}">
+                            <TabItem Style="{StaticResource SegmentedTabItem}">
+                                <TabItem.Header>
+                                    <TextBlock Text="{loc:Loc vehicles.tab.info}"/>
+                                </TabItem.Header>
                             <StackPanel>
                                 <!-- 显示名（自动保存） -->
                                 <TextBlock Text="{loc:Loc vehicles.displayName}" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
@@ -250,7 +253,10 @@
                             </StackPanel>
                             </TabItem>
 
-                            <TabItem Header="{loc:Loc vehicles.tab.parts}" Style="{StaticResource SegmentedTabItem}">
+                            <TabItem Style="{StaticResource SegmentedTabItem}">
+                                <TabItem.Header>
+                                    <TextBlock Text="{loc:Loc vehicles.tab.parts}"/>
+                                </TabItem.Header>
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
