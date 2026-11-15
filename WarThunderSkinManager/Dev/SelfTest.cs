@@ -248,6 +248,33 @@ internal static class SelfTest
                 Directory.Delete(rdir, recursive: true);
             }
 
+            // ---- 自满足：压缩态自描述 + 仅凭资源目录（配置目录全丢）即可重建 ----
+            // 模拟"C 盘配置目录被摧毁、新程序只拿资源目录"：新建空配置目录、关闭压缩开关，
+            // 仅凭库内 `.wtsc` 后缀识别压缩态，验证贴图引用与重建结果全部可解析。
+            {
+                var freshConfigDir = Path.Combine(workDir, "fresh-config");
+                Directory.CreateDirectory(freshConfigDir);
+                BlobStore.CompressionEnabled = false; // 新设备默认不压缩；读取不依赖它
+
+                var libMetas = PackageStore.LoadAll(resourceDir).ToList();
+                var libTextures = libMetas.SelectMany(m => m.Textures).ToList();
+                var libCompressed = libTextures.Count(t =>
+                    BlobStore.IsCompressed(BlobStore.ResolveBlobPath(resourceDir, t.Blob, Path.GetExtension(t.To).ToLowerInvariant())));
+                var libResolvable = libTextures.All(t =>
+                    BlobStore.BlobExists(resourceDir, t.Blob, Path.GetExtension(t.To).ToLowerInvariant()));
+
+                var rebuiltVehicles = VehicleAggregator.BuildAll(resourceDir);
+                var rebuiltRefs = rebuiltVehicles.SelectMany(v => v.SkinPackages)
+                    .SelectMany(p => p.Mappings)
+                    .Select(m => m.TextureRef)
+                    .Where(r => !string.IsNullOrEmpty(r))
+                    .ToList();
+                var rebuiltResolvable = rebuiltRefs.All(r => File.Exists(BlobStore.ResolveBlobPath(resourceDir, r)));
+
+                log.AppendLine($"自满足     : 仅凭库 包 {libMetas.Count} 个 / 贴图引用 {libTextures.Count} 条（压缩态 {libCompressed} 条），全部可解析 = {libResolvable}（应 True）；"
+                             + $"重建映射带贴图 {rebuiltRefs.Count} 条、引用全部可解析 = {rebuiltResolvable}（应 True）");
+            }
+
             var vehicles = VehicleAggregator.BuildAll(resourceDir);
 
             log.AppendLine();
