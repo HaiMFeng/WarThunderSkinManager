@@ -453,6 +453,7 @@
   "vehicles.subVehicleAddHint": "Search by vehicle name or id, then pick it as an attached vehicle",
   "vehicles.subVehicleAddEmpty": "No matching vehicle",
   "vehicles.subVehicleParent": "Attached to {0}",
+  "vehicles.subVehicleEmpty": "No attached vehicles yet",
   "vehicles.subVehicleAdd": "Add",
   "vehicles.subVehicleAdded": "Added {0}",
   "vehicles.subVehicleRemoved": "Removed {0}",

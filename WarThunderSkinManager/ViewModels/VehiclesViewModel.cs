@@ -142,6 +142,12 @@ public partial class VehiclesViewModel : ObservableObject
     /// <summary>只有非子载具才能加子（禁止链式）。</summary>
     public bool CanAddSubVehicle => SelectedVehicle != null && !IsSelectedChild;
 
+    /// <summary>没有子载具时的提示；有子载具（或没选载具）时为空串 → 界面上不占位。</summary>
+    public string SubVehicleEmptyHint
+        => SelectedVehicle != null && !IsSelectedChild && !HasSubVehicles
+            ? Loc["vehicles.subVehicleEmpty"]
+            : "";
+
     /// <summary>「属于 X 的附属载具」；不是子载具时为空串（界面上自然不占位）。</summary>
     public string SubVehicleParentText
     {
@@ -225,6 +231,7 @@ public partial class VehiclesViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSelectedChild));
         OnPropertyChanged(nameof(CanAddSubVehicle));
         OnPropertyChanged(nameof(SubVehicleParentText));
+        OnPropertyChanged(nameof(SubVehicleEmptyHint));
     }
 
     /// <summary>载具的可读标识：<c>显示名 · 内部标识</c>（显示名与 id 同名时只显示一次）。</summary>

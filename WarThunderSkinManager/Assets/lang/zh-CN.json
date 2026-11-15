@@ -454,6 +454,7 @@
   "vehicles.subVehicleAddHint": "搜索载具名或 id，选中它作为这台载具的附属载具",
   "vehicles.subVehicleAddEmpty": "没有匹配的载具",
   "vehicles.subVehicleParent": "属于 {0} 的附属载具",
+  "vehicles.subVehicleEmpty": "还没有附属载具",
   "vehicles.subVehicleAdd": "添加",
   "vehicles.subVehicleAdded": "已添加 {0}",
   "vehicles.subVehicleRemoved": "已移除 {0}",
