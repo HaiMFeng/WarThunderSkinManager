@@ -530,8 +530,8 @@ public partial class MainViewModel : ObservableObject
         // 所以启动只恢复标志、不弹知会、不重跑全量压缩（库早已压缩好，重跑只会徒增扫描）。
         BlobStore.CompressionEnabled = Config.CompressBlobs;
 
-        // 启动即判定一次是否存在「与当前模式不符」的 blob（上次取消 / 崩溃留下的中间态）→ 决定是否显示续做按钮
-        RefreshPendingConversion();
+        // 启动即判定一次：数据库若整体是压缩态（新设备 / 配置目录重建后），把开关同步为「开」（不触发重压）
+        RefreshPendingConversion(syncToggle: true);
 
         // Saves 目录自动探测（§3.14）：默认路径存在即静默采用；失败不阻塞（设置页可手选，不参与迁移）
         if (string.IsNullOrWhiteSpace(Config.SavesDirectory))
@@ -1153,7 +1153,7 @@ public partial class MainViewModel : ObservableObject
             case nameof(AppConfig.ResourceDirectory):
                 // 存储条画的是"资源目录所在磁盘" → 换了目录就是换了一块盘，必须重测（顺带重测，不弹气泡）
                 StartStorageMeasure(announce: false);
-                RefreshPendingConversion(); // 换了库 → 中间态重新判定
+                RefreshPendingConversion(syncToggle: true); // 换了库 → 重新判定中间态，并把开关同步成新库的实际形态
                 break;
 
             case nameof(AppConfig.PartReuseEnabled):
@@ -1230,11 +1230,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _hasPendingConversion;
 
     /// <summary>
-    /// 刷新 <see cref="HasPendingConversion"/>：只看文件名后缀、不读内容，遇到第一个与目标形态不符的即短路。
-    /// **在后台线程枚举**（几十万文件时不会卡 UI），算完回 UI 线程赋标志。
-    /// 调用时机：启动、开关 / 资源目录变化、进出设置页、压缩 / 还原结束时（其余场景不会产生中间态）。
+    /// 刷新 <see cref="HasPendingConversion"/>：只看文件名后缀、不读内容。**在后台线程枚举**（几十万文件
+    /// 时不会卡 UI），算完回 UI 线程赋标志。
     /// </summary>
-    private void RefreshPendingConversion()
+    /// <param name="syncToggle">
+    /// 数据库载入后是否把开关同步成库的实际形态：整库都是压缩态而开关是关 → 自动置开（新设备补完配置目录后
+    /// 不误导，也不触发全库重压）。只在启动 / 换资源目录 / 进设置页传 <c>true</c>，操作进行中（<see cref="AppBusy"/>）
+    /// 不抢；压缩 / 还原结束后的刷新传 <c>false</c>，避免把用户刚设的方向又翻回去。
+    /// </param>
+    private void RefreshPendingConversion(bool syncToggle = false)
     {
         var dir = Config.ResourceDirectory;
         var wantCompressed = Config.CompressBlobs;
@@ -1246,7 +1250,7 @@ public partial class MainViewModel : ObservableObject
 
         _ = Task.Run(() =>
         {
-            var pending = false;
+            bool hasCompressed = false, hasPlain = false;
             try
             {
                 var blobsDir = BlobStore.BlobsDirectory(dir);
@@ -1255,19 +1259,35 @@ public partial class MainViewModel : ObservableObject
                     foreach (var f in Directory.EnumerateFiles(blobsDir))
                     {
                         if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
-                        if (BlobStore.IsCompressed(f) != wantCompressed) { pending = true; break; }
+                        if (BlobStore.IsCompressed(f)) hasCompressed = true; else hasPlain = true;
+                        if (hasCompressed && hasPlain) break; // 混合：无需继续扫
                     }
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                pending = false; // 读不到就当没有，不误显示按钮
+                // 读不到就当没有，不误显示按钮、也不误同步
             }
+
+            // 是否存在与**目标形态**不符的 blob（有 → 显示续做按钮）
+            var pending = wantCompressed ? hasPlain : hasCompressed;
+
+            // 数据库整库压缩、而开关是关 → 同步为开（不触发全库重压，只改开关与运行标志）
+            var shouldSync = syncToggle && hasCompressed && !hasPlain && !wantCompressed && !AppBusy.IsBusy;
 
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher == null)
             {
-                HasPendingConversion = pending; // 无 UI 线程（自检 / 退出中）→ 直接赋值
+                if (shouldSync)
+                {
+                    BlobStore.CompressionEnabled = true;
+                    RevertCompressToggle(true);
+                    HasPendingConversion = false;
+                }
+                else
+                {
+                    HasPendingConversion = pending; // 无 UI 线程（自检 / 退出中）→ 直接赋值
+                }
                 return;
             }
 
@@ -1276,6 +1296,15 @@ public partial class MainViewModel : ObservableObject
                 // 扫描期间目录 / 开关已变 → 这一趟结果作废（会由更新的那次刷新覆盖）
                 if (!string.Equals(Config.ResourceDirectory, dir, StringComparison.OrdinalIgnoreCase)) return;
                 if (Config.CompressBlobs != wantCompressed) return;
+
+                if (shouldSync && !AppBusy.IsBusy)
+                {
+                    BlobStore.CompressionEnabled = true;
+                    RevertCompressToggle(true); // 程序化置开：不触发 OnCompressBlobsToggled 的批处理
+                    HasPendingConversion = false;
+                    return;
+                }
+
                 HasPendingConversion = pending;
             }));
         });
@@ -1864,7 +1893,7 @@ public partial class MainViewModel : ObservableObject
                         //（见 StartStorageMeasure）——否则又是一次整窗冻结。
                         // 顺带重测不弹气泡：条本身是反馈，每次都弹会把气泡刷成噪音
                         StartStorageMeasure(announce: false);
-                        RefreshPendingConversion(); // 进设置页时校正续做按钮（导入 / 回收等也可能改变中间态）
+                        RefreshPendingConversion(syncToggle: true); // 进设置页时校正续做按钮，并把开关同步成库的实际形态
                         break;
                 }
             }));
