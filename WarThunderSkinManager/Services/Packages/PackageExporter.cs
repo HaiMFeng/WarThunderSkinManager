@@ -220,7 +220,7 @@ public static class PackageExporter
             var destDir = Path.GetDirectoryName(dest);
             if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
 
-            File.Copy(source, dest, overwrite: true);
+            BlobStore.CopyBlobTo(source, dest);
         }
     }
 

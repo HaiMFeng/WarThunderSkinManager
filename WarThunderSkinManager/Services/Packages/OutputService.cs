@@ -258,14 +258,16 @@ public static class OutputService
             var dstDir = Path.GetDirectoryName(dst);
             if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
 
-            if (File.Exists(dst) && SameContent(dst, src))
+            if (SameAsBlob(dst, blobFile))
             {
                 report.SkippedTextures++;
                 continue;
             }
 
             if (File.Exists(dst)) File.Delete(dst);
-            if (!TryCreateHardLink(dst, src))
+            if (BlobStore.IsCompressed(src))
+                BlobStore.CopyBlobTo(src, dst);
+            else if (!TryCreateHardLink(dst, src))
                 File.Copy(src, dst, overwrite: true);
 
             report.WrittenTextures++;
@@ -411,14 +413,17 @@ public static class OutputService
 
             try
             {
-                if (File.Exists(dst) && SameContent(dst, src))
+                if (SameAsBlob(dst, blob))
                 {
                     report.SkippedTextures++;
                     continue;
                 }
 
                 if (File.Exists(dst)) File.Delete(dst);
-                if (!TryCreateHardLink(dst, src)) File.Copy(src, dst, overwrite: true);
+                if (BlobStore.IsCompressed(src))
+                    BlobStore.CopyBlobTo(src, dst);
+                else if (!TryCreateHardLink(dst, src))
+                    File.Copy(src, dst, overwrite: true);
 
                 report.WrittenTextures++;
             }
@@ -484,12 +489,14 @@ public static class OutputService
         }
     }
 
-    private static bool SameContent(string a, string b)
+    // dst 是否已是最新的原内容：直接用 blob 文件名里的原始内容哈希比对（无需解压），
+    // 比逐字节 SameContent 更快，且对压缩 blob 仍然正确。
+    private static bool SameAsBlob(string dst, string blobFile)
     {
-        var fa = new FileInfo(a);
-        var fb = new FileInfo(b);
-        if (fa.Length != fb.Length) return false;
-        return string.Equals(BlobStore.HashFile(a), BlobStore.HashFile(b), StringComparison.Ordinal);
+        if (!File.Exists(dst)) return false;
+        var expected = BlobStore.BlobHashOf(blobFile);
+        if (string.IsNullOrEmpty(expected)) return false;
+        return string.Equals(BlobStore.HashFile(dst), expected, StringComparison.Ordinal);
     }
 
     // 同盘硬链接省空间；跨卷失败则回退复制。

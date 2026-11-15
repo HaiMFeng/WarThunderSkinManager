@@ -57,6 +57,36 @@ internal static class SelfTest
             log.AppendLine($"blobs       : {BlobStore.EnumerateBlobs(resourceDir).Length}");
             log.AppendLine($"warnings    : {result.Warnings.Count}");
 
+            // ---- 压缩 blob 无损闭环：Store 压缩 → CopyBlobTo 解压写出 → 哈希应等于原始内容哈希 ----
+            // 合成样本无真实贴图时，造随机字节文件强制走一遍压缩 → 解压，确保闭环无损。
+            bool lossless;
+            var blobPaths = BlobStore.EnumerateBlobs(resourceDir);
+            if (blobPaths.Length > 0)
+            {
+                var b0 = blobPaths[0];
+                var losslessTmp = Path.Combine(workDir, "lossless_check.bin");
+                BlobStore.CopyBlobTo(b0, losslessTmp);
+                lossless = string.Equals(BlobStore.HashFile(losslessTmp),
+                    BlobStore.BlobHashOf(b0), StringComparison.Ordinal);
+                File.Delete(losslessTmp);
+            }
+            else
+            {
+                var probe = Path.Combine(workDir, "lossless_probe.bin");
+                var rnd = new byte[1 << 20];
+                using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                    rng.GetBytes(rnd);
+                File.WriteAllBytes(probe, rnd);
+                var hash = BlobStore.Store(resourceDir, probe, out _);
+                var restored = Path.Combine(workDir, "lossless_restored.bin");
+                BlobStore.CopyBlobTo(BlobStore.BlobPath(resourceDir, hash, ".bin"), restored);
+                lossless = string.Equals(BlobStore.HashFile(restored), hash, StringComparison.Ordinal);
+                File.Delete(probe);
+                File.Delete(restored);
+            }
+
+            log.AppendLine($"blob 压缩无损闭环 : {lossless}");
+
             var vehicles = VehicleAggregator.BuildAll(resourceDir);
 
             log.AppendLine();

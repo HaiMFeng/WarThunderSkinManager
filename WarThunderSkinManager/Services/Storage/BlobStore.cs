@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.IO.Compression;
 
 namespace WarThunderSkinManager.Services;
 
@@ -44,13 +45,21 @@ public static class BlobStore
             using (var source = File.OpenRead(sourceFile))
             using (var target = File.Create(tmp))
             {
-                var buffer = new byte[1024 * 1024];
-                int read;
-                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                // 压缩头：魔数 WTSC + 算法标识（1 = Brotli）。blob 文件名仍是原始内容哈希，
+                // 因此内容寻址 / 去重 / 落盘往返都不受影响；读取方经 OpenBlob 透明解压。
+                var header = new byte[] { 0x57, 0x54, 0x53, 0x43, 1 };
+                target.Write(header, 0, header.Length);
+
+                using (var cs = new BrotliStream(target, CompressionLevel.Optimal))
                 {
-                    sha.AppendData(buffer, 0, read);
-                    target.Write(buffer, 0, read);
-                }
+                    var buffer = new byte[1024 * 1024];
+                    int read;
+                    while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        sha.AppendData(buffer, 0, read);
+                        cs.Write(buffer, 0, read);
+                    }
+                } // BrotliStream 先 flush 压缩数据到 target 并关闭它
             }
 
             hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
@@ -119,4 +128,69 @@ public static class BlobStore
         => Directory.Exists(BlobsDirectory(resourceDir))
             ? Directory.GetFiles(BlobsDirectory(resourceDir))
             : Array.Empty<string>();
+
+    /// <summary>压缩 blob 文件头魔数（WTSC = WTSM Compressed）+ 算法标识。</summary>
+    private static readonly byte[] CompressedMagic = { 0x57, 0x54, 0x53, 0x43 }; // "WTSC"
+    private const byte CompressedAlgBrotli = 1;
+
+    /// <summary>从 blob 文件名（<c>&lt;hash&gt;&lt;ext&gt;</c>）取出内容哈希（小写 hex，不含扩展名）。</summary>
+    public static string BlobHashOf(string blobFile)
+        => Path.GetFileNameWithoutExtension(blobFile);
+
+    /// <summary>判断 blob 是否为本程序压缩格式（旧版未压缩 blob 返回 false，向后兼容）。</summary>
+    public static bool IsCompressed(string blobPath)
+    {
+        try
+        {
+            using var fs = File.OpenRead(blobPath);
+            var magic = new byte[5];
+            return fs.Read(magic, 0, 5) == 5
+                && magic[0] == CompressedMagic[0] && magic[1] == CompressedMagic[1]
+                && magic[2] == CompressedMagic[2] && magic[3] == CompressedMagic[3]
+                && magic[4] == CompressedAlgBrotli;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 打开 blob 供读取：压缩格式返回解压流（BrotliStream 接管底层文件，dispose 即关闭）；
+    /// 旧版未压缩 blob 返回定位到开头的原始流。调用方用 <c>using</c> 释放。
+    /// </summary>
+    public static Stream OpenBlob(string blobPath)
+    {
+        var fs = File.OpenRead(blobPath);
+        try
+        {
+            var magic = new byte[5];
+            if (fs.Read(magic, 0, 5) == 5
+                && magic[0] == CompressedMagic[0] && magic[1] == CompressedMagic[1]
+                && magic[2] == CompressedMagic[2] && magic[3] == CompressedMagic[3]
+                && magic[4] == CompressedAlgBrotli)
+            {
+                return new BrotliStream(fs, CompressionMode.Decompress, leaveOpen: false);
+            }
+
+            fs.Seek(0, SeekOrigin.Begin); // 未压缩：回开头原样返回
+            return fs;
+        }
+        catch
+        {
+            fs.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 把 blob 解压（或原样）写出到目标路径——导出 / 打包时替换原有的
+    /// <c>File.Copy(blob, dst)</c> / 硬链接，使游戏与压缩 blob 解耦。
+    /// </summary>
+    public static void CopyBlobTo(string blobPath, string dst)
+    {
+        using var src = OpenBlob(blobPath);
+        using var outStream = File.Create(dst);
+        src.CopyTo(outStream);
+    }
 }
